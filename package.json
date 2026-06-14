@@ -2,6 +2,7 @@
   "name": "packet-capture-app",
   "version": "1.0.0",
   "description": "macOS 抓包对比工具 - HTTP/HTTPS 流量捕获与 AI 智能对比",
+  "author": "Peifeng Zhang <zzzpeifeng@163.com>",
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",

@@ -1,6 +1,6 @@
 {
   "appId": "com.packet-capture.app",
-  "productName": "PacketCapture",
+  "productName": "PowerCatch",
   "directories": {
     "output": "release"
   },
@@ -10,14 +10,14 @@
   ],
   "mac": {
     "target": ["dmg", "zip"],
-    "icon": "resources/icon.icns",
+    "icon": "resources/icon.png",
     "artifactName": "${productName}-${version}-${arch}.${ext}",
-    "hardenedRuntime": true,
+    "hardenedRuntime": false,
     "gatekeeperAssess": false
   },
   "win": {
     "target": ["nsis"],
-    "icon": "resources/icon.ico"
+    "icon": "resources/icon.png"
   },
   "dmg": {
     "contents": [
@@ -36,6 +36,5 @@
       "filter": ["**/*"]
     }
   ],
-  "nativeRebuilder": true,
   "asarUnpack": ["**/*.node"]
 }
