@@ -37,8 +37,8 @@ export class SSLErrorLogger {
   private maxLogFileSize = 10 * 1024 * 1024  // 10MB
   
   private constructor() {
-    // 日志目录：~/Library/Logs/packet-capture-app/
-    this.logDir = path.join(app.getPath('logs'), 'packet-capture-app')
+    // 日志目录：~/Library/Logs/powercatch/
+    this.logDir = path.join(app.getPath('logs'), 'powercatch')
     this.logFile = path.join(this.logDir, 'ssl-errors.log')
     
     // 确保日志目录存在

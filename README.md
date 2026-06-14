@@ -30,7 +30,7 @@
 
 ### 方式一：下载安装包（推荐）
 
-前往 [Releases](https://github.com/zzzpeifeng/packet-capture-app/releases) 页面下载对应平台的安装包：
+前往 [Releases](https://github.com/zzzpeifeng/powercatch/releases) 页面下载对应平台的安装包：
 
 - **macOS**: 下载 `.dmg` 文件，打开后拖拽到「应用程序」文件夹
 
@@ -38,8 +38,8 @@
 
 ```bash
 # 克隆仓库
-git clone https://github.com/zzzpeifeng/packet-capture-app.git
-cd packet-capture-app
+git clone https://github.com/zzzpeifeng/powercatch.git
+cd powercatch
 
 # 安装依赖
 npm install
@@ -78,7 +78,7 @@ npm run electron:build
 ### 项目结构
 
 ```
-packet-capture-app/
+powercatch/
 ├── electron/              # Electron 主进程
 │   ├── main.ts           # 入口文件
 │   ├── ipc.ts            # IPC 通信处理
@@ -115,4 +115,4 @@ Peifeng Zhang — [zzzpeifeng@163.com](mailto:zzzpeifeng@163.com)
 
 ---
 
-> 💡 如遇问题或有功能建议，欢迎提交 [Issue](https://github.com/zzzpeifeng/packet-capture-app/issues)。
+> 💡 如遇问题或有功能建议，欢迎提交 [Issue](https://github.com/zzzpeifeng/powercatch/issues)。
