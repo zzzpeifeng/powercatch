@@ -1,0 +1,41 @@
+{
+  "appId": "com.packet-capture.app",
+  "productName": "PacketCapture",
+  "directories": {
+    "output": "release"
+  },
+  "files": [
+    "dist-electron/**",
+    "dist/**"
+  ],
+  "mac": {
+    "target": ["dmg", "zip"],
+    "icon": "resources/icon.icns",
+    "artifactName": "${productName}-${version}-${arch}.${ext}",
+    "hardenedRuntime": true,
+    "gatekeeperAssess": false
+  },
+  "win": {
+    "target": ["nsis"],
+    "icon": "resources/icon.ico"
+  },
+  "dmg": {
+    "contents": [
+      { "x": 130, "y": 220 },
+      { "x": 410, "y": 220, "type": "link", "path": "/Applications" }
+    ]
+  },
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true
+  },
+  "extraResources": [
+    {
+      "from": "resources/",
+      "to": "resources/",
+      "filter": ["**/*"]
+    }
+  ],
+  "nativeRebuilder": true,
+  "asarUnpack": ["**/*.node"]
+}
