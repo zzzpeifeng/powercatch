@@ -5,7 +5,7 @@
 import { Proxy as HttpMitmProxy } from 'http-mitm-proxy'
 import { BrowserWindow, app } from 'electron'
 import { join } from 'path'
-import { getSslCaDir, ensureSslCaDir, cleanupOldCACerts } from './ca-cert'
+import { getSslCaDir, ensureSslCaDir, cleanupOldCACerts, getCACertPath } from './ca-cert'
 import { IPC_CHANNELS, type CaptureRequest, type HttpMethod, type ProxyStatus } from '../../src/services/types'
 import { networkInterfaces } from 'os'
 import { SSLErrorClassifier, SSLErrorFormatter, type SSLErrorDetail } from '../services/ssl-error-handler'
@@ -234,7 +234,10 @@ function decodeRequestBody(buffer: Buffer, headers: Record<string, any>): string
  */
 function pushToRenderer(request: CaptureRequest, isUpdate: boolean = false): void {
   if (mainWindow && !mainWindow.isDestroyed()) {
+    console.log(`[Proxy] 📤 发送数据到前端: ${request.method} ${request.url} (ID: ${request.id})`)
     mainWindow.webContents.send(IPC_CHANNELS.PROXY_NEW_REQUEST, { ...request, _isUpdate: isUpdate })
+  } else {
+    console.warn('[Proxy] ⚠️ mainWindow 不存在或已销毁，无法发送数据到前端')
   }
 }
 
@@ -312,10 +315,11 @@ export async function startProxy(port: number, win: BrowserWindow): Promise<bool
     const proxy = new HttpMitmProxy()
 
     // SSL 中间件配置
-    proxy.sslCaDir = join(
-      app.getPath('userData'),
-      'certs'
-    )
+    proxy.sslCaDir = getSslCaDir()
+    
+    // 调试日志：打印 sslCaDir
+    console.log('[Proxy] sslCaDir:', proxy.sslCaDir)
+    console.log('[Proxy] CA 证书路径:', getCACertPath())
 
     // 请求拦截
     proxy.onRequest((ctx: any, callback: any) => {
@@ -323,6 +327,9 @@ export async function startProxy(port: number, win: BrowserWindow): Promise<bool
       const url = ctx.clientToProxyRequest.url || ''
       const host = ctx.clientToProxyRequest.headers?.host || parseUrlHost(url)
       const method = (ctx.clientToProxyRequest.method || 'GET').toUpperCase() as HttpMethod
+
+      // 调试日志：记录收到的请求
+      console.log(`[Proxy] 📥 收到请求: ${method} ${url} (来自: ${clientIp})`)
 
       // 始终记录基础字段，供 onResponseEnd 使用
       ctx._startTime = Date.now()
@@ -366,6 +373,10 @@ export async function startProxy(port: number, win: BrowserWindow): Promise<bool
     // 响应拦截
     proxy.onResponse((ctx: any, callback: any) => {
       const responseChunks: Buffer[] = []
+      
+      // 调试日志：记录响应
+      const url = ctx.clientToProxyRequest?.url || ctx._url || 'unknown'
+      console.log(`[Proxy] 📤 收到响应: ${url} (状态: ${ctx.serverToProxyResponse?.statusCode || 'unknown'})`)
 
       ctx.onResponseData((ctx: any, chunk: Buffer, callback: any) => {
         responseChunks.push(chunk)

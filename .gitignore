@@ -125,3 +125,4 @@ Thumbs.db
 
 # 如果使用 npm workspace
 # packages/*/node_modules/
+.http-mitm-proxy/

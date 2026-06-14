@@ -16,7 +16,7 @@ import { existsSync, readFileSync, mkdirSync } from 'fs'
  * 必须与 mitm-server.ts 中传给 proxy.listen() 的路径一致
  */
 export function getSslCaDir(): string {
-  return join(app.getPath('userData'), 'certs')
+  return join(app.getPath('userData'), 'ssl-ca')
 }
 
 /**
@@ -116,10 +116,14 @@ export async function preGenerateCA(): Promise<void> {
       const { Proxy: HttpMitmProxy } = require('http-mitm-proxy')
       const proxy = new HttpMitmProxy()
       const sslCaDir = getSslCaDir()
-
+      
+      // 关键：必须设置 proxy.sslCaDir 属性
+      // http-mitm-proxy 会读取这个属性来确定 CA 证书生成位置
+      proxy.sslCaDir = sslCaDir
+      
       // 让 http-mitm-proxy 在 sslCaDir 生成 CA 证书
       // 监听一个随机端口，立即关闭，目的是触发 CA 生成
-      proxy.listen({ port: 0, host: '127.0.0.1', sslCaDir }, () => {
+      proxy.listen({ port: 0, host: '127.0.0.1' }, () => {
         console.log(`[CA] CA 证书已生成: ${getCACertPath()}`)
         proxy.close()
         resolve()
