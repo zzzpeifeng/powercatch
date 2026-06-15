@@ -99,42 +99,40 @@ export function getCertFilePath(): string {
 
 /**
  * 在应用启动时预生成 CA 证书
- * 通过启动一个临时代理实例来触发 http-mitm-proxy 生成 CA
- *
- * ⚠️ 只会生成一次：如果 ca.pem 已存在，直接跳过，不会重新生成
- * 这样可以保证 iOS 上安装的证书永久有效，不需要重复安装
+ * 
+ * 直接调用 http-mitm-proxy 内部的 CA.create() 生成证书文件，
+ * 而不是通过启动代理来间接触发（代理是惰性生成的，不可靠）。
+ * 
+ * ⚠️ 只会生成一次：如果 ca.pem 已存在，直接跳过
  */
 export async function preGenerateCA(): Promise<void> {
-  // 关键：如果 CA 证书已存在，直接返回，不重新生成
+  // 如果 CA 证书已存在，直接返回
   if (isCAGenerated()) {
     console.log(`[CA] CA 证书已存在，跳过生成: ${getCACertPath()}`)
     return Promise.resolve()
   }
 
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     try {
-      const { Proxy: HttpMitmProxy } = require('http-mitm-proxy')
-      const proxy = new HttpMitmProxy()
       const sslCaDir = getSslCaDir()
-      
-      // 关键：必须设置 proxy.sslCaDir 属性
-      // http-mitm-proxy 会读取这个属性来确定 CA 证书生成位置
-      proxy.sslCaDir = sslCaDir
-      
-      // 让 http-mitm-proxy 在 sslCaDir 生成 CA 证书
-      // 监听一个随机端口，立即关闭，目的是触发 CA 生成
-      proxy.listen({ port: 0, host: '127.0.0.1' }, () => {
-        console.log(`[CA] CA 证书已生成: ${getCACertPath()}`)
-        proxy.close()
-        resolve()
-      })
+      // 确保目录存在
+      ensureSslCaDir()
 
-      proxy.onError((ctx: any, err: any, kind: string) => {
-        // 忽略错误，我们只关心 CA 生成
+      // 直接调用 http-mitm-proxy 内部的 CA.create()
+      // 它会正确生成 ca.pem / ca.private.key / ca.public.key
+      const { CA } = require('http-mitm-proxy/dist/lib/ca')
+      CA.create(sslCaDir, (err: any) => {
+        if (err) {
+          console.error('[CA] CA.create() 失败:', err)
+          reject(err)
+        } else {
+          console.log(`[CA] CA 证书生成成功: ${getCACertPath()}`)
+          resolve()
+        }
       })
     } catch (e) {
       console.error('[CA] 预生成 CA 证书失败:', e)
-      resolve() // 不阻塞启动，代理启动时会自动生成
+      reject(e)
     }
   })
 }

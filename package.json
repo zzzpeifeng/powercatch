@@ -10,7 +10,7 @@
     "preview": "vite preview",
     "electron:dev": "vite --config vite.config.ts",
     "electron:build": "bash scripts/bump-version.sh && vue-tsc --noEmit && vite build && electron-builder",
-    "postinstall": "electron-rebuild"
+    "postinstall": "electron-rebuild  --version 28.2.3"
   },
   "dependencies": {
     "better-sqlite3": "^12.10.0",
@@ -32,6 +32,7 @@
     "vue-virtual-scroller": "^2.0.0-beta.8"
   },
   "devDependencies": {
+    "@electron/rebuild": "^4.0.4",
     "@types/better-sqlite3": "^7.6.8",
     "@types/markdown-it": "^14.1.2",
     "@types/node": "^20.11.16",
@@ -40,7 +41,6 @@
     "autoprefixer": "^10.4.17",
     "electron": "^28.2.3",
     "electron-builder": "^24.9.1",
-    "electron-rebuild": "^3.2.9",
     "postcss": "^8.4.35",
     "tailwindcss": "^3.4.1",
     "typescript": "^5.3.3",

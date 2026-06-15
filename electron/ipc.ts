@@ -216,10 +216,10 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   })
 
   // ===== CA 证书 =====
-  ipcMain.handle(IPC_CHANNELS.CA_GENERATE, () => {
+  ipcMain.handle(IPC_CHANNELS.CA_GENERATE, async () => {
     try {
-      const result = generateCACert()
-      sqlite.saveAllSettings({ caCertGenerated: result.success })
+      const result = await generateCACert()
+      await sqlite.saveAllSettings({ caCertGenerated: result.success })
       return result
     } catch (error: any) {
       return { success: false, error: error.message }
