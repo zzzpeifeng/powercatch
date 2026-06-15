@@ -11,6 +11,7 @@ import { startCertServer, stopCertServer } from './proxy/cert-server'
 import { preGenerateCA, cleanupOldCACerts } from './proxy/ca-cert'
 
 let mainWindow: BrowserWindow | null = null
+let isQuitting = false
 
 /**
  * 创建应用菜单
@@ -107,6 +108,14 @@ function createAndInitWindow(): void {
     mainWindow?.show()
   })
 
+  // 点击关闭按钮时隐藏窗口（而非销毁），实现 Dock 驻留行为
+  mainWindow.on('close', (e) => {
+    if (!isQuitting) {
+      e.preventDefault()
+      mainWindow?.hide()
+    }
+  })
+  // 窗口真正销毁时清理引用
   mainWindow.on('closed', () => {
     mainWindow = null
   })
@@ -145,9 +154,11 @@ app.whenReady().then(async () => {
 
   createAndInitWindow()
 
-  // macOS: 点击 dock 图标时重新创建窗口
+  // macOS: 点击 dock 图标时显示窗口（窗口隐藏后再次打开）
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
+    if (mainWindow) {
+      mainWindow.show()
+    } else {
       createAndInitWindow()
     }
   })
@@ -161,6 +172,7 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', () => {
+  isQuitting = true
   // 清理资源
   stopCertServer()
   closeDatabase()
