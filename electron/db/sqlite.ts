@@ -205,6 +205,7 @@ export function getAllSettings(): AppSettings {
     domainFilters: JSON.parse(settingsMap.domain_filters || '[]'),
     localIp: settingsMap.local_ip || '',
     caCertGenerated: settingsMap.ca_cert_generated === 'true',
+    theme: settingsMap.theme || 'system',  // ✅ 新增：读取 theme 字段
   }
 }
 
@@ -225,6 +226,7 @@ export function saveAllSettings(settings: Partial<AppSettings>): void {
   if (settings.domainFilters !== undefined) mapping.domain_filters = JSON.stringify(settings.domainFilters)
   if (settings.localIp !== undefined) mapping.local_ip = settings.localIp
   if (settings.caCertGenerated !== undefined) mapping.ca_cert_generated = String(settings.caCertGenerated)
+  if (settings.theme !== undefined) mapping.theme = settings.theme  // ✅ 新增：保存 theme 字段
 
   const transaction = db.transaction(() => {
     const stmt = db.prepare(

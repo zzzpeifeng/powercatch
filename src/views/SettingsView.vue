@@ -113,6 +113,11 @@ onMounted(async () => {
   localSettings.value.localIp = settingsStore.localIp
   localSettings.value.caCertGenerated = settingsStore.caCertGenerated
 
+  // ⚠️ 关键：重新从磁盘检查 CA 证书是否真的存在
+  // 数据库里的 caCertGenerated 可能过期（证书已生成但 DB 标志位未更新）
+  await settingsStore.loadCAStatus()
+  localSettings.value.caCertGenerated = settingsStore.caCertGenerated
+
   const status = await ipc.proxy.status()
   if (status.certUrl) {
     certDownloadUrl.value = status.certUrl
@@ -138,12 +143,23 @@ watch([certStep, certDevice, () => localSettings.value.localIp, () => localSetti
 // 保存设置
 async function handleSave() {
   savedStatus.value = 'saving'
-
+  
   try {
+    // ⚠️ 关键：先将 localSettings 同步到 settingsStore
+    settingsStore.apiUrl = localSettings.value.apiUrl
+    settingsStore.apiKey = localSettings.value.apiKey
+    settingsStore.modelName = localSettings.value.modelName
+    settingsStore.proxyPort = localSettings.value.proxyPort
+    settingsStore.domainFilters = [...localSettings.value.domainFilters]
+    settingsStore.aiPromptTemplate = localSettings.value.aiPromptTemplate
+    settingsStore.localIp = localSettings.value.localIp
+    settingsStore.caCertGenerated = localSettings.value.caCertGenerated
+    
+    // 保存
     await settingsStore.saveSettings()
-
+    
     savedStatus.value = 'saved'
-
+    
     if (saveTimer) clearTimeout(saveTimer)
     saveTimer = setTimeout(() => {
       savedStatus.value = 'idle'

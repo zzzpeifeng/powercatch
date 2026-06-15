@@ -127,7 +127,7 @@ function generateHtml(
       </div>
     </div>
 
-    <div class="footer">抓包对比工具 · 导出时间 ${new Date().toLocaleString('zh-CN')}</div>
+    <div class="footer">PowerCatch · 导出时间 ${new Date().toLocaleString('zh-CN')}</div>
   </div>
 </body>
 </html>`

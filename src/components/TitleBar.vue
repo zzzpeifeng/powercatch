@@ -5,7 +5,7 @@
   >
     <!-- 左侧：标题（留出 macOS 红绿灯按钮空间） -->
     <div class="flex items-center gap-2">
-      <span class="text-sm font-semibold text-gray-700 dark:text-gray-300">抓包对比工具 v1.0</span>
+      <span class="text-sm font-semibold text-gray-700 dark:text-gray-300">PowerCatch</span>
     </div>
 
     <!-- 右侧：导航 -->

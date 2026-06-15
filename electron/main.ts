@@ -61,7 +61,7 @@ function createAndInitWindow(): void {
     height: 900,
     minWidth: 1000,
     minHeight: 700,
-    title: '抓包对比工具 v1.0',
+    title: 'PowerCatch',
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 16, y: 16 },
     webPreferences: {
