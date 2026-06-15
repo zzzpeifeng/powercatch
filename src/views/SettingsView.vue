@@ -558,7 +558,7 @@ function prevStep() {
                 <h4 class="text-xs font-semibold mb-2">方式二：AirDrop 发送</h4>
                 <ol class="text-xs text-gray-600 dark:text-gray-400 flex flex-col gap-1 pl-4 list-decimal">
                   <li>点击下方「打开证书文件夹」</li>
-                  <li>找到 <code class="text-[var(--color-danger)] bg-gray-100 dark:bg-gray-800 px-1 rounded">rootCA.pem</code>，右键分享 → AirDrop 发送到 iPhone</li>
+                  <li>找到 <code class="text-[var(--color-danger)] bg-gray-100 dark:bg-gray-800 px-1 rounded">ca.pem</code>，右键分享 → AirDrop 发送到 iPhone</li>
                   <li>在 iPhone 上接收并安装，然后开启证书信任（同上）</li>
                 </ol>
               </div>
@@ -582,7 +582,7 @@ function prevStep() {
                 <ol class="text-xs text-gray-600 dark:text-gray-400 flex flex-col gap-1 pl-4 list-decimal">
                   <li>确保手机和本机在同一 WiFi 下</li>
                   <li>在手机浏览器打开：<code class="text-[var(--color-danger)] bg-gray-100 dark:bg-gray-800 px-1 rounded">{{ certDownloadUrl }}</code></li>
-                  <li>下载 <code class="text-[var(--color-danger)] bg-gray-100 dark:bg-gray-800 px-1 rounded">rootCA.pem</code></li>
+                  <li>下载 <code class="text-[var(--color-danger)] bg-gray-100 dark:bg-gray-800 px-1 rounded">ca.pem</code></li>
                   <li>前往「设置 → 安全 → 加密与凭据 → 安装证书 → CA 证书」，选择下载的文件</li>
                   <li>确认安装（可能需要设置锁屏密码）</li>
                 </ol>
@@ -614,8 +614,8 @@ function prevStep() {
                 <h4 class="text-xs font-semibold mb-2">macOS</h4>
                 <ol class="text-xs text-gray-600 dark:text-gray-400 flex flex-col gap-1 pl-4 list-decimal">
                   <li>点击下方「打开证书文件夹」</li>
-                  <li>双击 <code class="text-[var(--color-danger)] bg-gray-100 dark:bg-gray-800 px-1 rounded">rootCA.pem</code>，添加到「系统」钥匙串</li>
-                  <li>在「钥匙串访问」中找到 <code class="text-[var(--color-danger)] bg-gray-100 dark:bg-gray-800 px-1 rounded">mitmproxy</code> 证书</li>
+                  <li>双击 <code class="text-[var(--color-danger)] bg-gray-100 dark:bg-gray-800 px-1 rounded">ca.pem</code>，添加到「系统」钥匙串</li>
+                  <li>在「钥匙串访问」中找到 <code class="text-[var(--color-danger)] bg-gray-100 dark:bg-gray-800 px-1 rounded">NodeMITMProxyCA</code> 证书</li>
                   <li>右键 → 显示简介 → 展开「信任」→ 改为「始终信任」</li>
                 </ol>
               </div>
@@ -623,7 +623,7 @@ function prevStep() {
                 <h4 class="text-xs font-semibold mb-2">Windows</h4>
                 <ol class="text-xs text-gray-600 dark:text-gray-400 flex flex-col gap-1 pl-4 list-decimal">
                   <li>点击下方「打开证书文件夹」</li>
-                  <li>双击 <code class="text-[var(--color-danger)] bg-gray-100 dark:bg-gray-800 px-1 rounded">rootCA.pem</code>，选择「安装证书」</li>
+                  <li>双击 <code class="text-[var(--color-danger)] bg-gray-100 dark:bg-gray-800 px-1 rounded">ca.pem</code>，选择「安装证书」</li>
                   <li>存储位置选「当前用户」，下一步</li>
                   <li>选择「将所有的证书都放入下列存储」，浏览 → 选择「受信任的根证书颁发机构」</li>
                   <li>完成导入</li>

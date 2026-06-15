@@ -122,7 +122,7 @@ export function startCertServer(port: number = 8889): Promise<number> {
       <h2>Android 安装步骤</h2>
       <div class="step"><span class="step-num">1</span><span>点击上方按钮下载 CA 证书文件</span></div>
       <div class="step"><span class="step-num">2</span><span>进入 设置 → 安全 → 加密与凭据 → 安装证书 → CA 证书</span></div>
-      <div class="step"><span class="step-num">3</span><span>选择下载的 ca.pem 文件并安装</span></div>
+      <div class="step"><span class="step-num">3</span><span>选择下载的 NodeMITMProxyCA.pem 文件并安装</span></div>
       <div class="step"><span class="step-num">4</span><span>配置 Wi-Fi 代理：服务器 = 本机 IP，端口 = 8888</span></div>
     </div>
 
@@ -160,7 +160,7 @@ export function startCertServer(port: number = 8889): Promise<number> {
       if (req.url === '/download-cert') {
         res.writeHead(200, {
           'Content-Type': 'application/x-pem-file',
-          'Content-Disposition': 'attachment; filename="ca.pem"',
+          'Content-Disposition': 'attachment; filename="NodeMITMProxyCA.pem"',
           'Content-Length': Buffer.byteLength(cert),
         })
         res.end(cert)

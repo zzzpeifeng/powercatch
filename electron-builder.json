@@ -12,6 +12,7 @@
     "target": ["dmg", "zip"],
     "icon": "resources/icon.png",
     "artifactName": "${productName}-${version}-${arch}.${ext}",
+    "identity": "-",
     "hardenedRuntime": false,
     "gatekeeperAssess": false
   },
