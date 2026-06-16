@@ -5,6 +5,7 @@ import { useSettingsStore } from '../stores/settings-store'
 import { useRequestStore } from '../stores/request-store'
 import type { AppSettings } from '../services/types'
 import { useToast } from '../composables/useToast'
+import PromptEditor from '../components/PromptEditor.vue'
 
 const settingsStore = useSettingsStore()
 const requestStore = useRequestStore()
@@ -407,6 +408,11 @@ function prevStep() {
               <button class="btn btn-secondary btn-sm" @click="handleTestConnection">
                 测试连接
               </button>
+            </div>
+            <!-- AI Prompt 模板 -->
+            <div class="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
+              <label class="label mb-2 block">AI 对比 Prompt 模板</label>
+              <PromptEditor v-model="localSettings.aiPromptTemplate" />
             </div>
           </div>
         </div>

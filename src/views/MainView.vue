@@ -182,6 +182,10 @@ async function handleCompare(): Promise<void> {
     toast.warning('请先勾选两个请求')
     return
   }
+  if (!settingsStore.apiKey) {
+    toast.error('请先在设置页面配置 API Key')
+    return
+  }
   try {
     await requestStore.doCompare()
     toast.success('对比完成')
