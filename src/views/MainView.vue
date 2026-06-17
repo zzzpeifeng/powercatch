@@ -1,5 +1,15 @@
 <template>
   <div class="flex-1 flex flex-col overflow-hidden">
+    <!-- 本机代理提示条（仅在系统代理开启时显示） -->
+    <SystemProxyBanner
+      v-if="systemProxyStore.isActive"
+      :active-services="systemProxyStore.activeServices"
+      :port="systemProxyStore.port"
+      :hidden="bannerHidden"
+      @hide="bannerHidden = true"
+      @disable="handleDisableProxy"
+    />
+
     <!-- 域名过滤 -->
     <DomainFilter
       ref="domainFilterRef"
@@ -87,6 +97,8 @@ import { useDebounce } from '../composables/useDebounce'
 import type { CaptureRequest, ExportFormat } from '../services/types'
 
 import { ipc } from '../services/ipc'
+import { useSystemProxyStore } from '../stores/system-proxy-store'
+import SystemProxyBanner from '../components/SystemProxyBanner.vue'
 import DomainFilter from '../components/DomainFilter.vue'
 import RecordControl from '../components/RecordControl.vue'
 import RequestList from '../components/RequestList.vue'
@@ -97,11 +109,13 @@ import ExportButton from '../components/ExportButton.vue'
 const router = useRouter()
 const requestStore = useRequestStore()
 const settingsStore = useSettingsStore()
+const systemProxyStore = useSystemProxyStore()
 const toast = useToast()
 
 const domainFilterRef = ref<InstanceType<typeof DomainFilter> | null>(null)
 const showExportMenu = ref<boolean>(false)
 const containerRef = ref<HTMLElement | null>(null)
+const bannerHidden = ref<boolean>(false)
 
 // 拖拽分割线：上下比例（上半区百分比），默认 60/40
 const splitPct = ref<number>(60)
@@ -115,6 +129,13 @@ onMounted(() => {
       splitPct.value = val
     }
   }
+
+  // 启动系统代理状态轮询（开启时 banner 才能正确显示）
+  systemProxyStore.startPolling()
+})
+
+onUnmounted(() => {
+  systemProxyStore.stopPolling()
 })
 
 // 拖拽分割线
@@ -211,6 +232,21 @@ async function handleExport(format: ExportFormat): Promise<void> {
 function handleClear(): void {
   requestStore.clearRequests()
   toast.info('已清空所有请求')
+}
+
+/** 提示条：关闭本机代理 */
+async function handleDisableProxy(): Promise<void> {
+  try {
+    const result = await systemProxyStore.disable()
+    if (result.success) {
+      toast.success(result.message)
+      bannerHidden.value = true
+    } else {
+      toast.error(result.message)
+    }
+  } catch (error: any) {
+    toast.error('关闭失败：' + error.message)
+  }
 }
 
 /** 列表键盘导航 — 上移 */

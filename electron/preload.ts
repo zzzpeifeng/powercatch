@@ -26,6 +26,14 @@ const electronAPI = {
     },
     setDomainFilters: (filters: string[]) =>
       ipcRenderer.invoke(IPC_CHANNELS.PROXY_SET_DOMAIN_FILTERS, filters),
+
+    // 系统代理
+    setSystemProxy: (port: number) =>
+      ipcRenderer.invoke(IPC_CHANNELS.PROXY_SET_SYSTEM, port),
+    clearSystemProxy: () =>
+      ipcRenderer.invoke(IPC_CHANNELS.PROXY_CLEAR_SYSTEM),
+    getSystemProxyStatus: (port: number) =>
+      ipcRenderer.invoke(IPC_CHANNELS.PROXY_GET_SYSTEM_STATUS, port),
   },
 
   // AI 对比

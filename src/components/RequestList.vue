@@ -4,57 +4,59 @@
     <div class="p-2 border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
       <input
         v-model="searchQuery"
-        class="input input-sm text-xs"
+        class="input input-sm text-xs w-full"
         placeholder="搜索路径、状态码..."
       />
     </div>
 
-    <!-- 列表内容 -->
-    <div class="flex-1 overflow-y-auto">
-      <!-- 空状态 -->
-      <div v-if="displayRequests.length === 0" class="flex items-center justify-center h-full text-gray-600 dark:text-gray-400 text-sm">
-        <div class="text-center">
-          <div class="text-3xl mb-2">📡</div>
-          <div v-if="!isRecording">点击录制按钮开始抓包</div>
-          <div v-else>等待请求中...</div>
-        </div>
-      </div>
+    <!-- 虚拟滚动列表 -->
+    <RecycleScroller
+      v-if="displayRequests.length > 0"
+      class="flex-1 request-list-scroller"
+      :items="displayRequests"
+      :item-size="48"
+      key-field="id"
+      v-slot="{ item }"
+    >
+      <div
+        class="scroller-item"
+        :class="{
+          selected: selectedRequest?.id === item.id,
+          'bg-blue-50 dark:bg-blue-900': item.checked,
+        }"
+        @click="$emit('select', item)"
+      >
+        <!-- 勾选框 -->
+        <input
+          type="checkbox"
+          :checked="item.checked"
+          class="flex-shrink-0 cursor-pointer"
+          @click.stop="$emit('toggle-check', item)"
+        />
 
-      <!-- 普通列表 -->
-      <div v-else>
-        <div
-          v-for="item in displayRequests"
-          :key="item.id"
-          class="scroller-item"
-          :class="{
-            selected: selectedRequest?.id === item.id,
-            'bg-blue-50 dark:bg-blue-900': item.checked,
-          }"
-          @click="$emit('select', item)"
-        >
-          <!-- 勾选框 -->
-          <input
-            type="checkbox"
-            :checked="item.checked"
-            class="flex-shrink-0 cursor-pointer"
-            @click.stop="$emit('toggle-check', item)"
-          />
-
-          <!-- 请求信息 -->
-          <div class="flex-1 min-w-0">
-            <div class="flex items-center gap-1.5">
-              <span class="text-xs font-medium" :class="methodClass(item.method)">{{ item.method }}</span>
-              <span class="text-xs text-gray-700 dark:text-gray-300 truncate">{{ item.path }}</span>
-            </div>
-            <div class="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
-              <span class="text-gray-500 dark:text-gray-400 shrink-0 font-mono tabular-nums">{{ formatTime(item.capturedAt) }}</span>
-              <span :class="item.statusCode ? statusClass(item.statusCode) : 'text-gray-400'">{{ item.statusCode ?? '-' }}</span>
-              <span v-if="item.statusCode !== null">{{ item.duration }}ms</span>
-              <span class="truncate">{{ item.deviceName || item.clientIp }}</span>
-              <span class="text-gray-600 dark:text-gray-400 truncate max-w-[120px]">{{ item.host }}</span>
-            </div>
+        <!-- 请求信息 -->
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-1.5">
+            <span class="text-xs font-medium" :class="methodClass(item.method)">{{ item.method }}</span>
+            <span class="text-xs text-gray-700 dark:text-gray-300 truncate">{{ item.path }}</span>
+          </div>
+          <div class="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
+            <span class="text-gray-500 dark:text-gray-400 shrink-0 font-mono tabular-nums">{{ formatTime(item.capturedAt) }}</span>
+            <span :class="item.statusCode ? statusClass(item.statusCode) : 'text-gray-400'">{{ item.statusCode ?? '-' }}</span>
+            <span v-if="item.statusCode !== null">{{ item.duration }}ms</span>
+            <span class="truncate">{{ item.deviceName || item.clientIp }}</span>
+            <span class="text-gray-600 dark:text-gray-400 truncate max-w-[120px]">{{ item.host }}</span>
           </div>
         </div>
+      </div>
+    </RecycleScroller>
+
+    <!-- 空状态 -->
+    <div v-else class="flex-1 flex items-center justify-center h-full text-gray-600 dark:text-gray-400 text-sm">
+      <div class="text-center">
+        <div class="text-3xl mb-2">📡</div>
+        <div v-if="!isRecording">点击录制按钮开始抓包</div>
+        <div v-else>等待请求中...</div>
       </div>
     </div>
   </div>
@@ -62,6 +64,7 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { RecycleScroller } from 'vue-virtual-scroller'
 import type { CaptureRequest } from '../services/types'
 
 const props = defineProps<{
@@ -78,9 +81,9 @@ defineEmits<{
 const searchQuery = ref<string>('')
 
 const displayRequests = computed(() => {
-  if (!searchQuery.value.trim()) return props.requests
+  const query = searchQuery.value.trim().toLowerCase()
+  if (!query) return props.requests
 
-  const query = searchQuery.value.toLowerCase()
   return props.requests.filter((req) => {
     return (
       req.path.toLowerCase().includes(query) ||

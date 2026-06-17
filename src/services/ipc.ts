@@ -11,6 +11,8 @@ import type {
   CompareResult,
   ExportFormat,
   Toast,
+  ProxyOperationResult,
+  SystemProxyStatus,
 } from './types'
 
 /** Electron API 类型（由 preload.ts 暴露） */
@@ -22,6 +24,9 @@ interface ElectronAPI {
     onNewRequest: (callback: (request: CaptureRequest) => void) => () => void
     onRequestUpdated: (callback: (update: RequestUpdate) => void) => () => void
     setDomainFilters: (filters: string[]) => Promise<void>
+    setSystemProxy: (port: number) => Promise<ProxyOperationResult>
+    clearSystemProxy: () => Promise<ProxyOperationResult>
+    getSystemProxyStatus: (port: number) => Promise<SystemProxyStatus>
   }
   ai: {
     compare: (requestA: CaptureRequest, requestB: CaptureRequest) => Promise<{ success: boolean; result?: CompareResult; error?: string }>
@@ -144,6 +149,25 @@ export const ipc = {
       // 防止 filters 是 Vue reactive Proxy，先深拷贝成普通数组
       const plain = JSON.parse(JSON.stringify(filters))
       await api.proxy.setDomainFilters(plain)
+    },
+
+    // ===== 系统代理 =====
+    setSystemProxy: async (port: number): Promise<ProxyOperationResult> => {
+      const api = getElectronAPI()
+      if (!api) return { success: false, message: 'Not in Electron environment' }
+      return api.proxy.setSystemProxy(port)
+    },
+
+    clearSystemProxy: async (): Promise<ProxyOperationResult> => {
+      const api = getElectronAPI()
+      if (!api) return { success: false, message: 'Not in Electron environment' }
+      return api.proxy.clearSystemProxy()
+    },
+
+    getSystemProxyStatus: async (port: number): Promise<SystemProxyStatus> => {
+      const api = getElectronAPI()
+      if (!api) return { isActive: false, details: [] }
+      return api.proxy.getSystemProxyStatus(port)
     },
   },
 

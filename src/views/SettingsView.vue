@@ -48,6 +48,12 @@ const proxyPortCert = ref(8080)
 const showPassword = ref(false)
 const certPort = ref(8889)
 
+// 系统代理状态
+const systemProxyActive = ref(false)
+const activeServices = ref<string[]>([])
+const isTogglingProxy = ref(false)
+let proxyStatusTimer: ReturnType<typeof setInterval> | null = null
+
 // 主题选项（含图标）
 interface ThemeOption {
   value: string
@@ -132,6 +138,11 @@ onMounted(async () => {
   }
 
   await generateCertQrCode()
+
+  // 系统代理状态
+  await refreshProxyStatus()
+  if (proxyStatusTimer) clearInterval(proxyStatusTimer)
+  proxyStatusTimer = setInterval(refreshProxyStatus, 3000)
 })
 
 // 监听步骤/设备类型/IP端口变化，重新生成证书下载二维码
@@ -204,6 +215,35 @@ async function handleOpenCertFolder() {
   const path = await ipc.ca.getPath()
   if (path) {
     await ipc.system.openPath(path)
+  }
+}
+
+// ===== 系统代理控制 =====
+async function refreshProxyStatus() {
+  try {
+    const result = await ipc.proxy.getSystemProxyStatus(localSettings.value.proxyPort)
+    systemProxyActive.value = result.isActive
+    activeServices.value = result.details?.map((d: any) => d.serviceName) || []
+  } catch {}
+}
+
+async function toggleSystemProxy() {
+  isTogglingProxy.value = true
+  try {
+    const result = systemProxyActive.value
+      ? await ipc.proxy.clearSystemProxy()
+      : await ipc.proxy.setSystemProxy(localSettings.value.proxyPort)
+
+    if (result.success) {
+      toast.success(result.message)
+    } else {
+      toast.error(result.message)
+    }
+  } catch (error: any) {
+    toast.error('操作失败：' + error.message)
+  } finally {
+    isTogglingProxy.value = false
+    await refreshProxyStatus()
   }
 }
 
@@ -346,6 +386,47 @@ function prevStep() {
               min="1024"
               max="65535"
             />
+          </div>
+
+          <!-- 本机代理设置 -->
+          <div class="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
+            <h4 class="text-xs font-semibold mb-2 text-[var(--color-text)]">本机代理设置</h4>
+
+            <!-- 状态指示 -->
+            <div class="flex items-center gap-2 mb-2">
+              <span
+                class="w-2 h-2 rounded-full"
+                :class="systemProxyActive ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600'"
+              ></span>
+              <span
+                class="text-xs"
+                :class="systemProxyActive ? 'text-green-700 dark:text-green-400' : 'text-gray-500'"
+              >
+                {{ systemProxyActive ? `已开启 (127.0.0.1:${localSettings.proxyPort})` : '已关闭' }}
+              </span>
+            </div>
+
+            <!-- 活跃网卡显示 -->
+            <div v-if="activeServices.length" class="text-xs text-gray-500 mb-2">
+              活跃网卡：{{ activeServices.join('、') }}
+            </div>
+
+            <!-- 操作按钮 -->
+            <div class="flex items-center gap-2">
+              <button
+                class="btn btn-sm"
+                :class="systemProxyActive ? 'btn-secondary' : 'btn-primary'"
+                :disabled="isTogglingProxy"
+                @click="toggleSystemProxy"
+              >
+                <span v-if="isTogglingProxy">{{ systemProxyActive ? '关闭中...' : '开启中...' }}</span>
+                <span v-else>{{ systemProxyActive ? '关闭本机代理' : '开启本机代理' }}</span>
+              </button>
+            </div>
+
+            <p class="text-xs text-gray-400 mt-1.5">
+              ⚠️ 首次开启需要输入系统密码
+            </p>
           </div>
         </div>
 

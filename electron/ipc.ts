@@ -6,6 +6,7 @@ import { IPC_CHANNELS } from '../src/services/types'
 import * as sqlite from './db/sqlite'
 import { startProxy, stopProxy, getProxyStatus, getLocalIP, setDomainFilters, setDeviceAliases } from './proxy/mitm-server'
 import { generateCACert, isCAGenerated, getCertFilePath } from './proxy/ca-cert'
+import { setSystemProxy, clearSystemProxy, getSystemProxyStatus } from './proxy/system-proxy'
 import { executeCompare, testConnection, isCompareInProgress } from './services/ai-service'
 import { exportCompareResult } from './services/export-service'
 import { SSLErrorLogger } from './services/ssl-logger'
@@ -49,6 +50,31 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       return { success: true }
     } catch (error: any) {
       return { success: false, error: error.message }
+    }
+  })
+
+  // ===== 系统代理 =====
+  ipcMain.handle(IPC_CHANNELS.PROXY_SET_SYSTEM, async (_event, port: number) => {
+    try {
+      return await setSystemProxy(port)
+    } catch (error: any) {
+      return { success: false, message: error.message }
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.PROXY_CLEAR_SYSTEM, async () => {
+    try {
+      return await clearSystemProxy()
+    } catch (error: any) {
+      return { success: false, message: error.message }
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.PROXY_GET_SYSTEM_STATUS, async (_event, port: number) => {
+    try {
+      return await getSystemProxyStatus(port)
+    } catch (error: any) {
+      return { isActive: false, details: [], error: error.message }
     }
   })
 

@@ -1,6 +1,6 @@
 {
   "name": "powercatch",
-  "version": "1.0.10",
+  "version": "1.0.11",
   "description": "PowerCatch - HTTP/HTTPS 抓包调试工具，支持 AI 智能对比分析",
   "author": "Peifeng Zhang <zzzpeifeng@163.com>",
   "main": "dist-electron/main.js",
@@ -47,6 +47,7 @@
     "vite": "^5.1.4",
     "vite-plugin-electron": "^0.28.4",
     "vite-plugin-electron-renderer": "^0.14.5",
+    "vitest": "^4.1.9",
     "vue-tsc": "^2.0.6"
   }
 }

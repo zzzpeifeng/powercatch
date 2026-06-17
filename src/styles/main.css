@@ -203,6 +203,7 @@
     display: flex;
     align-items: center;
     gap: 8px;
+    height: 48px;
     min-height: 48px;
     box-sizing: border-box;
     padding: 6px 10px;
@@ -218,6 +219,20 @@
   .scroller-item.selected {
     background-color: #eff6ff;
     border-left: 3px solid var(--color-primary);
+  }
+
+  /* ---------- 虚拟滚动容器 ---------- */
+  .request-list-scroller {
+    overflow-y: auto !important;
+  }
+
+  .vue-recycle-scroller__item-wrapper {
+    /* 让项目从底部开始排列，新请求出现在顶部 */
+  }
+
+  .vue-recycle-scroller__item {
+    /* 确保虚拟滚动项不会撑开高度 */
+    overflow: hidden;
   }
 
   /* ---------- 标签输入 ---------- */

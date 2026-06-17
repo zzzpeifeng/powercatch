@@ -1,6 +1,12 @@
 /**
  * 请求数据状态管理
  * 内存优先策略：录制中仅存内存 Map，不写 DB
+ *
+ * 性能优化：
+ * - requestIndexMap: O(1) 按 ID 查找请求，替代 findIndex O(n)
+ * - push 代替 unshift: O(1) 追加，避免每次 flush 移动整个数组
+ * - filteredRequests 反转输出: 新请求在顶部显示
+ * - 动态 flush 间隔: 列表越大刷新越慢，减少渲染压力
  */
 import { defineStore } from 'pinia'
 import { ref, computed, reactive } from 'vue'
@@ -8,13 +14,17 @@ import type { CaptureRequest, RequestUpdate, CompareResult, LoadingStates, Proxy
 import { ipc } from '../services/ipc'
 import { generateMatchKey, groupByMatchKey } from '../utils/request-matcher'
 
-/** 批量刷新的间隔（ms） */
-const FLUSH_INTERVAL = 50
+/** 最小批量刷新间隔（ms） */
+const FLUSH_INTERVAL_MIN = 50
+/** 最大批量刷新间隔（ms） */
+const FLUSH_INTERVAL_MAX = 500
 
 export const useRequestStore = defineStore('request', () => {
   // ===== State =====
 
-  /** 内存中的请求列表（录制中） */
+  /** 内存中的请求列表（录制中）
+   *  顺序：[oldest, ..., newest]（push 追加，O(1)）
+   */
   const requests = ref<CaptureRequest[]>([])
 
   /** 当前选中的请求（用于详情查看） */
@@ -59,47 +69,110 @@ export const useRequestStore = defineStore('request', () => {
   const viewMode = ref<'list' | 'group'>('list')
 
   /** 内存最大条数 */
-  const MAX_MEMORY_REQUESTS = 500
+  const MAX_MEMORY_REQUESTS = 5000
+
+  /** ID → 数组索引 映射，加速 O(1) 查找 */
+  const requestIndexMap = new Map<string, number>()
 
   /** 批量缓冲（非响应式，避免频繁 trigger） */
   const pendingRequests: CaptureRequest[] = []
 
-  /** flush 定时器 */
-  let flushTimer: ReturnType<typeof setInterval> | null = null
+  /** flush 定时器 ID */
+  let flushTimer: ReturnType<typeof setTimeout> | null = null
+
+  // ===== Index Map Helpers =====
+
+  /** 重建完整索引映射（O(n)） */
+  function rebuildIndexMap(): void {
+    requestIndexMap.clear()
+    for (let i = 0; i < requests.value.length; i++) {
+      requestIndexMap.set(requests.value[i].id, i)
+    }
+  }
+
+  /** 增量追加新条目到索引映射 */
+  function appendToIndexMap(startIdx: number, items: CaptureRequest[]): void {
+    for (let i = 0; i < items.length; i++) {
+      requestIndexMap.set(items[i].id, startIdx + i)
+    }
+  }
+
+  // ===== Flush Logic =====
+
+  /** 动态计算 flush 间隔：列表越大，间隔越长 */
+  function getFlushInterval(): number {
+    const count = requests.value.length
+    if (count < 1000) return FLUSH_INTERVAL_MIN
+    if (count < 3000) return 200
+    return FLUSH_INTERVAL_MAX
+  }
 
   /** 向内存追加（批量写入，减少响应式触发次数） */
   function flushPending(): void {
     if (pendingRequests.length === 0) return
     const batch = pendingRequests.splice(0, pendingRequests.length)
+    const startIdx = requests.value.length
+    requests.value.push(...batch)
     console.log(`[Store] flushPending: 写入 ${batch.length} 条，内存总数 ${requests.value.length}`)
-    requests.value.unshift(...batch)
+
+    // 增量更新索引（避免全量重建）
+    appendToIndexMap(startIdx, batch)
 
     // 超出上限，淘汰最老的未选中请求
     if (requests.value.length > MAX_MEMORY_REQUESTS) {
-      const unselected = requests.value.filter((r) => !r.selected && !r.checked)
-      if (unselected.length > 0) {
-        const excess = requests.value.length - MAX_MEMORY_REQUESTS
-        const toRemove = unselected.slice(0, excess)
-        if (toRemove.length > 0) {
-          const removeIds = new Set(toRemove.map((r) => r.id))
-          requests.value = requests.value.filter((r) => !removeIds.has(r.id))
+      const excess = requests.value.length - MAX_MEMORY_REQUESTS
+
+      // requests.value 顺序为 [oldest, ..., newest]（push 追加）
+      // 最老的请求在数组开头，优先淘汰
+      const toRemoveIds = new Set<string>()
+
+      // 第一遍：收集最老的未选中请求
+      for (let i = 0; i < requests.value.length && toRemoveIds.size < excess; i++) {
+        const req = requests.value[i]
+        if (!req.selected && !req.checked) {
+          toRemoveIds.add(req.id)
         }
       }
+
+      // 第二遍：如果还不够，收集最老的已选中请求（强制淘汰）
+      if (toRemoveIds.size < excess) {
+        for (let i = 0; i < requests.value.length && toRemoveIds.size < excess; i++) {
+          const req = requests.value[i]
+          if (!toRemoveIds.has(req.id)) {
+            toRemoveIds.add(req.id)
+          }
+        }
+      }
+
+      // 单次 filter 创建新数组（比原来 reverse + 多次遍历更高效）
+      requests.value = requests.value.filter((r) => !toRemoveIds.has(r.id))
+      // 淘汰后必须重建索引（元素位置变了）
+      rebuildIndexMap()
+
+      // 同步清理 selectedRequest 和 checkedRequests
+      if (selectedRequest.value && toRemoveIds.has(selectedRequest.value.id)) {
+        selectedRequest.value = null
+      }
+      checkedRequests.value = checkedRequests.value.filter((r) => !toRemoveIds.has(r.id))
     }
   }
 
-  /** 启动 flush 定时器 */
+  /** 启动 flush 定时器（递归 setTimeout，支持动态间隔） */
   function startFlushTimer(): void {
     if (flushTimer) return
-    flushTimer = setInterval(() => {
-      flushPending()
-    }, FLUSH_INTERVAL)
+    function scheduleNext(): void {
+      flushTimer = setTimeout(() => {
+        flushPending()
+        scheduleNext()
+      }, getFlushInterval())
+    }
+    scheduleNext()
   }
 
   /** 停止 flush 定时器 */
   function stopFlushTimer(): void {
     if (flushTimer) {
-      clearInterval(flushTimer)
+      clearTimeout(flushTimer)
       flushTimer = null
     }
     // 退出前把剩余缓冲全部写入
@@ -122,12 +195,17 @@ export const useRequestStore = defineStore('request', () => {
 
   // ===== Computed =====
 
-  /** 过滤后的请求列表 */
+  /** 过滤后的请求列表（反转顺序：最新在前）
+   *  内存数组 [oldest, ..., newest] → 显示 [newest, ..., oldest]
+   */
   const filteredRequests = computed<CaptureRequest[]>(() => {
+    const source = requests.value
     if (domainFilters.value.length === 0) {
-      return requests.value
+      // 无过滤：直接反转（slice 避免修改原数组）
+      return source.slice().reverse()
     }
-    return requests.value.filter((req) => {
+    // 有过滤：先过滤再反转
+    const filtered = source.filter((req) => {
       return domainFilters.value.some((filter) => {
         // 通配符匹配：支持 * 作为任意字符通配符（glob 风格）
         if (filter.includes('*')) {
@@ -140,6 +218,7 @@ export const useRequestStore = defineStore('request', () => {
         return req.host === filter
       })
     })
+    return filtered.reverse()
   })
 
   /** 已捕获总数 */
@@ -169,10 +248,9 @@ export const useRequestStore = defineStore('request', () => {
   /** 添加新请求或更新已有请求（来自代理） */
   function addRequest(request: CaptureRequest): void {
     const id = request.id
-    // 检查是否已有相同 ID 的请求（响应已到达的更新）
-    // 先在已写入内存的列表中查找
-    const idx = requests.value.findIndex(r => r.id === id)
-    if (idx >= 0) {
+    // O(1) 查找：检查是否已有相同 ID 的请求（响应已到达的更新）
+    const idx = requestIndexMap.get(id)
+    if (idx !== undefined) {
       // 找到：原地更新响应字段（触发 Vue 响应式）
       const target = requests.value[idx]
       if (request.statusCode !== null && request.statusCode !== undefined) {
@@ -187,6 +265,7 @@ export const useRequestStore = defineStore('request', () => {
       return
     }
     // 还未 flush 到内存（在 pendingRequests 里）：就地更新缓冲
+    // pendingRequests 通常很小（几十条），线性查找可接受
     const pendingIdx = pendingRequests.findIndex(r => r.id === id)
     if (pendingIdx >= 0) {
       const target = pendingRequests[pendingIdx]
@@ -215,9 +294,9 @@ export const useRequestStore = defineStore('request', () => {
   function updateRequest(update: RequestUpdate): void {
     const { id, statusCode, duration, requestHeaders, requestBody, responseHeaders, responseBody } = update
 
-    // 在已写入内存的列表中查找
-    const idx = requests.value.findIndex(r => r.id === id)
-    if (idx >= 0) {
+    // O(1) 查找
+    const idx = requestIndexMap.get(id)
+    if (idx !== undefined) {
       const target = requests.value[idx]
       if (statusCode !== null && statusCode !== undefined) {
         target.statusCode = statusCode
@@ -254,15 +333,24 @@ export const useRequestStore = defineStore('request', () => {
   function clearRequests(): void {
     pendingRequests.length = 0  // 清空批量缓冲
     requests.value = []
+    requestIndexMap.clear()      // 清空索引
     selectedRequest.value = null
     checkedRequests.value = []
     compareResult.value = null
     streamingText.value = ''
   }
 
-  /** 选中请求查看详情 */
+  /** 选中请求查看详情（设置 request.selected 防止被淘汰逻辑误删） */
   function selectRequest(request: CaptureRequest | null): void {
+    // 清除旧选中状态
+    if (selectedRequest.value) {
+      selectedRequest.value.selected = false
+    }
+    // 设置新选中
     selectedRequest.value = request
+    if (request) {
+      request.selected = true
+    }
   }
 
   /** 勾选/取消勾选请求（用于对比） */

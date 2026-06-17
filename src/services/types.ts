@@ -184,6 +184,25 @@ export interface ProxyInfo {
   certUrl: string
 }
 
+/** 系统代理操作结果 */
+export interface ProxyOperationResult {
+  success: boolean
+  message: string
+}
+
+/** 系统代理状态详情 */
+export interface SystemProxyDetail {
+  serviceName: string
+  http: string
+  https: string
+}
+
+/** 系统代理状态 */
+export interface SystemProxyStatus {
+  isActive: boolean
+  details: SystemProxyDetail[]
+}
+
 /** IPC 通道名称常量 */
 export const IPC_CHANNELS = {
   // 代理控制
@@ -193,6 +212,11 @@ export const IPC_CHANNELS = {
   PROXY_NEW_REQUEST: 'proxy:new-request',
   PROXY_REQUEST_UPDATED: 'proxy:request-updated',
   PROXY_SET_DOMAIN_FILTERS: 'proxy:set-domain-filters',
+
+  // 系统代理
+  PROXY_SET_SYSTEM: 'proxy:set-system',
+  PROXY_CLEAR_SYSTEM: 'proxy:clear-system',
+  PROXY_GET_SYSTEM_STATUS: 'proxy:get-system-status',
 
   // 请求数据
   REQUEST_PERSIST: 'request:persist',
