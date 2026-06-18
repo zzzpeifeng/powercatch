@@ -10,14 +10,34 @@
  */
 import { defineStore } from 'pinia'
 import { ref, computed, reactive } from 'vue'
-import type { CaptureRequest, RequestUpdate, CompareResult, LoadingStates, ProxyStatus } from '../services/types'
+import type { CaptureRequest, RequestUpdate, CompareResult, LoadingStates, ProxyStatus, DomainSortMode, DomainNode, FlatTreeNode } from '../services/types'
 import { ipc } from '../services/ipc'
 import { generateMatchKey, groupByMatchKey } from '../utils/request-matcher'
+import { buildDomainTree, flattenTree, matchSearch } from '../utils/tree-builder'
 
 /** 最小批量刷新间隔（ms） */
 const FLUSH_INTERVAL_MIN = 50
 /** 最大批量刷新间隔（ms） */
 const FLUSH_INTERVAL_MAX = 500
+
+/** localStorage key：折叠的域名集合 */
+const COLLAPSED_DOMAINS_KEY = 'powercatch-collapsed-domains'
+
+/** 从 localStorage 加载折叠的域名集合 */
+function loadCollapsedDomains(): Set<string> {
+  try {
+    const stored = localStorage.getItem(COLLAPSED_DOMAINS_KEY)
+    if (stored) return new Set(JSON.parse(stored))
+  } catch {}
+  return new Set()
+}
+
+/** 保存折叠的域名集合到 localStorage */
+function saveCollapsedDomains(domains: Set<string>): void {
+  try {
+    localStorage.setItem(COLLAPSED_DOMAINS_KEY, JSON.stringify([...domains]))
+  } catch {}
+}
 
 export const useRequestStore = defineStore('request', () => {
   // ===== State =====
@@ -66,7 +86,16 @@ export const useRequestStore = defineStore('request', () => {
   const deviceAliases = ref<Record<string, string>>({})
 
   /** 视图模式：list（列表）或 group（分组） */
-  const viewMode = ref<'list' | 'group'>('list')
+  const viewMode = ref<'list' | 'group'>('group')
+
+  /** 搜索关键词（从 RequestList 迁移到 Store，供树形 computed 使用） */
+  const searchQuery = ref<string>('')
+
+  /** 折叠的域名集合（存"已折叠"，默认展开） */
+  const collapsedDomains = ref<Set<string>>(loadCollapsedDomains())
+
+  /** 域名排序模式 */
+  const domainSortMode = ref<DomainSortMode>('latest')
 
   /** 内存最大条数 */
   const MAX_MEMORY_REQUESTS = 5000
@@ -236,6 +265,33 @@ export const useRequestStore = defineStore('request', () => {
   /** 分组视图数据 */
   const groupedRequests = computed(() => {
     return groupByMatchKey(filteredRequests.value)
+  })
+
+  /** 按域名分组的树结构 */
+  const groupedTreeRequests = computed<DomainNode[]>(() => {
+    return buildDomainTree(filteredRequests.value, domainSortMode.value)
+  })
+
+  /** 展平的树行（group 模式，含搜索过滤+折叠） */
+  const flatTreeRows = computed<FlatTreeNode[]>(() => {
+    return flattenTree(groupedTreeRequests.value, collapsedDomains.value, searchQuery.value)
+  })
+
+  /** 统一显示行（list 模式包装为 FlatTreeNode，group 模式用 flatTreeRows） */
+  const displayRows = computed<FlatTreeNode[]>(() => {
+    if (viewMode.value === 'list') {
+      const query = searchQuery.value.trim().toLowerCase()
+      const source = query
+        ? filteredRequests.value.filter(req => matchSearch(req, query))
+        : filteredRequests.value
+      return source.map(req => ({
+        type: 'request' as const,
+        key: req.id,
+        depth: 0,
+        request: req,
+      }))
+    }
+    return flatTreeRows.value
   })
 
   /** 获取设备名称 */
@@ -523,6 +579,51 @@ export const useRequestStore = defineStore('request', () => {
     viewMode.value = viewMode.value === 'list' ? 'group' : 'list'
   }
 
+  /** 设置视图模式（Tab 切换用） */
+  function setViewMode(mode: 'list' | 'group'): void {
+    viewMode.value = mode
+  }
+
+  /** 设置搜索关键词 */
+  function setSearchQuery(query: string): void {
+    searchQuery.value = query
+  }
+
+  /** 切换域名展开/折叠 */
+  function toggleDomainExpand(host: string): void {
+    const next = new Set(collapsedDomains.value)
+    if (next.has(host)) next.delete(host)
+    else next.add(host)
+    collapsedDomains.value = next
+    saveCollapsedDomains(next)
+  }
+
+  /** 域名是否展开 */
+  function isDomainExpanded(host: string): boolean {
+    return !collapsedDomains.value.has(host)
+  }
+
+  /** 设置域名排序模式 */
+  function setDomainSortMode(mode: DomainSortMode): void {
+    domainSortMode.value = mode
+  }
+
+  /** 展开所有域名 */
+  function expandAllDomains(): void {
+    collapsedDomains.value = new Set()
+    saveCollapsedDomains(new Set())
+  }
+
+  /** 折叠所有域名 */
+  function collapseAllDomains(): void {
+    const all = new Set<string>()
+    for (const node of groupedTreeRequests.value) {
+      all.add(node.host)
+    }
+    collapsedDomains.value = all
+    saveCollapsedDomains(all)
+  }
+
   return {
     // State
     requests,
@@ -538,6 +639,9 @@ export const useRequestStore = defineStore('request', () => {
     loadingStates,
     deviceAliases,
     viewMode,
+    searchQuery,
+    collapsedDomains,
+    domainSortMode,
     // Computed
     filteredRequests,
     totalCount,
@@ -545,6 +649,9 @@ export const useRequestStore = defineStore('request', () => {
     checkedCount,
     canCompare,
     groupedRequests,
+    groupedTreeRequests,
+    flatTreeRows,
+    displayRows,
     getDeviceName,
     // Actions
     addRequest,
@@ -563,6 +670,13 @@ export const useRequestStore = defineStore('request', () => {
     subscribeToNewRequests,
     subscribeToStreamEvents,
     toggleViewMode,
+    setViewMode,
+    setSearchQuery,
+    toggleDomainExpand,
+    isDomainExpanded,
+    setDomainSortMode,
+    expandAllDomains,
+    collapseAllDomains,
     /** 手动刷新缓冲（调试用） */
     flushPending,
     /** 销毁 store（清理定时器） */

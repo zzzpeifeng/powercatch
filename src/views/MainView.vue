@@ -32,7 +32,7 @@
       @compare="handleCompare"
       @export-result="showExportMenu = true"
       @clear="handleClear"
-      @toggle-view="requestStore.toggleViewMode()"
+      @switch-view="(mode: 'list' | 'group') => requestStore.setViewMode(mode)"
     />
 
     <!-- 主内容区：可拖拽上下分割 -->
@@ -44,7 +44,6 @@
       >
         <!-- 请求列表 -->
         <RequestList
-          :requests="requestStore.filteredRequests"
           :selected-request="requestStore.selectedRequest"
           :is-recording="requestStore.isRecording"
           @select="handleSelectRequest"
@@ -87,7 +86,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useRequestStore } from '../stores/request-store'
 import { useSettingsStore } from '../stores/settings-store'
@@ -116,6 +115,14 @@ const domainFilterRef = ref<InstanceType<typeof DomainFilter> | null>(null)
 const showExportMenu = ref<boolean>(false)
 const containerRef = ref<HTMLElement | null>(null)
 const bannerHidden = ref<boolean>(false)
+
+/** 当前键盘导航焦点在 displayRows 中的索引（group 模式专用，含域名头） */
+const navigationIndex = ref<number>(-1)
+
+// 切换视图模式时重置焦点
+watch(() => requestStore.viewMode, () => {
+  navigationIndex.value = -1
+})
 
 // 拖拽分割线：上下比例（上半区百分比），默认 60/40
 const splitPct = ref<number>(60)
@@ -217,6 +224,11 @@ async function handleCompare(): Promise<void> {
 
 function handleSelectRequest(request: CaptureRequest): void {
   requestStore.selectRequest(request)
+  // 同步 navigationIndex 到该请求在 displayRows 中的位置
+  if (requestStore.viewMode === 'group') {
+    const idx = requestStore.displayRows.findIndex(r => r.type === 'request' && r.request?.id === request.id)
+    if (idx >= 0) navigationIndex.value = idx
+  }
 }
 
 async function handleExport(format: ExportFormat): Promise<void> {
@@ -251,40 +263,125 @@ async function handleDisableProxy(): Promise<void> {
 
 /** 列表键盘导航 — 上移 */
 function handleNavigateUp(): void {
-  const list = requestStore.filteredRequests
-  if (list.length === 0) return
+  const rows = requestStore.displayRows
+  if (rows.length === 0) return
 
-  const currentIndex = requestStore.selectedRequest
-    ? list.findIndex((r) => r.id === requestStore.selectedRequest!.id)
-    : -1
+  if (requestStore.viewMode === 'list') {
+    // list 模式：在请求行间移动（跳过域名行）
+    const reqRows = rows.filter(r => r.type === 'request')
+    if (reqRows.length === 0) return
+    const curReqIdx = requestStore.selectedRequest
+      ? reqRows.findIndex(r => r.request!.id === requestStore.selectedRequest!.id)
+      : -1
+    const newReqIdx = curReqIdx <= 0 ? reqRows.length - 1 : curReqIdx - 1
+    requestStore.selectRequest(reqRows[newReqIdx].request!)
+    return
+  }
 
-  const newIndex = currentIndex <= 0 ? list.length - 1 : currentIndex - 1
-  requestStore.selectRequest(list[newIndex])
+  // group 模式：在所有可见行间移动（含域名头）
+  const newIndex = navigationIndex.value <= 0 ? rows.length - 1 : navigationIndex.value - 1
+  navigationIndex.value = newIndex
+  const row = rows[newIndex]
+  if (row.type === 'request' && row.request) {
+    requestStore.selectRequest(row.request)
+  }
 }
 
 /** 列表键盘导航 — 下移 */
 function handleNavigateDown(): void {
-  const list = requestStore.filteredRequests
-  if (list.length === 0) return
+  const rows = requestStore.displayRows
+  if (rows.length === 0) return
 
-  const currentIndex = requestStore.selectedRequest
-    ? list.findIndex((r) => r.id === requestStore.selectedRequest!.id)
-    : -1
+  if (requestStore.viewMode === 'list') {
+    const reqRows = rows.filter(r => r.type === 'request')
+    if (reqRows.length === 0) return
+    const curReqIdx = requestStore.selectedRequest
+      ? reqRows.findIndex(r => r.request!.id === requestStore.selectedRequest!.id)
+      : -1
+    const newReqIdx = curReqIdx < 0 || curReqIdx >= reqRows.length - 1 ? 0 : curReqIdx + 1
+    requestStore.selectRequest(reqRows[newReqIdx].request!)
+    return
+  }
 
-  const newIndex = currentIndex < 0 || currentIndex >= list.length - 1 ? 0 : currentIndex + 1
-  requestStore.selectRequest(list[newIndex])
+  const newIndex = navigationIndex.value < 0 || navigationIndex.value >= rows.length - 1
+    ? 0
+    : navigationIndex.value + 1
+  navigationIndex.value = newIndex
+  const row = rows[newIndex]
+  if (row.type === 'request' && row.request) {
+    requestStore.selectRequest(row.request)
+  }
 }
 
-/** 空格键切换当前选中请求的勾选状态 */
+/** 空格键：请求行 toggleCheck / 域名行 toggle 展开折叠 */
 function handleToggleSelect(): void {
-  if (!requestStore.selectedRequest) return
-
   const activeEl = document.activeElement
   if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || (activeEl as HTMLElement).isContentEditable)) {
     return
   }
 
-  requestStore.toggleCheck(requestStore.selectedRequest)
+  // group 模式下检查焦点是否在域名行
+  if (requestStore.viewMode === 'group' && navigationIndex.value >= 0) {
+    const row = requestStore.displayRows[navigationIndex.value]
+    if (row?.type === 'domain' && row.host) {
+      requestStore.toggleDomainExpand(row.host)
+      return
+    }
+  }
+
+  // 请求行：toggle check
+  if (requestStore.selectedRequest) {
+    requestStore.toggleCheck(requestStore.selectedRequest)
+  }
+}
+
+/** ← 键盘：域名头折叠 / 请求行跳到父域名头 */
+function handleNavigateLeft(): void {
+  if (requestStore.viewMode !== 'group') return
+  const rows = requestStore.displayRows
+  if (rows.length === 0) return
+
+  // 确定当前焦点索引
+  let idx = navigationIndex.value
+  if (idx < 0 || idx >= rows.length) {
+    // 没有焦点时，尝试从 selectedRequest 反查
+    if (requestStore.selectedRequest) {
+      idx = rows.findIndex(r => r.type === 'request' && r.request?.id === requestStore.selectedRequest!.id)
+    }
+    if (idx < 0) return
+  }
+
+  const currentRow = rows[idx]
+
+  if (currentRow.type === 'domain') {
+    // 域名头：折叠
+    requestStore.toggleDomainExpand(currentRow.host!)
+  } else if (currentRow.depth > 0) {
+    // 请求行：跳到父域名头
+    for (let i = idx - 1; i >= 0; i--) {
+      if (rows[i].type === 'domain') {
+        navigationIndex.value = i
+        break
+      }
+    }
+  }
+}
+
+/** → 键盘：域名头展开 */
+function handleNavigateRight(): void {
+  if (requestStore.viewMode !== 'group') return
+  const rows = requestStore.displayRows
+  if (rows.length === 0) return
+
+  let idx = navigationIndex.value
+  if (idx < 0 || idx >= rows.length) return
+
+  const currentRow = rows[idx]
+
+  if (currentRow.type === 'domain') {
+    requestStore.toggleDomainExpand(currentRow.host!)
+  }
+  // 请求行：无操作
 }
 
 // 键盘快捷键
@@ -306,6 +403,8 @@ useKeyboardShortcuts(
     navigateUp: handleNavigateUp,
     navigateDown: handleNavigateDown,
     toggleSelect: handleToggleSelect,
+    navigateLeft: handleNavigateLeft,
+    navigateRight: handleNavigateRight,
   })
 )
 </script>

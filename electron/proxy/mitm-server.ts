@@ -324,9 +324,21 @@ export async function startProxy(port: number, win: BrowserWindow): Promise<bool
     // 请求拦截
     proxy.onRequest((ctx: any, callback: any) => {
       const clientIp = ctx.clientToProxyRequest.socket?.remoteAddress || 'unknown'
-      const url = ctx.clientToProxyRequest.url || ''
-      const host = ctx.clientToProxyRequest.headers?.host || parseUrlHost(url)
+      const rawUrl = ctx.clientToProxyRequest.url || ''
+      const host = ctx.clientToProxyRequest.headers?.host || parseUrlHost(rawUrl)
       const method = (ctx.clientToProxyRequest.method || 'GET').toUpperCase() as HttpMethod
+
+      // 检测 SSL 连接（HTTPS MITM 场景）
+      const isSSL = ctx.isSSL === true ||
+                    (ctx.clientToProxyRequest.socket as any)?.encrypted === true ||
+                    (ctx.clientToProxyRequest.connection as any)?.encrypted === true
+
+      // 构建完整 URL（确保包含协议前缀）
+      let url = rawUrl
+      if (!rawUrl.startsWith('http://') && !rawUrl.startsWith('https://')) {
+        const protocol = isSSL ? 'https://' : 'http://'
+        url = `${protocol}${host}${rawUrl}`
+      }
 
       // 调试日志：记录收到的请求
       console.log(`[Proxy] 📥 收到请求: ${method} ${url} (来自: ${clientIp})`)

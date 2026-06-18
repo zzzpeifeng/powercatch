@@ -345,3 +345,43 @@ export const DEFAULT_PROMPT_V2 = `对比以下两个 JSON 响应的差异。
 忽略所有 ID、时间戳、URL 等动态字段。
 只关注业务字段差异：金额、状态、数量、结构。
 输出格式：关键差异 | 精度差异 | 字段缺失 | 总结`
+
+/** 域名排序模式 */
+export type DomainSortMode = 'latest' | 'count' | 'alphabetical'
+
+/** 树节点类型 */
+export type TreeNodeType = 'domain' | 'request'
+
+/** 域名节点（树的非叶子节点） */
+export interface DomainNode {
+  type: 'domain'
+  host: string
+  children: CaptureRequest[]
+  count: number
+  hasError: boolean
+  pendingCount: number
+  latestCapturedAt: string
+  hasSelected: boolean
+  hasChecked: boolean
+}
+
+/** 展平后的虚拟滚动行（统一格式） */
+export interface FlatTreeNode {
+  type: TreeNodeType
+  key: string
+  depth: number
+  /** domain 字段 */
+  host?: string
+  /** 带协议前缀的域名，如 'https://api.example.com' */
+  displayHost?: string
+  count?: number
+  /** 搜索时的总数（显示 "5/12 条"） */
+  totalCount?: number
+  hasError?: boolean
+  pendingCount?: number
+  expanded?: boolean
+  hasSelected?: boolean
+  hasChecked?: boolean
+  /** request 字段 */
+  request?: CaptureRequest
+}

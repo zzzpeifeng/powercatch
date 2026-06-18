@@ -49,13 +49,27 @@
       清空
     </button>
 
-    <!-- 视图切换 -->
-    <button
-      class="btn-ghost btn-sm text-xs"
-      @click="$emit('toggle-view')"
-    >
-      {{ viewMode === 'list' ? '列表' : '分组' }}
-    </button>
+    <!-- 视图切换 Tab -->
+    <div class="flex items-center rounded-lg bg-gray-100 dark:bg-gray-700 p-0.5">
+      <button
+        class="px-3 py-1 text-xs font-medium rounded-md transition-all duration-200"
+        :class="viewMode === 'group'
+          ? 'bg-white dark:bg-gray-800 text-primary-600 dark:text-primary-400 shadow-sm'
+          : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'"
+        @click="$emit('switch-view', 'group')"
+      >
+        Structure
+      </button>
+      <button
+        class="px-3 py-1 text-xs font-medium rounded-md transition-all duration-200"
+        :class="viewMode === 'list'
+          ? 'bg-white dark:bg-gray-800 text-primary-600 dark:text-primary-400 shadow-sm'
+          : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'"
+        @click="$emit('switch-view', 'list')"
+      >
+        Sequence
+      </button>
+    </div>
   </div>
 </template>
 
@@ -79,6 +93,6 @@ defineEmits<{
   (e: 'compare'): void
   (e: 'export-result'): void
   (e: 'clear'): void
-  (e: 'toggle-view'): void
+  (e: 'switch-view', mode: 'list' | 'group'): void
 }>()
 </script>

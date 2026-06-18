@@ -20,7 +20,7 @@
           <span v-if="request.statusCode" :class="statusClass">{{ request.statusCode }}</span>
           <span v-if="request.duration !== null">{{ request.duration }}ms</span>
           <span>{{ request.deviceName || request.clientIp }}</span>
-          <span>{{ request.host }}</span>
+          <span>{{ formatHostWithProtocol(request.host, request.url) }}</span>
           <span class="text-gray-400">{{ formatTime(request.capturedAt) }}</span>
         </div>
       </div>
@@ -149,6 +149,7 @@
 import { ref, computed, type Ref } from 'vue'
 import type { CaptureRequest } from '../services/types'
 import { prettyJson, tryParseJson } from '../utils/json-formatter'
+import { formatHostWithProtocol } from '../utils/url-formatter'
 import JsonPretty from 'vue-json-pretty'
 import 'vue-json-pretty/lib/styles.css'
 

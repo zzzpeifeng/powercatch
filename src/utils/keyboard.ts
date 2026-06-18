@@ -83,8 +83,10 @@ export function createMainShortcuts(handlers: {
   navigateUp: () => void
   navigateDown: () => void
   toggleSelect: () => void
+  navigateLeft?: () => void
+  navigateRight?: () => void
 }): KeyboardShortcut[] {
-  return [
+  const shortcuts: KeyboardShortcut[] = [
     {
       key: 'r',
       meta: true,
@@ -136,4 +138,22 @@ export function createMainShortcuts(handlers: {
       description: 'Space 切换当前请求勾选状态',
     },
   ]
+
+  if (handlers.navigateLeft) {
+    shortcuts.push({
+      key: 'ArrowLeft',
+      action: handlers.navigateLeft,
+      description: '← 域名折叠/跳父节点',
+    })
+  }
+
+  if (handlers.navigateRight) {
+    shortcuts.push({
+      key: 'ArrowRight',
+      action: handlers.navigateRight,
+      description: '→ 域名展开',
+    })
+  }
+
+  return shortcuts
 }
