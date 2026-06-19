@@ -1,5 +1,27 @@
 <template>
   <div class="flex items-center gap-3 px-3 py-2 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+    <!-- 视图切换 Tab -->
+    <div class="flex items-center rounded-lg bg-gray-100 dark:bg-gray-700 p-0.5">
+      <button
+        class="px-3 py-1 text-xs font-medium rounded-md transition-all duration-200"
+        :class="viewMode === 'group'
+          ? 'bg-white dark:bg-gray-800 text-primary-600 dark:text-primary-400 shadow-sm'
+          : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'"
+        @click="$emit('switch-view', 'group')"
+      >
+        Structure
+      </button>
+      <button
+        class="px-3 py-1 text-xs font-medium rounded-md transition-all duration-200"
+        :class="viewMode === 'list'
+          ? 'bg-white dark:bg-gray-800 text-primary-600 dark:text-primary-400 shadow-sm'
+          : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'"
+        @click="$emit('switch-view', 'list')"
+      >
+        Sequence
+      </button>
+    </div>
+
     <!-- 录制按钮 -->
     <button
       class="flex items-center gap-2 px-4 py-1.5 rounded-full text-sm font-medium transition-all duration-200"
@@ -49,27 +71,6 @@
       清空
     </button>
 
-    <!-- 视图切换 Tab -->
-    <div class="flex items-center rounded-lg bg-gray-100 dark:bg-gray-700 p-0.5">
-      <button
-        class="px-3 py-1 text-xs font-medium rounded-md transition-all duration-200"
-        :class="viewMode === 'group'
-          ? 'bg-white dark:bg-gray-800 text-primary-600 dark:text-primary-400 shadow-sm'
-          : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'"
-        @click="$emit('switch-view', 'group')"
-      >
-        Structure
-      </button>
-      <button
-        class="px-3 py-1 text-xs font-medium rounded-md transition-all duration-200"
-        :class="viewMode === 'list'
-          ? 'bg-white dark:bg-gray-800 text-primary-600 dark:text-primary-400 shadow-sm'
-          : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'"
-        @click="$emit('switch-view', 'list')"
-      >
-        Sequence
-      </button>
-    </div>
   </div>
 </template>
 
