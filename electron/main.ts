@@ -2,16 +2,18 @@
  * Electron 主进程入口
  * 负责窗口管理、IPC 注册、服务初始化
  */
-import { app, BrowserWindow, Menu, nativeImage, nativeTheme } from 'electron'
+import { app, BrowserWindow, Menu, nativeImage, nativeTheme, globalShortcut } from 'electron'
 import { join } from 'path'
 import { initDatabase, closeDatabase, getAllSettings, saveAllSettings } from './db/sqlite'
 import { registerIpcHandlers } from './ipc'
-import { setDomainFilters, setDeviceAliases, getLocalIP } from './proxy/mitm-server'
+import { setDomainFilters, setDeviceAliases, getLocalIP, stopProxy } from './proxy/mitm-server'
 import { startCertServer, stopCertServer } from './proxy/cert-server'
 import { preGenerateCA, cleanupOldCACerts } from './proxy/ca-cert'
+import { clearSystemProxy, hasPendingSnapshot } from './proxy/system-proxy'
 
 let mainWindow: BrowserWindow | null = null
 let isQuitting = false
+let isCleaningUp = false
 
 /**
  * 创建应用菜单
@@ -36,6 +38,20 @@ function createAppMenu(): void {
         { role: 'copy' },
         { role: 'paste' },
         { role: 'selectAll' },
+      ],
+    },
+    {
+      label: '视图',
+      submenu: [
+        { role: 'reload' },
+        { role: 'forceReload' },
+        { role: 'toggleDevTools' },
+        { type: 'separator' },
+        { role: 'resetZoom' },
+        { role: 'zoomIn' },
+        { role: 'zoomOut' },
+        { type: 'separator' },
+        { role: 'togglefullscreen' },
       ],
     },
     {
@@ -119,6 +135,13 @@ function createAndInitWindow(): void {
   mainWindow.on('closed', () => {
     mainWindow = null
   })
+
+  // 注册全局快捷键 Cmd+Option+I 打开开发者工具
+  globalShortcut.register('CmdOrCtrl+Alt+I', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.toggleDevTools()
+    }
+  })
 }
 
 /**
@@ -154,6 +177,21 @@ app.whenReady().then(async () => {
 
   createAndInitWindow()
 
+  // 启动恢复：检查上次是否有异常退出（遗留快照文件）
+  // 如果存在快照，说明上次退出时代理未被正常恢复，尝试自动恢复
+  if (hasPendingSnapshot()) {
+    console.log('[Main] 检测到遗留的系统代理快照，正在尝试恢复...')
+    clearSystemProxy()
+      .then((result) => {
+        if (result.success) {
+          console.log('[Main] 启动恢复成功:', result.message)
+        } else {
+          console.warn('[Main] 启动恢复失败:', result.message)
+        }
+      })
+      .catch((e) => console.error('[Main] 启动恢复异常:', e))
+  }
+
   // macOS: 点击 dock 图标时显示窗口（窗口隐藏后再次打开）
   app.on('activate', () => {
     if (mainWindow) {
@@ -171,11 +209,89 @@ app.on('window-all-closed', () => {
   }
 })
 
-app.on('before-quit', () => {
+/**
+ * 应用退出前的异步清理
+ * 1. 停止 MITM 代理服务器（stopProxy）
+ * 2. 恢复系统代理（clearSystemProxy，需要 sudo，可能需要用户输入密码）
+ * 3. 执行同步清理（证书服务、数据库、全局快捷键）
+ * 4. 强制退出应用
+ *
+ * 设计要点：
+ * - 超时保护：10 秒后强制退出，避免 sudo 弹窗卡住退出流程
+ * - 错误容错：每步独立 try/catch，即使某步失败也继续后续清理
+ * - 防止重复触发：由 isCleaningUp 标志在 before-quit 中守卫
+ */
+async function cleanupBeforeQuit(): Promise<void> {
+  // 超时保护：10 秒后强制退出（clearSystemProxy 的 sudo 弹窗可能需要用户输入密码）
+  const TIMEOUT_MS = 10000
+  const timeoutPromise = new Promise<void>((resolve) => {
+    setTimeout(() => {
+      console.warn('[Main] 退出清理超时（10s），强制退出')
+      resolve()
+    }, TIMEOUT_MS)
+  })
+
+  const cleanupPromise = (async () => {
+    // 1. 停止 MITM 代理服务器
+    try {
+      await stopProxy()
+      console.log('[Main] MITM 代理服务器已停止')
+    } catch (e) {
+      console.error('[Main] 停止 MITM 代理失败:', e)
+    }
+
+    // 2. 恢复系统代理（读取快照还原原始设置，需要 sudo）
+    try {
+      const result = await clearSystemProxy()
+      if (result.success) {
+        console.log('[Main] 系统代理已恢复:', result.message)
+      } else {
+        console.warn('[Main] 恢复系统代理失败:', result.message)
+      }
+    } catch (e) {
+      console.error('[Main] 恢复系统代理异常:', e)
+    }
+
+    // 3. 同步清理（容错：即使前面失败也要执行）
+    try {
+      stopCertServer()
+    } catch (e) {
+      console.error('[Main] 停止证书服务失败:', e)
+    }
+    try {
+      closeDatabase()
+    } catch (e) {
+      console.error('[Main] 关闭数据库失败:', e)
+    }
+    try {
+      globalShortcut.unregisterAll()
+    } catch (e) {
+      console.error('[Main] 注销全局快捷键失败:', e)
+    }
+  })()
+
+  // 等待清理完成或超时，取先到达者
+  await Promise.race([cleanupPromise, timeoutPromise])
+
+  // app.exit() 不会再次触发 before-quit，可安全调用
+  app.exit(0)
+}
+
+app.on('before-quit', (event) => {
   isQuitting = true
-  // 清理资源
-  stopCertServer()
-  closeDatabase()
+
+  // 防止 before-quit 被重复触发（用户多次 Cmd+Q 等）
+  if (isCleaningUp) {
+    event.preventDefault()
+    return
+  }
+  isCleaningUp = true
+
+  // 阻止默认退出，等异步清理（stopProxy + clearSystemProxy）完成后再退出
+  event.preventDefault()
+
+  // 启动异步清理（不 await，before-quit 处理器本身是同步的）
+  cleanupBeforeQuit()
 })
 
 // 处理未捕获的异常

@@ -20,7 +20,6 @@ import { ipc } from './services/ipc'
 const settingsStore = useSettingsStore()
 const requestStore = useRequestStore()
 
-let unsubNewRequests: (() => void) | null = null
 let unsubStream: (() => void) | null = null
 
 onMounted(async () => {
@@ -40,15 +39,12 @@ onMounted(async () => {
   // 加载设备别名
   await requestStore.loadDeviceAliases()
 
-  // 订阅新请求事件
-  unsubNewRequests = requestStore.subscribeToNewRequests()
-
-  // 订阅流式对比事件
+  // 订阅流式对比事件（新请求事件已在 store 初始化时订阅，无需重复）
   unsubStream = requestStore.subscribeToStreamEvents()
 })
 
 onUnmounted(() => {
-  unsubNewRequests?.()
+  // 新请求订阅由 store 内部管理，此处只清理流式对比
   unsubStream?.()
 })
 </script>

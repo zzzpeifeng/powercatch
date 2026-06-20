@@ -233,11 +233,15 @@ function decodeRequestBody(buffer: Buffer, headers: Record<string, any>): string
  * @param isUpdate 是否为更新（响应已到达，更新已有请求）
  */
 function pushToRenderer(request: CaptureRequest, isUpdate: boolean = false): void {
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    console.log(`[Proxy] 📤 发送数据到前端: ${request.method} ${request.url} (ID: ${request.id})`)
-    mainWindow.webContents.send(IPC_CHANNELS.PROXY_NEW_REQUEST, { ...request, _isUpdate: isUpdate })
-  } else {
+  if (!mainWindow || mainWindow.isDestroyed()) {
     console.warn('[Proxy] ⚠️ mainWindow 不存在或已销毁，无法发送数据到前端')
+    return
+  }
+  try {
+    mainWindow.webContents.send(IPC_CHANNELS.PROXY_NEW_REQUEST, { ...request, _isUpdate: isUpdate })
+    console.log(`[Proxy] 📤 发送成功: ${request.method} ${request.url} (ID: ${request.id})`)
+  } catch (e) {
+    console.error(`[Proxy] 📤 发送失败: ${request.id}`, e)
   }
 }
 

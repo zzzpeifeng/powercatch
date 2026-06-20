@@ -10,10 +10,11 @@
  */
 import { defineStore } from 'pinia'
 import { ref, computed, reactive } from 'vue'
-import type { CaptureRequest, RequestUpdate, CompareResult, LoadingStates, ProxyStatus, DomainSortMode, DomainNode, FlatTreeNode } from '../services/types'
+import type { CaptureRequest, RequestUpdate, CompareResult, LoadingStates, ProxyStatus, DomainSortMode, DomainNode, FlatTreeNode, FilterState } from '../services/types'
 import { ipc } from '../services/ipc'
 import { generateMatchKey, groupByMatchKey } from '../utils/request-matcher'
 import { buildDomainTree, flattenTree, matchSearch } from '../utils/tree-builder'
+import { matchFilters } from '../utils/filter-engine'
 
 /** 最小批量刷新间隔（ms） */
 const FLUSH_INTERVAL_MIN = 50
@@ -96,6 +97,19 @@ export const useRequestStore = defineStore('request', () => {
 
   /** 域名排序模式 */
   const domainSortMode = ref<DomainSortMode>('latest')
+
+  /** 高级过滤条件（不持久化，刷新后清空） */
+  const filterState = ref<FilterState>({
+    methods: [],
+    statusGroups: [],
+    contentTypes: [],
+    durationRanges: [],
+    sizeRanges: [],
+    clientIps: [],
+  })
+
+  /** 过滤面板展开状态（不持久化） */
+  const isFilterPanelOpen = ref<boolean>(false)
 
   /** 内存最大条数 */
   const MAX_MEMORY_REQUESTS = 5000
@@ -224,30 +238,126 @@ export const useRequestStore = defineStore('request', () => {
 
   // ===== Computed =====
 
-  /** 过滤后的请求列表（反转顺序：最新在前）
-   *  内存数组 [oldest, ..., newest] → 显示 [newest, ..., oldest]
-   */
-  const filteredRequests = computed<CaptureRequest[]>(() => {
-    const source = requests.value
-    if (domainFilters.value.length === 0) {
-      // 无过滤：直接反转（slice 避免修改原数组）
-      return source.slice().reverse()
+  /** 是否有激活的高级过滤条件 */
+  const hasActiveFilters = computed(() => {
+    const f = filterState.value
+    return f.methods.length > 0 ||
+           f.statusGroups.length > 0 ||
+           f.contentTypes.length > 0 ||
+           f.durationRanges.length > 0 ||
+           f.sizeRanges.length > 0 ||
+           f.clientIps.length > 0
+  })
+
+  /** 激活条件数（按维度计数，非按 chip 计数） */
+  const activeFilterCount = computed(() => {
+    const f = filterState.value
+    let count = 0
+    if (f.methods.length > 0) count++
+    if (f.statusGroups.length > 0) count++
+    if (f.contentTypes.length > 0) count++
+    if (f.durationRanges.length > 0) count++
+    if (f.sizeRanges.length > 0) count++
+    if (f.clientIps.length > 0) count++
+    return count
+  })
+
+  /** 动态提取当前请求列表中所有设备 IP（供 FilterPanel 渲染 chip） */
+  const availableClientIps = computed<string[]>(() => {
+    const ips = new Set<string>()
+    for (const req of requests.value) {
+      if (req.clientIp) ips.add(req.clientIp)
     }
-    // 有过滤：先过滤再反转
-    const filtered = source.filter((req) => {
+    return [...ips].sort()
+  })
+
+  /**
+   * 域名过滤后的请求数（高级过滤前）
+   * 用于过滤面板底部 "匹配 X/Y 条" 的分母
+   */
+  const preAdvancedFilterCount = computed(() => {
+    const source = requests.value
+    if (domainFilters.value.length === 0) return source.length
+    return source.filter((req) => {
       return domainFilters.value.some((filter) => {
-        // 通配符匹配：支持 * 作为任意字符通配符（glob 风格）
         if (filter.includes('*')) {
           const pattern = filter
-            .replace(/[.+?^${}()|[\]\\]/g, '\\$&') // 转义正则特殊字符（保留 *）
-            .replace(/\*/g, '.*')                   // * → 匹配任意字符
+            .replace(/[.+?^${}()|[\]\\]/g, '\\$&')
+            .replace(/\*/g, '.*')
           return new RegExp(`^${pattern}$`, 'i').test(req.host)
         }
-        // 精确匹配
+        return req.host === filter
+      })
+    }).length
+  })
+
+  /**
+   * 域名过滤 + 高级过滤后的请求列表（反转顺序：最新在前）
+   *
+   * 数据流：requests → 域名过滤 → 高级过滤 → 反转
+   */
+  const filteredRequests = computed<CaptureRequest[]>(() => {
+    console.log('[Store] filteredRequests 重新计算！requests.length:', requests.value.length, 'domainFilters:', domainFilters.value.length, 'hasActiveFilters:', hasActiveFilters.value)
+    const source = requests.value
+
+    // Step 1: 域名过滤（过滤掉无效值）
+    const validDomainFilters = domainFilters.value.filter(
+      (f): f is string => typeof f === 'string' && f.length > 0
+    )
+    let domainFiltered: CaptureRequest[]
+    if (validDomainFilters.length === 0) {
+      domainFiltered = source
+    } else {
+      domainFiltered = source.filter((req) => {
+        return validDomainFilters.some((filter) => {
+          if (filter.includes('*')) {
+            const pattern = filter
+              .replace(/[.+?^${}()|[\]\\]/g, '\\$&')
+              .replace(/\*/g, '.*')
+            return new RegExp(`^${pattern}$`, 'i').test(req.host)
+          }
+          return req.host === filter
+        })
+      })
+    }
+
+    // Step 2: 高级过滤（有激活条件时才执行）
+    let result: CaptureRequest[]
+    if (hasActiveFilters.value) {
+      result = domainFiltered.filter(req => matchFilters(req, filterState.value))
+    } else {
+      result = domainFiltered
+    }
+
+    // Step 3: 反转（最新在前）
+    console.log('[Store] filteredRequests 返回：', result.length, '条 / 原始:', source.length)
+    return result.slice().reverse()
+  })
+
+  /**
+   * 高级过滤后的请求数（不反转，供面板底部统计使用）
+   */
+  const advancedFilteredCount = computed(() => {
+    const source = requests.value
+    if (domainFilters.value.length === 0) {
+      return hasActiveFilters.value
+        ? source.filter(req => matchFilters(req, filterState.value)).length
+        : source.length
+    }
+    const domainFiltered = source.filter((req) => {
+      return domainFilters.value.some((filter) => {
+        if (filter.includes('*')) {
+          const pattern = filter
+            .replace(/[.+?^${}()|[\]\\]/g, '\\$&')
+            .replace(/\*/g, '.*')
+          return new RegExp(`^${pattern}$`, 'i').test(req.host)
+        }
         return req.host === filter
       })
     })
-    return filtered.reverse()
+    return hasActiveFilters.value
+      ? domainFiltered.filter(req => matchFilters(req, filterState.value)).length
+      : domainFiltered.length
   })
 
   /** 已捕获总数 */
@@ -269,21 +379,29 @@ export const useRequestStore = defineStore('request', () => {
 
   /** 按域名分组的树结构 */
   const groupedTreeRequests = computed<DomainNode[]>(() => {
-    return buildDomainTree(filteredRequests.value, domainSortMode.value)
+    console.log('[Store] groupedTreeRequests 重新计算！filteredRequests.length:', filteredRequests.value.length, 'domainSortMode:', domainSortMode.value)
+    const result = buildDomainTree(filteredRequests.value, domainSortMode.value)
+    console.log('[Store] groupedTreeRequests 结果：', result.length, '个域名')
+    return result
   })
 
   /** 展平的树行（group 模式，含搜索过滤+折叠） */
   const flatTreeRows = computed<FlatTreeNode[]>(() => {
-    return flattenTree(groupedTreeRequests.value, collapsedDomains.value, searchQuery.value)
+    console.log('[Store] flatTreeRows 重新计算！groupedTreeRequests.length:', groupedTreeRequests.value.length, 'collapsedDomains:', collapsedDomains.value.size)
+    const rows = flattenTree(groupedTreeRequests.value, collapsedDomains.value, searchQuery.value)
+    console.log('[Store] flatTreeRows 结果：', rows.length, '行')
+    return rows
   })
 
   /** 统一显示行（list 模式包装为 FlatTreeNode，group 模式用 flatTreeRows） */
   const displayRows = computed<FlatTreeNode[]>(() => {
+    console.log('[Store] displayRows 重新计算！viewMode:', viewMode.value, 'filteredRequests.length:', filteredRequests.value.length, 'flatTreeRows.length:', flatTreeRows.value.length)
     if (viewMode.value === 'list') {
       const query = searchQuery.value.trim().toLowerCase()
       const source = query
         ? filteredRequests.value.filter(req => matchSearch(req, query))
         : filteredRequests.value
+      console.log('[Store] displayRows list 模式，返回', source.length, '行')
       return source.map(req => ({
         type: 'request' as const,
         key: req.id,
@@ -291,6 +409,7 @@ export const useRequestStore = defineStore('request', () => {
         request: req,
       }))
     }
+    console.log('[Store] displayRows group 模式，返回', flatTreeRows.value.length, '行')
     return flatTreeRows.value
   })
 
@@ -624,8 +743,58 @@ export const useRequestStore = defineStore('request', () => {
     saveCollapsedDomains(all)
   }
 
+  // ===== 高级过滤 Actions =====
+
+  /**
+   * 切换某个过滤维度的某个值
+   * @param category 过滤维度（FilterState 的 key）
+   * @param value 要切换的值
+   */
+  function toggleFilter<K extends keyof FilterState>(
+    category: K,
+    value: FilterState[K][number]
+  ): void {
+    const arr = filterState.value[category] as any[]
+    const idx = arr.indexOf(value)
+    if (idx >= 0) {
+      arr.splice(idx, 1)
+    } else {
+      arr.push(value)
+    }
+    // 触发响应式（数组原地修改需要重新赋值）
+    filterState.value = { ...filterState.value }
+  }
+
+  /** 切换过滤面板展开/折叠 */
+  function toggleFilterPanel(): void {
+    isFilterPanelOpen.value = !isFilterPanelOpen.value
+  }
+
+  /** 清除所有过滤条件 */
+  function clearAllFilters(): void {
+    filterState.value = {
+      methods: [],
+      statusGroups: [],
+      contentTypes: [],
+      durationRanges: [],
+      sizeRanges: [],
+      clientIps: [],
+    }
+  }
+
+  /**
+   * 移除某个维度的整组过滤条件
+   * @param category 要清除的维度
+   */
+  function removeFilterGroup<K extends keyof FilterState>(category: K): void {
+    filterState.value = {
+      ...filterState.value,
+      [category]: [],
+    }
+  }
+
   return {
-    // State
+    // ===== 既有 State =====
     requests,
     selectedRequest,
     checkedRequests,
@@ -642,7 +811,10 @@ export const useRequestStore = defineStore('request', () => {
     searchQuery,
     collapsedDomains,
     domainSortMode,
-    // Computed
+    // ===== 新增 State =====
+    filterState,
+    isFilterPanelOpen,
+    // ===== 既有 Computed =====
     filteredRequests,
     totalCount,
     filteredCount,
@@ -653,7 +825,13 @@ export const useRequestStore = defineStore('request', () => {
     flatTreeRows,
     displayRows,
     getDeviceName,
-    // Actions
+    // ===== 新增 Computed =====
+    hasActiveFilters,
+    activeFilterCount,
+    availableClientIps,
+    preAdvancedFilterCount,
+    advancedFilteredCount,
+    // ===== 既有 Actions =====
     addRequest,
     clearRequests,
     selectRequest,
@@ -681,5 +859,10 @@ export const useRequestStore = defineStore('request', () => {
     flushPending,
     /** 销毁 store（清理定时器） */
     destroy: stopFlushTimer,
+    // ===== 新增 Actions =====
+    toggleFilter,
+    toggleFilterPanel,
+    clearAllFilters,
+    removeFilterGroup,
   }
 })

@@ -8,6 +8,23 @@
         class="input input-sm text-xs flex-1"
         :placeholder="viewMode === 'group' ? '搜索域名、路径、状态码...' : '搜索路径、状态码...'"
       />
+      <!-- 过滤按钮 -->
+      <button
+        class="flex items-center gap-0.5 px-2 py-0.5 text-[11px] rounded border transition-colors"
+        :class="isFilterPanelOpen
+          ? 'bg-primary-100 dark:bg-primary-900 border-primary-300 dark:border-primary-600 text-primary-700 dark:text-primary-300'
+          : hasActiveFilters
+            ? 'bg-blue-50 dark:bg-blue-900/50 border-blue-200 dark:border-blue-700 text-blue-600 dark:text-blue-400'
+            : 'bg-white dark:bg-gray-700 border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-500'"
+        @click="store.toggleFilterPanel()"
+      >
+        <span>{{ isFilterPanelOpen ? '△' : '▽' }}</span>
+        <span>过滤</span>
+        <span
+          v-if="activeFilterCount > 0"
+          class="ml-0.5 px-1 py-px text-[9px] rounded-full bg-blue-500 dark:bg-blue-400 text-white leading-none"
+        >{{ activeFilterCount }}</span>
+      </button>
       <!-- 域名排序下拉菜单（仅 group 模式显示） -->
       <select
         v-if="viewMode === 'group'"
@@ -21,9 +38,14 @@
       </select>
     </div>
 
-    <!-- 虚拟滚动列表 -->
+    <!-- 过滤面板（展开态） -->
+    <FilterPanel v-if="isFilterPanelOpen" />
+
+    <!-- 激活条件标签行（折叠态 + 有过滤条件） -->
+    <ActiveFilterTags v-if="!isFilterPanelOpen && hasActiveFilters" />
+
+    <!-- 虚拟滚动列表（始终渲染，避免异步创建时高度计算失败） -->
     <RecycleScroller
-      v-if="displayRows.length > 0"
       ref="scrollerRef"
       class="flex-1 request-list-scroller"
       :items="displayRows"
@@ -85,8 +107,11 @@
       </div>
     </RecycleScroller>
 
-    <!-- 空状态 -->
-    <div v-else class="flex-1 flex items-center justify-center h-full text-gray-600 dark:text-gray-400 text-sm">
+    <!-- 空状态（displayRows 为空时显示） -->
+    <div
+      v-if="displayRows.length === 0"
+      class="flex-1 flex items-center justify-center h-full text-gray-600 dark:text-gray-400 text-sm"
+    >
       <div class="text-center">
         <div class="text-3xl mb-2">📡</div>
         <div v-if="searchQuery.trim() && filteredRequests.length > 0 && displayRows.length === 0">
@@ -110,9 +135,14 @@ import { useRequestStore } from '../stores/request-store'
 import { storeToRefs } from 'pinia'
 import type { CaptureRequest, DomainSortMode } from '../services/types'
 import { formatHostWithProtocol } from '../utils/url-formatter'
+import FilterPanel from './FilterPanel.vue'
+import ActiveFilterTags from './ActiveFilterTags.vue'
 
 const store = useRequestStore()
-const { searchQuery, displayRows, viewMode, filteredRequests, domainSortMode } = storeToRefs(store)
+const {
+  searchQuery, displayRows, viewMode, filteredRequests, domainSortMode,
+  isFilterPanelOpen, hasActiveFilters, activeFilterCount,
+} = storeToRefs(store)
 
 const scrollerRef = ref<InstanceType<typeof RecycleScroller> | null>(null)
 const userScrolled = ref(false)
@@ -144,6 +174,15 @@ defineEmits<{
   (e: 'select', request: CaptureRequest): void
   (e: 'toggle-check', request: CaptureRequest): void
 }>()
+
+// 诊断：watch displayRows 变化
+watch(
+  () => store.displayRows,
+  (newRows, oldRows) => {
+    console.log('[RequestList] displayRows 变化：', oldRows?.length, '→', newRows?.length)
+  },
+  { deep: true }
+)
 
 function methodClass(method: string): string {
   const classes: Record<string, string> = {

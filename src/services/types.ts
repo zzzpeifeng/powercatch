@@ -346,6 +346,36 @@ export const DEFAULT_PROMPT_V2 = `对比以下两个 JSON 响应的差异。
 只关注业务字段差异：金额、状态、数量、结构。
 输出格式：关键差异 | 精度差异 | 字段缺失 | 总结`
 
+/** 过滤条件状态 */
+export interface FilterState {
+  /** HTTP 方法（空数组 = 不过滤） */
+  methods: HttpMethod[]
+  /** 状态码分组（空数组 = 不过滤） */
+  statusGroups: StatusCodeGroup[]
+  /** Content-Type 分组（空数组 = 不过滤） */
+  contentTypes: ContentTypeGroup[]
+  /** 响应时间范围（空数组 = 不过滤） */
+  durationRanges: DurationRange[]
+  /** 请求体大小范围（空数组 = 不过滤） */
+  sizeRanges: SizeRange[]
+  /** 设备 IP 列表（空数组 = 不过滤） */
+  clientIps: string[]
+}
+
+/** 状态码分组（含 pending：请求已发出但响应未到达） */
+export type StatusCodeGroup = '2xx' | '3xx' | '4xx' | '5xx' | 'pending'
+
+/** Content-Type 分组 */
+export type ContentTypeGroup = 'json' | 'html' | 'image' | 'javascript' | 'css' | 'other'
+
+/** 响应时间范围（含 pending：响应未到达，duration 为 null） */
+export type DurationRange = 'fast' | 'normal' | 'slow' | 'very_slow' | 'pending'
+// fast: <100ms, normal: 100-500ms, slow: 500ms-1s, very_slow: >1s, pending: duration=null
+
+/** 请求体大小范围 */
+export type SizeRange = 'tiny' | 'small' | 'medium' | 'large' | 'empty'
+// empty: 0 字节, tiny: <1KB, small: 1-10KB, medium: 10-100KB, large: >100KB
+
 /** 域名排序模式 */
 export type DomainSortMode = 'latest' | 'count' | 'alphabetical'
 

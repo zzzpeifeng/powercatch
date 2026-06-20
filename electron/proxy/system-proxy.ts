@@ -113,6 +113,18 @@ function deleteSnapshot(): void {
 }
 
 /**
+ * 检查是否存在遗留的快照文件
+ * 用于启动时检测上次是否异常退出（未正常恢复代理）
+ */
+export function hasPendingSnapshot(): boolean {
+  try {
+    return fs.existsSync(SNAPSHOT_PATH)
+  } catch {
+    return false
+  }
+}
+
+/**
  * 开启系统代理
  * 1. 读取当前状态保存快照
  * 2. sudo 执行 networksetup 设置代理

@@ -1,0 +1,148 @@
+# PowerCatch 功能实现进度跟踪
+
+> 每完成一个功能，把 `[ ]` 改成 `[x]` 即可。  
+> 更新日期：2026-06-19 | 总计：26 项 | 已完成：1 | 进行中：0
+
+---
+
+## 🏗️ 基础设施（地基，必须先做）
+
+- [x] **#1 高级过滤系统** | 工作量:小 | 依赖:无 | ✅ 2026-06-19
+  - HTTP方法 / 状态码 / Content-Type / 响应时间 / 请求体大小 / 设备IP 多维度组合过滤
+  - 改动文件：`types.ts` + `filter-engine.ts`(新增) + `request-store.ts` + `RequestList.vue` + `FilterPanel.vue`(新增) + `ActiveFilterTags.vue`(新增)
+
+- [ ] **#2 响应体智能预览** | 工作量:中小 | 依赖:无
+  - JSON树形折叠 / 图片渲染 / Hex查看 / HTML预览 / 语法高亮
+  - `RequestDetail.vue`
+
+- [ ] **#3 会话保存与恢复** | 工作量:小 | 依赖:无
+  - 保存/加载抓包会话到SQLite，含过滤状态和视图模式
+  - `sqlite.ts` + 会话管理UI + `request-store.ts`
+
+- [ ] **#4 大响应体处理** | 工作量:小 | 依赖:无
+  - >5MB自动截断 + 标记提示 + 按需加载完整内容
+  - `mitm-server.ts` + `RequestDetail.vue`
+
+- [ ] **#5 主题切换（明/暗模式）** | 工作量:小 | 依赖:无
+  - 明暗主题开关，持久化到settings-store
+  - `settings-store.ts` + `TitleBar.vue`
+
+---
+
+## 🔥 高价值（对标 Charles 核心能力）
+
+- [ ] **#6 断点 & 请求/响应修改** | 工作量:中 | 依赖:无
+  - URL断点拦截，手动修改headers/body/status后放行
+  - `mitm-server.ts` + 断点管理UI + Store
+
+- [ ] **#7 Map Local（本地映射）** | 工作量:小 | 依赖:无
+  - 接口响应替换为本地文件（JSON/JS/CSS）
+  - `mitm-server.ts` + 映射规则管理UI
+
+- [ ] **#8 请求重放 & 编辑重发** | 工作量:小 | 依赖:#3
+  - 右键→复制cURL / 直接重发 / 修改参数后重发
+  - `RequestList.vue` + `RequestDetail.vue` + 重发逻辑
+
+- [ ] **#9 Map Remote（远程映射）** | 工作量:小 | 依赖:无
+  - A域名请求转发到B域名（线上→测试环境）
+  - `mitm-server.ts` + 映射规则管理UI
+
+- [ ] **#10 自动响应器（Auto Responder）** | 工作量:小 | 依赖:#7
+  - 不请求真实服务器，直接本地规则响应，支持延迟/状态码模拟
+  - `mitm-server.ts` + 规则管理UI
+
+- [ ] **#11 请求重写规则（Rewrite Rules）** | 工作量:中 | 依赖:无
+  - 持久化自动修改匹配请求的URL/Header/Body/Status
+  - `mitm-server.ts` + 规则管理UI
+
+---
+
+## 💡 中价值（提升效率）
+
+- [ ] **#12 请求 Diff 视图** | 工作量:中 | 依赖:无
+  - 两个请求的纯文本/JSON结构化diff
+  - `CompareResult.vue` + diff算法
+
+- [ ] **#13 带宽限流 / 网络节流** | 工作量:中 | 依赖:无
+  - 模拟3G/4G/弱网，设置延迟和丢包率
+  - `mitm-server.ts` + 设置页UI
+
+- [ ] **#14 请求时间线（Waterfall）** | 工作量:中 | 依赖:mitm-server打点
+  - 瀑布图展示DNS/TTFB/下载时间分布
+  - `WaterfallView.vue` + `mitm-server.ts`
+
+- [ ] **#15 WebSocket 抓包** | 工作量:中 | 依赖:无
+  - 捕获WS/WSS消息（帧级别）
+  - `mitm-server.ts` + WS消息列表UI
+
+- [ ] **#16 DNS 覆盖** | 工作量:小 | 依赖:无
+  - 代理层域名指向自定义IP，不改hosts文件
+  - `mitm-server.ts` + DNS配置UI
+
+- [ ] **#17 Cookie 管理器** | 工作量:中小 | 依赖:无
+  - 按域名查看/编辑/删除Cookie，导入导出Cookie Jar
+  - `CookieManager.vue` + `mitm-server.ts`
+
+- [ ] **#18 上游代理链（Upstream Proxy）** | 工作量:中小 | 依赖:无
+  - 转发到上级代理，串联Charles双层抓包
+  - `mitm-server.ts` + `SettingsView.vue`
+
+---
+
+## 🌟 锦上添花（差异化特色）
+
+- [ ] **#19 单请求 AI 分析** | 工作量:小 | 依赖:无
+  - 单个请求一键调AI分析错误原因
+  - `RequestDetail.vue` + AI分析按钮
+
+- [ ] **#20 请求统计面板** | 工作量:中 | 依赖:#1
+  - 域名/状态码/响应时间聚合图表
+  - `StatsView.vue` + 统计聚合逻辑
+
+- [ ] **#21 多格式导出** | 工作量:小 | 依赖:#3
+  - cURL / Postman Collection / JMeter 脚本
+  - `export-service.ts`
+
+- [ ] **#22 HAR 导入/导出** | 工作量:小 | 依赖:#3
+  - 兼容Chrome DevTools HAR格式
+  - HAR解析/序列化工具 + 导入导出UI
+
+- [ ] **#23 GraphQL 感知** | 工作量:小 | 依赖:无
+  - 识别GraphQL请求，按operation name分组
+  - `request-matcher.ts` + `tree-builder.ts`
+
+- [ ] **#24 请求书签 / 收藏** | 工作量:小 | 依赖:#1
+  - 标记常用接口快速定位（高级过滤做好后需求降低）
+  - `request-store.ts` + `RequestList.vue`
+
+- [ ] **#25 性能监控仪表盘** | 工作量:中 | 依赖:无
+  - 内存/CPU/请求速率/数据库大小监控
+  - `main.ts` + 监控UI
+
+- [ ] **#26 多标签页** | 工作量:大 | 依赖:Store架构改造
+  - 多抓包会话Tab对比（建议延后）
+  - Store架构改造 + Tab UI
+
+---
+
+## 🛠️ 非功能性需求（持续迭代）
+
+- [ ] 搜索性能优化（万级请求索引）
+- [ ] 内存管理（长时间录制不泄漏）
+- [ ] 启动速度优化（冷启动 <3s）
+- [ ] 自动更新（Electron updater）
+- [ ] SQLite 性能（WAL模式 + 索引优化）
+- [ ] 证书管理 UI（一键安装/信任/导出CA）
+
+---
+
+## 📈 进度统计
+
+| 层级 | 总数 | 已完成 | 进度 |
+|------|------|--------|------|
+| 🏗️ 基础设施 | 5 | 0 | ░░░░░ 0% |
+| 🔥 高价值 | 6 | 0 | ░░░░░░ 0% |
+| 💡 中价值 | 7 | 0 | ░░░░░░░ 0% |
+| 🌟 锦上添花 | 8 | 0 | ░░░░░░░░ 0% |
+| 🛠️ 非功能 | 6 | 0 | ░░░░░░ 0% |
+| **合计** | **32** | **0** | **0%** |
