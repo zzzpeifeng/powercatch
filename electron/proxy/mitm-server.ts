@@ -190,8 +190,12 @@ function decodeResponseBody(buffer: Buffer, headers: Record<string, any>): strin
   })
 
   if (isLikelyBinary) {
-    // 标记为二进制数据，前端会显示友好提示
-    return `[Binary Data: ${buffer.length} bytes, Content-Type: ${headers['content-type'] || headers['Content-Type'] || 'unknown'}]`
+    const contentType = (headers['content-type'] || headers['Content-Type'] || 'application/octet-stream').split(';')[0].trim()
+    // 5MB 上限，超出只存元信息
+    if (buffer.length <= 5 * 1024 * 1024) {
+      return `[Base64:${contentType}:${buffer.length}:${buffer.toString('base64')}]`
+    }
+    return `[Body too large: ${buffer.length} bytes, Content-Type: ${contentType}]`
   }
 
   return buffer.toString('utf-8')
@@ -212,7 +216,11 @@ function decodeRequestBody(buffer: Buffer, headers: Record<string, any>): string
       return false
     })
     if (isLikelyBinary) {
-      return `[Binary Request Body: ${buffer.length} bytes]`
+      const contentType = (headers['content-type'] || headers['Content-Type'] || 'application/octet-stream').split(';')[0].trim()
+      if (buffer.length <= 5 * 1024 * 1024) {
+        return `[Base64:${contentType}:${buffer.length}:${buffer.toString('base64')}]`
+      }
+      return `[Body too large: ${buffer.length} bytes, Content-Type: ${contentType}]`
     }
     return buffer.toString('utf-8')
   }

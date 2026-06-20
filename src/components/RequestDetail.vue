@@ -35,6 +35,17 @@
             <div class="flex items-center gap-2 px-4 py-2">
               <span class="text-xs font-semibold text-blue-600 dark:text-blue-400 uppercase tracking-wide">请求</span>
               <span v-if="request.method" class="text-xs font-medium" :class="methodClass">{{ request.method }}</span>
+              <!-- 请求体预览模式切换器 -->
+              <div class="ml-auto flex items-center gap-1">
+                <select
+                  :value="forcedRequestMode || ''"
+                  class="text-[11px] px-1.5 py-0.5 rounded border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 focus:outline-none focus:border-blue-400 cursor-pointer"
+                  @change="onRequestModeChange"
+                >
+                  <option value="">自动 ({{ autoRequestMode.toUpperCase() }})</option>
+                  <option v-for="opt in previewModeOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+                </select>
+              </div>
             </div>
             <!-- 请求区 Tab 栏 -->
             <div class="tab-bar px-4">
@@ -63,20 +74,14 @@
 
           <!-- 请求体 -->
           <div v-if="requestTab === 'requestBody'" class="px-4 py-2">
-            <div v-if="request.requestBody" class="rounded-md bg-gray-50 dark:bg-gray-900 p-3 overflow-auto" style="max-height: 50vh">
-              <div v-if="isRequestBodyJson && isRequestBodyLarge" class="border border-gray-200 dark:border-gray-700 rounded-md overflow-auto">
-                <JsonPretty
-                  :data="parsedRequestBody"
-                  :deep="3"
-                  :show-line="false"
-                  :show-double-quotes="true"
-                  class="p-2"
-                />
-              </div>
-              <pre v-else-if="isRequestBodyJson" class="text-xs leading-relaxed whitespace-pre-wrap break-all font-mono" v-html="highlightedRequestBody"></pre>
-              <pre v-else class="text-xs leading-relaxed whitespace-pre-wrap break-all font-mono">{{ formattedRequestBody }}</pre>
+            <div class="rounded-md bg-gray-50 dark:bg-gray-900 p-3 overflow-auto" style="max-height: 50vh">
+              <BodyPreviewRouter
+                :body="request.requestBody || ''"
+                :content-type="getRequestContentType()"
+                direction="request"
+                :forced-mode="forcedRequestMode || undefined"
+              />
             </div>
-            <div v-else class="text-xs text-gray-400 dark:text-gray-500 py-2">（空请求体）</div>
           </div>
         </div>
 
@@ -96,6 +101,17 @@
               <span class="text-xs font-semibold text-green-600 dark:text-green-400 uppercase tracking-wide">响应</span>
               <span v-if="request.statusCode" :class="statusClass" class="text-xs font-medium">{{ request.statusCode }}</span>
               <span v-if="request.duration !== null" class="text-xs text-gray-500">{{ request.duration }}ms</span>
+              <!-- 预览模式切换器 -->
+              <div class="ml-auto flex items-center gap-1">
+                <select
+                  :value="forcedResponseMode || ''"
+                  class="text-[11px] px-1.5 py-0.5 rounded border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 focus:outline-none focus:border-blue-400 cursor-pointer"
+                  @change="onResponseModeChange"
+                >
+                  <option value="">自动 ({{ autoResponseMode.toUpperCase() }})</option>
+                  <option v-for="opt in previewModeOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+                </select>
+              </div>
             </div>
             <!-- 响应区 Tab 栏 -->
             <div class="tab-bar px-4">
@@ -124,20 +140,14 @@
 
           <!-- 响应体 -->
           <div v-if="responseTab === 'responseBody'" class="px-4 py-2">
-            <div v-if="request.responseBody" class="rounded-md bg-gray-50 dark:bg-gray-900 p-3 overflow-auto" style="max-height: 50vh">
-              <div v-if="isResponseBodyJson && isResponseBodyLarge" class="border border-gray-200 dark:border-gray-700 rounded-md overflow-auto">
-                <JsonPretty
-                  :data="parsedResponseBody"
-                  :deep="3"
-                  :show-line="false"
-                  :show-double-quotes="true"
-                  class="p-2"
-                />
-              </div>
-              <pre v-else-if="isResponseBodyJson" class="text-xs leading-relaxed whitespace-pre-wrap break-all font-mono" v-html="highlightedResponseBody"></pre>
-              <pre v-else class="text-xs leading-relaxed whitespace-pre-wrap break-all font-mono">{{ formattedResponseBody }}</pre>
+            <div class="rounded-md bg-gray-50 dark:bg-gray-900 p-3 overflow-auto" style="max-height: 50vh">
+              <BodyPreviewRouter
+                :body="request.responseBody || ''"
+                :content-type="getResponseContentType()"
+                direction="response"
+                :forced-mode="forcedResponseMode || undefined"
+              />
             </div>
-            <div v-else class="text-xs text-gray-400 dark:text-gray-500 py-2">（空响应）</div>
           </div>
         </div>
       </div>
@@ -148,10 +158,9 @@
 <script setup lang="ts">
 import { ref, computed, type Ref } from 'vue'
 import type { CaptureRequest } from '../services/types'
-import { prettyJson, tryParseJson } from '../utils/json-formatter'
 import { formatHostWithProtocol } from '../utils/url-formatter'
-import JsonPretty from 'vue-json-pretty'
-import 'vue-json-pretty/lib/styles.css'
+import { parseBody, type PreviewMode } from '../utils/body-preview-parser'
+import BodyPreviewRouter from './body-preview/BodyPreviewRouter.vue'
 
 const props = defineProps<{
   request: CaptureRequest | null
@@ -174,6 +183,10 @@ const responseTabs = [
   { key: 'responseBody', label: '响应体' },
 ]
 const responseTab = ref('responseHeaders')
+
+// 预览模式切换（null = 自动检测）
+const forcedResponseMode = ref<PreviewMode | null>(null)
+const forcedRequestMode = ref<PreviewMode | null>(null)
 
 // 拖拽分割线
 function onDividerMouseDown(e: MouseEvent) {
@@ -234,91 +247,41 @@ function formatTime(iso: string | null | undefined): string {
   return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
 }
 
-// 响应体相关
-const isResponseBodyJson = computed(() => {
-  if (!props.request?.responseBody) return false
-  const body = props.request.responseBody
-  if (body.startsWith('[Binary Data:')) return false
-  const result = tryParseJson(body)
-  return result.isJson
-})
-
-const isResponseBodyLarge = computed(() => {
-  if (!props.request?.responseBody) return false
-  return props.request.responseBody.length > 10000
-})
-
-const parsedResponseBody = computed(() => {
-  if (!props.request?.responseBody) return null
-  const result = tryParseJson(props.request.responseBody)
-  return result.isJson ? result.data : null
-})
-
-const highlightedResponseBody = computed(() => {
-  if (!props.request?.responseBody) return ''
-  const body = props.request.responseBody
-  const result = tryParseJson(body)
-  if (!result.isJson) return ''
-  return highlightJson(result.data)
-})
-
-const formattedResponseBody = computed(() => {
-  if (!props.request) return ''
-  const body = props.request.responseBody
-  if (!body) return '（空响应）'
-  if (body.startsWith('[Binary Data:')) return body
-  return prettyJson(body)
-})
-
-// 请求体相关
-const isRequestBodyJson = computed(() => {
-  if (!props.request?.requestBody) return false
-  const body = props.request.requestBody
-  if (body.startsWith('[Binary') || body.startsWith('[Compressed')) return false
-  const result = tryParseJson(body)
-  return result.isJson
-})
-
-const isRequestBodyLarge = computed(() => {
-  if (!props.request?.requestBody) return false
-  return props.request.requestBody.length > 10000
-})
-
-const parsedRequestBody = computed(() => {
-  if (!props.request?.requestBody) return null
-  const result = tryParseJson(props.request.requestBody)
-  return result.isJson ? result.data : null
-})
-
-const highlightedRequestBody = computed(() => {
-  if (!props.request?.requestBody) return ''
-  const body = props.request.requestBody
-  const result = tryParseJson(body)
-  if (!result.isJson) return ''
-  return highlightJson(result.data)
-})
-
-const formattedRequestBody = computed(() => {
-  if (!props.request) return ''
-  const body = props.request.requestBody
-  if (!body) return '（空请求体）'
-  if (body.startsWith('[Binary') || body.startsWith('[Compressed')) return body
-  return prettyJson(body)
-})
-
-// JSON语法高亮函数
-function highlightJson(data: any): string {
-  const json = JSON.stringify(data, null, 2)
-  return json
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"([^"]+)"(?=\s*:)/g, '<span class="json-key">"$1"</span>')
-    .replace(/:\s*"([^"]*)"/g, ': <span class="json-string">"$1"</span>')
-    .replace(/:\s*(\d+\.?\d*)/g, ': <span class="json-number">$1</span>')
-    .replace(/:\s*(true|false)/g, ': <span class="json-boolean">$1</span>')
-    .replace(/:\s*(null)/g, ': <span class="json-null">$1</span>')
+// Content-Type 提取
+function getResponseContentType(): string {
+  if (!props.request?.responseHeaders) return ''
+  const ct = props.request.responseHeaders['content-type'] || props.request.responseHeaders['Content-Type'] || ''
+  return Array.isArray(ct) ? ct[0] || '' : ct
 }
+
+function getRequestContentType(): string {
+  if (!props.request?.requestHeaders) return ''
+  const ct = props.request.requestHeaders['content-type'] || props.request.requestHeaders['Content-Type'] || ''
+  return Array.isArray(ct) ? ct[0] || '' : ct
+}
+
+// 自动检测的预览模式
+const autoResponseMode = computed(() => {
+  if (!props.request?.responseBody) return 'text' as PreviewMode
+  return parseBody(props.request.responseBody, getResponseContentType()).mode
+})
+
+const autoRequestMode = computed(() => {
+  if (!props.request?.requestBody) return 'text' as PreviewMode
+  return parseBody(props.request.requestBody, getRequestContentType()).mode
+})
+
+// 预览模式选项
+const previewModeOptions: { value: PreviewMode; label: string }[] = [
+  { value: 'json', label: 'JSON' },
+  { value: 'html', label: 'HTML' },
+  { value: 'xml', label: 'XML' },
+  { value: 'css', label: 'CSS' },
+  { value: 'js', label: 'JS' },
+  { value: 'image', label: '图片' },
+  { value: 'hex', label: 'Hex' },
+  { value: 'text', label: '纯文本' },
+]
 
 function formatHeaderValue(value: string | string[] | undefined): string {
   if (Array.isArray(value)) return value.join(', ')
@@ -328,6 +291,16 @@ function formatHeaderValue(value: string | string[] | undefined): string {
 function isEmpty(obj: Record<string, any>): boolean {
   return !obj || Object.keys(obj).length === 0
 }
+
+function onResponseModeChange(e: Event) {
+  const val = (e.target as HTMLSelectElement).value
+  forcedResponseMode.value = val ? (val as PreviewMode) : null
+}
+
+function onRequestModeChange(e: Event) {
+  const val = (e.target as HTMLSelectElement).value
+  forcedRequestMode.value = val ? (val as PreviewMode) : null
+}
 </script>
 
 <style scoped>
@@ -336,12 +309,6 @@ function isEmpty(obj: Record<string, any>): boolean {
 .method-put { color: #8b5cf6; font-weight: 600; }
 .method-delete { color: #ef4444; font-weight: 600; }
 .method-patch { color: #ec4899; font-weight: 600; }
-
-.json-key { color: #881391; font-weight: 500; }
-.json-string { color: #c41a16; }
-.json-number { color: #1c00cf; }
-.json-boolean { color: #1c00cf; }
-.json-null { color: #808080; }
 
 /* Tab 栏样式（复用全局 .tab-bar / .tab-item） */
 :deep(.tab-bar) {
