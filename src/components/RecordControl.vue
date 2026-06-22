@@ -47,7 +47,7 @@
     <!-- 右侧：下拉菜单 + 操作按钮 -->
     <div class="flex items-center gap-2">
       <!-- 工具下拉菜单 -->
-      <DropdownMenu ref="toolsMenuRef" label="工具" :badge-count="breakpointCount + mapLocalCount">
+      <DropdownMenu ref="toolsMenuRef" label="工具" :badge-count="breakpointCount + mapLocalCount + mapRemoteCount">
         <template #icon>
           <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z" />
@@ -81,6 +81,21 @@
             class="min-w-[16px] h-[16px] flex items-center justify-center px-1 text-[9px] font-bold rounded-full bg-green-500 text-white"
           >
             {{ mapLocalCount }}
+          </span>
+        </button>
+        <button
+          class="dropdown-item"
+          @click="$emit('toggle-map-remote'); toolsMenuRef?.close()"
+        >
+          <svg class="w-4 h-4 text-blue-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+          </svg>
+          <span class="flex-1">Map Remote</span>
+          <span
+            v-if="mapRemoteCount > 0"
+            class="min-w-[16px] h-[16px] flex items-center justify-center px-1 text-[9px] font-bold rounded-full bg-blue-500 text-white"
+          >
+            {{ mapRemoteCount }}
           </span>
         </button>
       </DropdownMenu>
@@ -148,6 +163,8 @@ defineProps<{
   showBreakpointRules: boolean
   mapLocalCount: number
   showMapLocalRules: boolean
+  mapRemoteCount: number
+  showMapRemoteRules: boolean
 }>()
 
 defineEmits<{
@@ -158,6 +175,7 @@ defineEmits<{
   (e: 'switch-view', mode: 'list' | 'group'): void
   (e: 'toggle-breakpoint'): void
   (e: 'toggle-map-local'): void
+  (e: 'toggle-map-remote'): void
 }>()
 
 const toolsMenuRef = ref<InstanceType<typeof DropdownMenu> | null>(null)

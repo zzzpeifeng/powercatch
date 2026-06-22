@@ -1,10 +1,10 @@
 /**
  * IPC 通信层 - 注册所有 IPC 通道处理
  */
-import { ipcMain, BrowserWindow, shell } from 'electron'
-import { IPC_CHANNELS, type BreakpointRule, type BreakpointResumePayload, type MapLocalRule } from '../src/services/types'
+import { ipcMain, BrowserWindow, shell, dialog } from 'electron'
+import { IPC_CHANNELS, type BreakpointRule, type BreakpointResumePayload, type MapLocalRule, type MapRemoteRule } from '../src/services/types'
 import * as sqlite from './db/sqlite'
-import { startProxy, stopProxy, getProxyStatus, getLocalIP, setDomainFilters, setDeviceAliases, setBreakpointRules as setProxyBreakpointRules, setMapLocalRules as setProxyMapLocalRules, abortAllPendingInterceptions, resolveBreakpointResume, rejectBreakpointResume } from './proxy/mitm-server'
+import { startProxy, stopProxy, getProxyStatus, getLocalIP, setDomainFilters, setDeviceAliases, setBreakpointRules as setProxyBreakpointRules, setMapLocalRules as setProxyMapLocalRules, setMapRemoteRules as setProxyMapRemoteRules, abortAllPendingInterceptions, resolveBreakpointResume, rejectBreakpointResume } from './proxy/mitm-server'
 import { generateCACert, isCAGenerated, getCertFilePath } from './proxy/ca-cert'
 import { setSystemProxy, clearSystemProxy, getSystemProxyStatus } from './proxy/system-proxy'
 import { executeCompare, testConnection, isCompareInProgress } from './services/ai-service'
@@ -587,12 +587,113 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     }
   })
 
-  // 初始化时加载断点规则和 Map Local 规则到 proxy
+  // ===== Map Remote 功能 =====
+
+  ipcMain.handle(IPC_CHANNELS.MAP_REMOTE_ADD_RULE, async (_event, rule: Omit<MapRemoteRule, 'id' | 'createdAt'>) => {
+    try {
+      const settings = sqlite.getAllSettings()
+      const rules = settings.mapRemoteRules || []
+
+      const newRule: MapRemoteRule = {
+        ...rule,
+        id: `map_remote_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+        createdAt: new Date().toISOString(),
+      }
+
+      rules.push(newRule)
+      sqlite.saveAllSettings({ mapRemoteRules: rules })
+      setProxyMapRemoteRules(rules.filter(r => r.enabled))
+
+      return { success: true, rule: newRule }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.MAP_REMOTE_REMOVE_RULE, async (_event, ruleId: string) => {
+    try {
+      const settings = sqlite.getAllSettings()
+      const rules = (settings.mapRemoteRules || []).filter(r => r.id !== ruleId)
+      sqlite.saveAllSettings({ mapRemoteRules: rules })
+      setProxyMapRemoteRules(rules.filter(r => r.enabled))
+      return { success: true }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.MAP_REMOTE_UPDATE_RULE, async (_event, { ruleId, updates }: { ruleId: string; updates: Partial<MapRemoteRule> }) => {
+    try {
+      const settings = sqlite.getAllSettings()
+      const rules = settings.mapRemoteRules || []
+      const index = rules.findIndex(r => r.id === ruleId)
+
+      if (index === -1) {
+        return { success: false, error: '规则不存在' }
+      }
+
+      rules[index] = { ...rules[index], ...updates }
+      sqlite.saveAllSettings({ mapRemoteRules: rules })
+      setProxyMapRemoteRules(rules.filter(r => r.enabled))
+
+      return { success: true }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.MAP_REMOTE_GET_RULES, () => {
+    try {
+      const settings = sqlite.getAllSettings()
+      return settings.mapRemoteRules || []
+    } catch {
+      return []
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.MAP_REMOTE_SYNC_RULES, async (_event, rules: MapRemoteRule[]) => {
+    try {
+      setProxyMapRemoteRules(rules)
+      return { success: true }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  // ===== 文件选择 =====
+  ipcMain.handle('file:select', async (event) => {
+    try {
+      const webContents = event.sender
+      const browserWindow = BrowserWindow.fromWebContents(webContents)
+      const result = await dialog.showOpenDialog(browserWindow, {
+        properties: ['openFile'],
+        filters: [
+          { name: 'All Files', extensions: ['*'] },
+          { name: 'JSON', extensions: ['json'] },
+          { name: 'JavaScript', extensions: ['js', 'mjs'] },
+          { name: 'CSS', extensions: ['css'] },
+          { name: 'HTML', extensions: ['html', 'htm'] },
+          { name: 'Text', extensions: ['txt', 'md', 'xml', 'yaml', 'yml'] },
+        ],
+      })
+      if (result.canceled || result.filePaths.length === 0) {
+        return { success: false, cancelled: true }
+      }
+      return { success: true, filePath: result.filePaths[0] }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  // 初始化时加载断点规则和 Map Local/Remote 规则到 proxy
   const initialSettings = sqlite.getAllSettings()
   if (initialSettings.breakpointRules) {
     setProxyBreakpointRules(initialSettings.breakpointRules)
   }
   if (initialSettings.mapLocalRules) {
     setProxyMapLocalRules(initialSettings.mapLocalRules.filter(r => r.enabled))
+  }
+  if (initialSettings.mapRemoteRules) {
+    setProxyMapRemoteRules(initialSettings.mapRemoteRules.filter(r => r.enabled))
   }
 }

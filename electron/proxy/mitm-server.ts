@@ -16,6 +16,7 @@ import {
   type BreakpointResumePayload,
   type BreakpointStatus,
   type MapLocalRule,
+  type MapRemoteRule,
 } from '../../src/services/types'
 import { networkInterfaces } from 'os'
 import { SSLErrorClassifier, SSLErrorFormatter, type SSLErrorDetail } from '../services/ssl-error-handler'
@@ -23,6 +24,7 @@ import { SSLErrorLogger } from '../services/ssl-logger'
 import { gunzipSync, inflateSync, brotliDecompressSync } from 'zlib'
 import { findMatchingRule } from '../../src/utils/breakpoint-matcher'
 import { matchMapLocal } from '../../src/utils/map-local-matcher'
+import { matchMapRemote } from '../../src/utils/map-remote-matcher'
 import { readFileSync } from 'fs'
 import { extname } from 'path'
 
@@ -39,6 +41,9 @@ let breakpointRules: BreakpointRule[] = []
 
 // Map Local 相关状态
 let mapLocalRules: MapLocalRule[] = []
+
+// Map Remote 相关状态
+let mapRemoteRules: MapRemoteRule[] = []
 const pendingInterceptions = new Map<string, {
   resolve: (modified: InterceptSession) => void
   reject: (reason: string) => void
@@ -144,6 +149,13 @@ export function setBreakpointRules(rules: BreakpointRule[]): void {
  */
 export function setMapLocalRules(rules: MapLocalRule[]): void {
   mapLocalRules = rules.filter(r => r.enabled)
+}
+
+/**
+ * 设置 Map Remote 规则
+ */
+export function setMapRemoteRules(rules: MapRemoteRule[]): void {
+  mapRemoteRules = rules.filter(r => r.enabled)
 }
 
 /**
@@ -442,6 +454,16 @@ function isTextMime(mimeType: string): boolean {
 }
 
 /**
+ * 应用路径替换（v1 简化方案：全路径替换，保留 query string）
+ */
+function applyPathReplacement(originalPath: string, replacement: string): string {
+  const qIndex = originalPath.indexOf('?')
+  const pathname = qIndex >= 0 ? originalPath.substring(0, qIndex) : originalPath
+  const search = qIndex >= 0 ? originalPath.substring(qIndex) : ''
+  return replacement + search
+}
+
+/**
  * 读取本地文件
  * - content: 用于存储在 CaptureRequest.responseBody（文本=原文，二进制=[Base64:...]）
  * - rawBuffer: 原始 Buffer，用于发送给客户端（不做 [Base64:...] 编码）
@@ -465,8 +487,9 @@ function readLocalFile(localPath: string, customMime: string): { content: string
  * 在请求到达时推送（部分数据，等响应回来再更新）
  * 返回一个 requestId 用于后续更新
  * @param mapLocalRuleId 可选，Map Local 规则 ID
+ * @param mapRemoteRuleId 可选，Map Remote 规则 ID
  */
-function pushRequestArrived(method: string, url: string, path: string, host: string, clientIp: string, mapLocalRuleId?: string): string {
+function pushRequestArrived(method: string, url: string, path: string, host: string, clientIp: string, mapLocalRuleId?: string, mapRemoteRuleId?: string): string {
   const id = generateRequestId()
   const now = Date.now()
   const partial: CaptureRequest = {
@@ -488,6 +511,7 @@ function pushRequestArrived(method: string, url: string, path: string, host: str
     selected: false,
     checked: false,
     mapLocalRuleId,
+    mapRemoteRuleId,
     _arrivedAt: now,
   }
   pushToRenderer(partial, false)
@@ -622,6 +646,45 @@ export async function startProxy(port: number, win: BrowserWindow): Promise<bool
           res.end(`Map Local: file not found: ${mapLocalMatch.localPath}`)
           return
         }
+      }
+
+      // ===== Map Remote 检查（Map Local 之后、断点之前） =====
+      const mapRemoteMatch = matchMapRemote(url, method, mapRemoteRules)
+      if (mapRemoteMatch) {
+        const { target } = mapRemoteMatch
+
+        // 修改目标地址
+        ctx.proxyToServerRequestOptions.host = target.host
+        ctx.proxyToServerRequestOptions.port = target.port || (target.protocol === 'https' ? 443 : 80)
+
+        // 修改路径（路径替换）
+        if (target.pathReplacement) {
+          const originalPath = ctx.proxyToServerRequestOptions.path || '/'
+          ctx.proxyToServerRequestOptions.path = applyPathReplacement(originalPath, target.pathReplacement)
+        }
+
+        // 修改请求头中的 Host（使用 proxyToServerRequestOptions，不用 clientToProxyRequest）
+        ctx.proxyToServerRequestOptions.headers = {
+          ...ctx.proxyToServerRequestOptions.headers,
+          host: target.host,
+        }
+
+        // TLS 协议切换
+        if (target.protocol === 'https' && !isSSL) {
+          ctx.proxyToServerRequestOptions.ssl = true
+        } else if (target.protocol === 'http' && isSSL) {
+          ctx.proxyToServerRequestOptions.ssl = false
+        }
+
+        // 标记请求（用于 UI 显示 + onRequestEnd 中传递 mapRemoteRuleId）
+        ctx._mapRemoteRuleId = mapRemoteMatch.id
+        ctx._mapRemoteTarget = `${target.protocol}://${target.host}${target.port ? ':' + target.port : ''}`
+
+        console.log(`[Map Remote] 🎯 规则命中: ${mapRemoteMatch.name} → ${ctx._mapRemoteTarget}`)
+
+        // 继续正常流程（调用 callback()，让 proxy 继续处理请求转发）
+        // onRequestEnd 中的 pushRequestArrived() 会处理推送，传入 ctx._mapRemoteRuleId
+        return callback()
       }
 
       // 检查是否命中断点规则
@@ -759,6 +822,8 @@ export async function startProxy(port: number, win: BrowserWindow): Promise<bool
           ctx._path || '',
           ctx._host || '',
           ctx._clientIp || 'unknown',
+          undefined,              // mapLocalRuleId（正常流程无 Map Local 命中）
+          ctx._mapRemoteRuleId,   // mapRemoteRuleId（可能为 undefined）
         )
         return callback()
       })

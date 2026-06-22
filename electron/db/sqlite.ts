@@ -208,6 +208,7 @@ export function getAllSettings(): AppSettings {
     theme: settingsMap.theme || 'system',
     breakpointRules: JSON.parse(settingsMap.breakpoint_rules || '[]'),
     mapLocalRules: JSON.parse(settingsMap.map_local_rules || '[]'),
+    mapRemoteRules: JSON.parse(settingsMap.map_remote_rules || '[]'),
   }
 }
 
@@ -231,6 +232,7 @@ export function saveAllSettings(settings: Partial<AppSettings>): void {
   if (settings.theme !== undefined) mapping.theme = settings.theme
   if (settings.breakpointRules !== undefined) mapping.breakpoint_rules = JSON.stringify(settings.breakpointRules)
   if (settings.mapLocalRules !== undefined) mapping.map_local_rules = JSON.stringify(settings.mapLocalRules)
+  if (settings.mapRemoteRules !== undefined) mapping.map_remote_rules = JSON.stringify(settings.mapRemoteRules)
 
   const transaction = db.transaction(() => {
     const stmt = db.prepare(

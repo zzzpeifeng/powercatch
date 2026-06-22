@@ -1,9 +1,9 @@
 <template>
   <div class="modal-overlay" @click.self="handleClose">
-    <div class="map-local-panel">
+    <div class="map-remote-panel">
       <!-- 头部 -->
       <div class="panel-header">
-        <h3 class="panel-title">Map Local 规则</h3>
+        <h3 class="panel-title">Map Remote 规则</h3>
         <div class="header-actions">
           <button class="btn-icon" @click="handleAddRule" title="添加规则">
             +
@@ -24,8 +24,8 @@
       <!-- 规则列表 -->
       <div class="rules-list">
         <div v-if="rules.length === 0" class="empty-state">
-          <p>暂无 Map Local 规则</p>
-          <p class="hint">点击右上角 + 添加规则，将指定 URL 响应替换为本地文件</p>
+          <p>暂无 Map Remote 规则</p>
+          <p class="hint">点击右上角 + 添加规则，将指定 URL 请求转发到另一个域名</p>
         </div>
 
         <div
@@ -54,8 +54,8 @@
               <span class="detail-value">{{ rule.match.urlPattern }}</span>
             </div>
             <div class="detail-row">
-              <span class="detail-label">文件：</span>
-              <span class="detail-value file-path">{{ rule.localPath }}</span>
+              <span class="detail-label">目标：</span>
+              <span class="detail-value target-url">{{ formatTarget(rule.target) }}</span>
             </div>
           </div>
 
@@ -73,7 +73,7 @@
       <!-- 添加/编辑规则弹窗 -->
       <div v-if="showForm" class="rule-form-overlay" @click.self="showForm = false">
         <div class="rule-form">
-          <h4>{{ editingRule ? '编辑规则' : '添加 Map Local 规则' }}</h4>
+          <h4>{{ editingRule ? '编辑规则' : '添加 Map Remote 规则' }}</h4>
 
           <div class="form-group">
             <label>规则名称</label>
@@ -102,17 +102,19 @@
           </div>
 
           <div class="form-group">
-            <label>本地文件路径</label>
-            <div class="file-input-row">
-              <input v-model="formData.localPath" placeholder="/path/to/local/file.json" class="flex-1" />
-              <button class="btn btn-secondary browse-btn" @click="handleBrowse">浏览...</button>
+            <label>目标地址</label>
+            <div class="target-row">
+              <select v-model="formData.protocol" class="protocol-select">
+                <option value="https">https</option>
+                <option value="http">http</option>
+              </select>
+              <input v-model="formData.host" placeholder="目标主机名" style="flex: 1;" />
             </div>
-            <div class="hint">支持 JSON / JS / CSS / HTML / TXT 等文本文件，MIME 类型自动检测</div>
-          </div>
-
-          <div class="form-group">
-            <label>MIME 类型（可选，自动检测）</label>
-            <input v-model="formData.mimeType" placeholder="application/json" />
+            <div class="target-row" style="margin-top: 8px;">
+              <input v-model="formData.port" placeholder="端口（空=默认）" class="port-input" />
+              <input v-model="formData.pathReplacement" placeholder="路径替换（可选）" style="flex: 1; min-width: 0;" />
+            </div>
+            <div class="hint">目标主机必填，端口和路径替换可选</div>
           </div>
 
           <div v-if="formErrors.length > 0" class="form-errors">
@@ -133,32 +135,41 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { useMapLocalStore } from '../stores/map-local-store'
-import type { MapLocalRule, HttpMethod } from '../services/types'
+import { useMapRemoteStore } from '../stores/map-remote-store'
+import type { MapRemoteRule, HttpMethod } from '../services/types'
 
 const emit = defineEmits<{
   (e: 'close'): void
 }>()
 
-const mapLocalStore = useMapLocalStore()
+const mapRemoteStore = useMapRemoteStore()
 
 // 规则列表
-const rules = computed(() => mapLocalStore.rules)
+const rules = computed(() => mapRemoteStore.rules)
 
 // HTTP 方法列表
 const methods: HttpMethod[] = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS']
 
 // 表单状态
 const showForm = ref(false)
-const editingRule = ref<MapLocalRule | null>(null)
+const editingRule = ref<MapRemoteRule | null>(null)
 const formErrors = ref<string[]>([])
 const formData = ref({
   name: '',
   urlPattern: '',
   methods: [] as HttpMethod[],
-  localPath: '',
-  mimeType: '',
+  protocol: 'https' as 'http' | 'https',
+  host: '',
+  port: '',
+  pathReplacement: '',
 })
+
+// 格式化目标地址
+function formatTarget(target: MapRemoteRule['target']): string {
+  const port = target.port ? `:${target.port}` : ''
+  const path = target.pathReplacement || ''
+  return `${target.protocol}://${target.host}${port}${path}`
+}
 
 // 添加规则
 function handleAddRule() {
@@ -167,22 +178,26 @@ function handleAddRule() {
     name: '',
     urlPattern: '',
     methods: [],
-    localPath: '',
-    mimeType: '',
+    protocol: 'https',
+    host: '',
+    port: '',
+    pathReplacement: '',
   }
   formErrors.value = []
   showForm.value = true
 }
 
 // 编辑规则
-function handleEdit(rule: MapLocalRule) {
+function handleEdit(rule: MapRemoteRule) {
   editingRule.value = rule
   formData.value = {
     name: rule.name,
     urlPattern: rule.match.urlPattern,
     methods: [...rule.match.methods],
-    localPath: rule.localPath,
-    mimeType: rule.mimeType,
+    protocol: rule.target.protocol,
+    host: rule.target.host,
+    port: rule.target.port?.toString() || '',
+    pathReplacement: rule.target.pathReplacement || '',
   }
   formErrors.value = []
   showForm.value = true
@@ -192,16 +207,22 @@ function handleEdit(rule: MapLocalRule) {
 async function handleSaveRule() {
   formErrors.value = []
 
+  const target = {
+    protocol: formData.value.protocol,
+    host: formData.value.host,
+    port: formData.value.port ? parseInt(formData.value.port, 10) : undefined,
+    pathReplacement: formData.value.pathReplacement || undefined,
+  }
+
   if (editingRule.value) {
     // 更新
-    const result = await mapLocalStore.updateRule(editingRule.value.id, {
+    const result = await mapRemoteStore.updateRule(editingRule.value.id, {
       name: formData.value.name,
       match: {
         urlPattern: formData.value.urlPattern,
         methods: formData.value.methods,
       },
-      localPath: formData.value.localPath,
-      mimeType: formData.value.mimeType,
+      target,
     })
     if (!result.success) {
       formErrors.value = result.errors
@@ -209,15 +230,14 @@ async function handleSaveRule() {
     }
   } else {
     // 添加
-    const result = await mapLocalStore.addRule({
+    const result = await mapRemoteStore.addRule({
       name: formData.value.name,
       enabled: true,
       match: {
         urlPattern: formData.value.urlPattern,
         methods: formData.value.methods,
       },
-      localPath: formData.value.localPath,
-      mimeType: formData.value.mimeType,
+      target,
     })
     if (!result.success) {
       formErrors.value = result.errors
@@ -231,41 +251,29 @@ async function handleSaveRule() {
 // 删除规则
 async function handleDelete(ruleId: string) {
   if (confirm('确定要删除这条规则吗？')) {
-    await mapLocalStore.removeRule(ruleId)
+    await mapRemoteStore.removeRule(ruleId)
   }
 }
 
 // 切换启用状态
 async function handleToggle(ruleId: string) {
-  await mapLocalStore.toggleRule(ruleId)
+  await mapRemoteStore.toggleRule(ruleId)
 }
 
 // 全部启用
 async function handleEnableAll() {
-  await mapLocalStore.enableAllRules()
+  await mapRemoteStore.enableAllRules()
 }
 
 // 全部禁用
 async function handleDisableAll() {
-  await mapLocalStore.disableAllRules()
+  await mapRemoteStore.disableAllRules()
 }
 
 // 清空
 async function handleClearAll() {
-  if (confirm('确定要清空所有 Map Local 规则吗？')) {
-    await mapLocalStore.clearAllRules()
-  }
-}
-
-// 浏览文件（通过 Electron dialog）
-async function handleBrowse() {
-  try {
-    const result = await (window as any).electronAPI.file.select()
-    if (result.success && !result.cancelled) {
-      formData.value.localPath = result.filePath
-    }
-  } catch (error: any) {
-    console.error('文件选择失败:', error)
+  if (confirm('确定要清空所有 Map Remote 规则吗？')) {
+    await mapRemoteStore.clearAllRules()
   }
 }
 
@@ -287,7 +295,7 @@ function handleClose() {
   backdrop-filter: blur(2px);
 }
 
-.map-local-panel {
+.map-remote-panel {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: 12px;
@@ -492,9 +500,8 @@ input:checked + .toggle-slider:before {
   word-break: break-all;
 }
 
-.detail-value.file-path {
-  color: var(--color-text);
-  font-size: 11px;
+.detail-value.target-url {
+  color: #3b82f6;
 }
 
 .rule-actions {
@@ -599,18 +606,27 @@ input:checked + .toggle-slider:before {
   display: none;
 }
 
-.file-input-row {
+.target-row {
   display: flex;
   gap: 8px;
+  width: 100%;
+  align-items: center;
 }
 
-.file-input-row input {
-  flex: 1;
+.target-row > select,
+.target-row > input {
+  width: auto;   /* 覆盖 .form-group input 的 width: 100% */
+  min-width: 0;  /* 防止 flex 子元素溢出 */
 }
 
-.browse-btn {
-  white-space: nowrap;
-  padding: 10px 16px;
+.protocol-select {
+  width: 100px;
+  flex-shrink: 0;
+}
+
+.port-input {
+  width: 120px;
+  flex-shrink: 0;
 }
 
 .form-errors {

@@ -49,6 +49,8 @@ export interface CaptureRequest {
   breakpointStatus?: BreakpointStatus
   /** 命中的 Map Local 规则 ID */
   mapLocalRuleId?: string
+  /** 命中的 Map Remote 规则 ID */
+  mapRemoteRuleId?: string
 }
 
 /** 响应更新数据（通过独立 channel 推送，仅包含响应相关字段） */
@@ -117,6 +119,8 @@ export interface AppSettings {
   breakpointRules?: BreakpointRule[]
   /** Map Local 规则 */
   mapLocalRules?: MapLocalRule[]
+  /** Map Remote 规则 */
+  mapRemoteRules?: MapRemoteRule[]
 }
 
 /** 设备信息 */
@@ -224,6 +228,36 @@ export interface MapLocalRule {
   localPath: string
   /** 响应 MIME 类型（自动检测 if empty） */
   mimeType: string
+  /** 创建时间 */
+  createdAt: string
+}
+
+/** Map Remote 映射规则 */
+export interface MapRemoteRule {
+  /** 规则 ID */
+  id: string
+  /** 是否启用 */
+  enabled: boolean
+  /** 规则名称（用户自定义） */
+  name: string
+  /** 匹配模式 */
+  match: {
+    /** URL 通配符，如 *api.shopline.com/users* */
+    urlPattern: string
+    /** HTTP 方法过滤（空 = 所有方法） */
+    methods: HttpMethod[]
+  }
+  /** 目标地址 */
+  target: {
+    /** 目标协议（http/https） */
+    protocol: 'http' | 'https'
+    /** 目标主机名 */
+    host: string
+    /** 目标端口（空 = 默认端口） */
+    port?: number
+    /** 路径替换（可选，空 = 保留原路径） */
+    pathReplacement?: string
+  }
   /** 创建时间 */
   createdAt: string
 }
@@ -397,6 +431,13 @@ export const IPC_CHANNELS = {
   MAP_LOCAL_REMOVE_RULE: 'map-local:remove-rule',
   MAP_LOCAL_UPDATE_RULE: 'map-local:update-rule',
   MAP_LOCAL_SYNC_RULES: 'map-local:sync-rules',
+
+  // Map Remote 功能
+  MAP_REMOTE_GET_RULES: 'map-remote:get-rules',
+  MAP_REMOTE_ADD_RULE: 'map-remote:add-rule',
+  MAP_REMOTE_REMOVE_RULE: 'map-remote:remove-rule',
+  MAP_REMOTE_UPDATE_RULE: 'map-remote:update-rule',
+  MAP_REMOTE_SYNC_RULES: 'map-remote:sync-rules',
 } as const
 
 /** IPC 通道名称类型 */

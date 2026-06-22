@@ -18,6 +18,7 @@ import type {
   BreakpointResumePayload,
   BreakpointStatus,
   MapLocalRule,
+  MapRemoteRule,
 } from './types'
 
 /** Electron API 类型（由 preload.ts 暴露） */
@@ -105,6 +106,13 @@ interface ElectronAPI {
     updateRule: (ruleId: string, updates: Partial<MapLocalRule>) => Promise<{ success: boolean; error?: string }>
     getRules: () => Promise<MapLocalRule[]>
     syncRules: (rules: MapLocalRule[]) => Promise<{ success: boolean; error?: string }>
+  }
+  mapRemote: {
+    addRule: (rule: Omit<MapRemoteRule, 'id' | 'createdAt'>) => Promise<{ success: boolean; rule?: MapRemoteRule; error?: string }>
+    removeRule: (ruleId: string) => Promise<{ success: boolean; error?: string }>
+    updateRule: (ruleId: string, updates: Partial<MapRemoteRule>) => Promise<{ success: boolean; error?: string }>
+    getRules: () => Promise<MapRemoteRule[]>
+    syncRules: (rules: MapRemoteRule[]) => Promise<{ success: boolean; error?: string }>
   }
 }
 
@@ -509,6 +517,39 @@ export const ipc = {
       const api = getElectronAPI()
       if (!api) return { success: false, error: 'Not in Electron environment' }
       return api.mapLocal.syncRules(rules)
+    },
+  },
+
+  // ===== Map Remote 功能 =====
+  mapRemote: {
+    addRule: async (rule: Omit<MapRemoteRule, 'id' | 'createdAt'>): Promise<{ success: boolean; rule?: MapRemoteRule; error?: string }> => {
+      const api = getElectronAPI()
+      if (!api) return { success: false, error: 'Not in Electron environment' }
+      return api.mapRemote.addRule(rule)
+    },
+
+    removeRule: async (ruleId: string): Promise<{ success: boolean; error?: string }> => {
+      const api = getElectronAPI()
+      if (!api) return { success: false, error: 'Not in Electron environment' }
+      return api.mapRemote.removeRule(ruleId)
+    },
+
+    updateRule: async (ruleId: string, updates: Partial<MapRemoteRule>): Promise<{ success: boolean; error?: string }> => {
+      const api = getElectronAPI()
+      if (!api) return { success: false, error: 'Not in Electron environment' }
+      return api.mapRemote.updateRule(ruleId, updates)
+    },
+
+    getRules: async (): Promise<MapRemoteRule[]> => {
+      const api = getElectronAPI()
+      if (!api) return []
+      return api.mapRemote.getRules()
+    },
+
+    syncRules: async (rules: MapRemoteRule[]): Promise<{ success: boolean; error?: string }> => {
+      const api = getElectronAPI()
+      if (!api) return { success: false, error: 'Not in Electron environment' }
+      return api.mapRemote.syncRules(rules)
     },
   },
 }

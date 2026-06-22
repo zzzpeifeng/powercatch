@@ -158,6 +158,20 @@ const electronAPI = {
     getRules: () => ipcRenderer.invoke(IPC_CHANNELS.MAP_LOCAL_GET_RULES),
     syncRules: (rules: any[]) => ipcRenderer.invoke(IPC_CHANNELS.MAP_LOCAL_SYNC_RULES, rules),
   },
+
+  // Map Remote 功能
+  mapRemote: {
+    addRule: (rule: any) => ipcRenderer.invoke(IPC_CHANNELS.MAP_REMOTE_ADD_RULE, rule),
+    removeRule: (ruleId: string) => ipcRenderer.invoke(IPC_CHANNELS.MAP_REMOTE_REMOVE_RULE, ruleId),
+    updateRule: (ruleId: string, updates: any) => ipcRenderer.invoke(IPC_CHANNELS.MAP_REMOTE_UPDATE_RULE, { ruleId, updates }),
+    getRules: () => ipcRenderer.invoke(IPC_CHANNELS.MAP_REMOTE_GET_RULES),
+    syncRules: (rules: any[]) => ipcRenderer.invoke(IPC_CHANNELS.MAP_REMOTE_SYNC_RULES, rules),
+  },
+
+  // 文件选择
+  file: {
+    select: () => ipcRenderer.invoke('file:select'),
+  },
 }
 
 // 暴露 API 到渲染进程

@@ -32,6 +32,8 @@
       :show-breakpoint-rules="showBreakpointRules"
       :map-local-count="mapLocalStore.rules.length"
       :show-map-local-rules="showMapLocalRules"
+      :map-remote-count="mapRemoteStore.rules.length"
+      :show-map-remote-rules="showMapRemoteRules"
       @toggle-record="handleToggleRecord"
       @compare="handleCompare"
       @export-result="showExportMenu = true"
@@ -39,6 +41,7 @@
       @switch-view="(mode: 'list' | 'group') => requestStore.setViewMode(mode)"
       @toggle-breakpoint="showBreakpointRules = !showBreakpointRules"
       @toggle-map-local="showMapLocalRules = !showMapLocalRules"
+      @toggle-map-remote="showMapRemoteRules = !showMapRemoteRules"
     />
 
     <!-- 断点规则面板 -->
@@ -46,6 +49,9 @@
 
     <!-- Map Local 规则面板 -->
     <MapLocalRules v-if="showMapLocalRules" @close="showMapLocalRules = false" />
+
+    <!-- Map Remote 规则面板 -->
+    <MapRemoteRules v-if="showMapRemoteRules" @close="showMapRemoteRules = false" />
 
     <!-- 主内容区：可拖拽上下分割 -->
     <div ref="containerRef" class="flex-1 flex flex-col overflow-hidden">
@@ -111,6 +117,7 @@ import { ipc } from '../services/ipc'
 import { useSystemProxyStore } from '../stores/system-proxy-store'
 import { useBreakpointStore } from '../stores/breakpoint-store'
 import { useMapLocalStore } from '../stores/map-local-store'
+import { useMapRemoteStore } from '../stores/map-remote-store'
 import SystemProxyBanner from '../components/SystemProxyBanner.vue'
 import DomainFilter from '../components/DomainFilter.vue'
 import RecordControl from '../components/RecordControl.vue'
@@ -120,6 +127,7 @@ import CompareResult from '../components/CompareResult.vue'
 import ExportButton from '../components/ExportButton.vue'
 import BreakpointRules from '../components/BreakpointRules.vue'
 import MapLocalRules from '../components/MapLocalRules.vue'
+import MapRemoteRules from '../components/MapRemoteRules.vue'
 
 const router = useRouter()
 const requestStore = useRequestStore()
@@ -127,6 +135,7 @@ const settingsStore = useSettingsStore()
 const systemProxyStore = useSystemProxyStore()
 const breakpointStore = useBreakpointStore()
 const mapLocalStore = useMapLocalStore()
+const mapRemoteStore = useMapRemoteStore()
 const toast = useToast()
 
 const domainFilterRef = ref<InstanceType<typeof DomainFilter> | null>(null)
@@ -135,6 +144,7 @@ const containerRef = ref<HTMLElement | null>(null)
 const bannerHidden = ref<boolean>(false)
 const showBreakpointRules = ref<boolean>(false)
 const showMapLocalRules = ref<boolean>(false)
+const showMapRemoteRules = ref<boolean>(false)
 
 /** 当前键盘导航焦点在 displayRows 中的索引（group 模式专用，含域名头） */
 const navigationIndex = ref<number>(-1)
@@ -159,6 +169,10 @@ onMounted(() => {
 
   // 启动系统代理状态轮询（开启时 banner 才能正确显示）
   systemProxyStore.startPolling()
+
+  // 加载 Map Local 和 Map Remote 规则
+  mapLocalStore.loadRules()
+  mapRemoteStore.loadRules()
 })
 
 onUnmounted(() => {
