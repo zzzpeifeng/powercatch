@@ -81,6 +81,7 @@
           'bg-blue-50 dark:bg-blue-900': item.request!.checked,
         }"
         @click="$emit('select', item.request!)"
+        @contextmenu.prevent="handleContextMenu($event, item.request!)"
       >
         <!-- 勾选框 -->
         <input
@@ -125,6 +126,14 @@
         </div>
       </div>
     </div>
+    <RequestContextMenu
+      :visible="contextMenu.visible"
+      :x="contextMenu.x"
+      :y="contextMenu.y"
+      :request="contextMenu.request"
+      @close="contextMenu.visible = false"
+      @toast="handleToast"
+    />
   </div>
 </template>
 
@@ -137,6 +146,8 @@ import type { CaptureRequest, DomainSortMode } from '../services/types'
 import { formatHostWithProtocol } from '../utils/url-formatter'
 import FilterPanel from './FilterPanel.vue'
 import ActiveFilterTags from './ActiveFilterTags.vue'
+import RequestContextMenu from './RequestContextMenu.vue'
+import { useToast } from '../composables/useToast'
 
 const store = useRequestStore()
 const {
@@ -146,11 +157,32 @@ const {
 
 const scrollerRef = ref<InstanceType<typeof RecycleScroller> | null>(null)
 const userScrolled = ref(false)
+const contextMenu = ref({ visible: false, x: 0, y: 0, request: null as CaptureRequest | null })
+const toast = useToast()
 
 function onScroll(): void {
   if (scrollerRef.value) {
     const el = (scrollerRef.value as any).$el as HTMLElement
     userScrolled.value = el.scrollTop > 10
+  }
+}
+
+function handleContextMenu(event: MouseEvent, request: CaptureRequest): void {
+  contextMenu.value = {
+    visible: true,
+    x: event.clientX,
+    y: event.clientY,
+    request,
+  }
+}
+
+function handleToast(message: string, type: string): void {
+  if (type === 'success') {
+    toast.success(message)
+  } else if (type === 'error') {
+    toast.error(message)
+  } else {
+    toast.info(message)
   }
 }
 

@@ -91,11 +91,11 @@ function createAndInitWindow(): void {
     show: false,
   })
 
+  // 初始化数据库（必须在 registerIpcHandlers 之前，因为 IPC handler 会调用 getAllSettings）
+  initDatabase()
+
   // 注册 IPC 处理器（在页面加载之前，避免渲染进程调用时 handler 未就绪）
   registerIpcHandlers(mainWindow)
-
-  // 初始化数据库
-  initDatabase()
 
   // 创建菜单
   createAppMenu()

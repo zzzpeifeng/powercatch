@@ -515,6 +515,27 @@ export const useRequestStore = defineStore('request', () => {
     streamingText.value = ''
   }
 
+  /** 删除单个请求 */
+  function removeRequest(id: string): void {
+    const idx = requestIndexMap.get(id)
+    if (idx !== undefined) {
+      // 如果是选中的请求，清除选中状态
+      if (selectedRequest.value?.id === id) {
+        selectedRequest.value = null
+      }
+      // 从勾选列表中移除
+      const checkedIdx = checkedRequests.value.findIndex(r => r.id === id)
+      if (checkedIdx >= 0) {
+        checkedRequests.value.splice(checkedIdx, 1)
+      }
+      // 从列表中移除
+      requests.value.splice(idx, 1)
+      // 重建索引
+      requestIndexMap.clear()
+      requests.value.forEach((r, i) => requestIndexMap.set(r.id, i))
+    }
+  }
+
   /** 选中请求查看详情（设置 request.selected 防止被淘汰逻辑误删） */
   function selectRequest(request: CaptureRequest | null): void {
     // 清除旧选中状态
@@ -672,10 +693,21 @@ export const useRequestStore = defineStore('request', () => {
       console.log('[Store] onRequestUpdated 回调触发！更新请求:', update.id, update.statusCode)
       updateRequest(update)
     })
+    
+    // 订阅断点状态更新
+    const unsubBreakpointStatus = ipc.breakpoint.onStatusUpdate((data: { requestId: string; status: string }) => {
+      console.log('[Store] breakpointStatus 更新:', data.requestId, data.status)
+      const idx = requestIndexMap.get(data.requestId)
+      if (idx !== undefined) {
+        requests.value[idx].breakpointStatus = data.status as any
+      }
+    })
+    
     console.log('[Store] subscribeToNewRequests: 订阅完成')
     return () => {
       unsub()
       unsubUpdate()
+      unsubBreakpointStatus()
     }
   }
 
@@ -834,6 +866,7 @@ export const useRequestStore = defineStore('request', () => {
     // ===== 既有 Actions =====
     addRequest,
     clearRequests,
+    removeRequest,
     selectRequest,
     toggleCheck,
     startRecording,

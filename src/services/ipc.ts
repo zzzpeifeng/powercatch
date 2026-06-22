@@ -13,6 +13,10 @@ import type {
   Toast,
   ProxyOperationResult,
   SystemProxyStatus,
+  BreakpointRule,
+  InterceptSession,
+  BreakpointResumePayload,
+  BreakpointStatus,
 } from './types'
 
 /** Electron API 类型（由 preload.ts 暴露） */
@@ -82,6 +86,17 @@ interface ElectronAPI {
     startServer: (port?: number) => Promise<{ success: boolean; url: string; error?: string }>
     stopServer: () => Promise<{ success: boolean; error?: string }>
     getQRCode: (text: string) => Promise<{ success: boolean; dataUrl: string; error?: string }>
+  }
+  breakpoint: {
+    addRule: (rule: Omit<BreakpointRule, 'id' | 'createdAt'>) => Promise<{ success: boolean; rule?: BreakpointRule; error?: string }>
+    removeRule: (ruleId: string) => Promise<{ success: boolean; error?: string }>
+    updateRule: (ruleId: string, updates: Partial<BreakpointRule>) => Promise<{ success: boolean; error?: string }>
+    getRules: () => Promise<BreakpointRule[]>
+    resume: (payload: BreakpointResumePayload) => Promise<{ success: boolean; error?: string }>
+    abort: (sessionId: string) => Promise<{ success: boolean; error?: string }>
+    onIntercepted: (callback: (session: InterceptSession) => void) => () => void
+    onStatusUpdate: (callback: (data: { requestId: string; status: BreakpointStatus }) => void) => () => void
+    syncRules: (rules: BreakpointRule[]) => Promise<{ success: boolean; error?: string }>
   }
 }
 
@@ -396,6 +411,63 @@ export const ipc = {
       const api = getElectronAPI()
       if (!api) return { success: false, ssid: '', error: 'Not in Electron environment' }
       return api.wifi.getCurrentWifi()
+    },
+  },
+
+  // ===== 断点功能 =====
+  breakpoint: {
+    addRule: async (rule: Omit<BreakpointRule, 'id' | 'createdAt'>): Promise<{ success: boolean; rule?: BreakpointRule; error?: string }> => {
+      const api = getElectronAPI()
+      if (!api) return { success: false, error: 'Not in Electron environment' }
+      return api.breakpoint.addRule(rule)
+    },
+
+    removeRule: async (ruleId: string): Promise<{ success: boolean; error?: string }> => {
+      const api = getElectronAPI()
+      if (!api) return { success: false, error: 'Not in Electron environment' }
+      return api.breakpoint.removeRule(ruleId)
+    },
+
+    updateRule: async (ruleId: string, updates: Partial<BreakpointRule>): Promise<{ success: boolean; error?: string }> => {
+      const api = getElectronAPI()
+      if (!api) return { success: false, error: 'Not in Electron environment' }
+      return api.breakpoint.updateRule(ruleId, updates)
+    },
+
+    getRules: async (): Promise<BreakpointRule[]> => {
+      const api = getElectronAPI()
+      if (!api) return []
+      return api.breakpoint.getRules()
+    },
+
+    resume: async (payload: BreakpointResumePayload): Promise<{ success: boolean; error?: string }> => {
+      const api = getElectronAPI()
+      if (!api) return { success: false, error: 'Not in Electron environment' }
+      return api.breakpoint.resume(payload)
+    },
+
+    abort: async (sessionId: string): Promise<{ success: boolean; error?: string }> => {
+      const api = getElectronAPI()
+      if (!api) return { success: false, error: 'Not in Electron environment' }
+      return api.breakpoint.abort(sessionId)
+    },
+
+    onIntercepted: (callback: (session: InterceptSession) => void): (() => void) => {
+      const api = getElectronAPI()
+      if (!api) return () => {}
+      return api.breakpoint.onIntercepted(callback)
+    },
+
+    onStatusUpdate: (callback: (data: { requestId: string; status: BreakpointStatus }) => void): (() => void) => {
+      const api = getElectronAPI()
+      if (!api) return () => {}
+      return api.breakpoint.onStatusUpdate(callback)
+    },
+
+    syncRules: async (rules: BreakpointRule[]): Promise<{ success: boolean; error?: string }> => {
+      const api = getElectronAPI()
+      if (!api) return { success: false, error: 'Not in Electron environment' }
+      return api.breakpoint.syncRules(rules)
     },
   },
 }

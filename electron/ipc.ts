@@ -2,9 +2,9 @@
  * IPC 通信层 - 注册所有 IPC 通道处理
  */
 import { ipcMain, BrowserWindow, shell } from 'electron'
-import { IPC_CHANNELS } from '../src/services/types'
+import { IPC_CHANNELS, type BreakpointRule, type BreakpointResumePayload } from '../src/services/types'
 import * as sqlite from './db/sqlite'
-import { startProxy, stopProxy, getProxyStatus, getLocalIP, setDomainFilters, setDeviceAliases } from './proxy/mitm-server'
+import { startProxy, stopProxy, getProxyStatus, getLocalIP, setDomainFilters, setDeviceAliases, setBreakpointRules as setProxyBreakpointRules, abortAllPendingInterceptions, resolveBreakpointResume, rejectBreakpointResume } from './proxy/mitm-server'
 import { generateCACert, isCAGenerated, getCertFilePath } from './proxy/ca-cert'
 import { setSystemProxy, clearSystemProxy, getSystemProxyStatus } from './proxy/system-proxy'
 import { executeCompare, testConnection, isCompareInProgress } from './services/ai-service'
@@ -403,4 +403,120 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       return { success: false, ssid: '', error: error.message }
     }
   })
+
+  // ===== 断点功能 =====
+
+  ipcMain.handle(IPC_CHANNELS.BREAKPOINT_ADD_RULE, async (_event, rule: Omit<BreakpointRule, 'id' | 'createdAt'>) => {
+    try {
+      const settings = sqlite.getAllSettings()
+      const rules = settings.breakpointRules || []
+      
+      const newRule: BreakpointRule = {
+        ...rule,
+        id: `rule_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+        createdAt: new Date().toISOString(),
+      }
+      
+      rules.push(newRule)
+      sqlite.saveAllSettings({ breakpointRules: rules })
+      setProxyBreakpointRules(rules)
+      
+      return { success: true, rule: newRule }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.BREAKPOINT_REMOVE_RULE, async (_event, ruleId: string) => {
+    try {
+      const settings = sqlite.getAllSettings()
+      const rules = (settings.breakpointRules || []).filter(r => r.id !== ruleId)
+      sqlite.saveAllSettings({ breakpointRules: rules })
+      setProxyBreakpointRules(rules)
+      return { success: true }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.BREAKPOINT_UPDATE_RULE, async (_event, { ruleId, updates }: { ruleId: string; updates: Partial<BreakpointRule> }) => {
+    try {
+      const settings = sqlite.getAllSettings()
+      const rules = settings.breakpointRules || []
+      const index = rules.findIndex(r => r.id === ruleId)
+      
+      if (index === -1) {
+        return { success: false, error: '规则不存在' }
+      }
+      
+      rules[index] = { ...rules[index], ...updates }
+      sqlite.saveAllSettings({ breakpointRules: rules })
+      setProxyBreakpointRules(rules)
+      
+      return { success: true }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.BREAKPOINT_GET_RULES, () => {
+    try {
+      const settings = sqlite.getAllSettings()
+      return settings.breakpointRules || []
+    } catch {
+      return []
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.BREAKPOINT_RESUME, async (_event, payload: BreakpointResumePayload) => {
+    try {
+      const { sessionId, action, modified } = payload
+      
+      if (action === 'abort') {
+        rejectBreakpointResume(sessionId)
+        return { success: true }
+      }
+      
+      // action === 'resume'
+      if (modified) {
+        resolveBreakpointResume(sessionId, {
+          id: sessionId,
+          status: 'resumed',
+          editable: modified,
+          original: modified, // 临时使用，实际应该从 pendingInterceptions 获取
+          stage: 'request', // 临时使用
+          ruleId: '',
+          interceptedAt: new Date().toISOString(),
+        })
+      }
+      
+      return { success: true }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.BREAKPOINT_ABORT, async (_event, sessionId: string) => {
+    try {
+      rejectBreakpointResume(sessionId)
+      return { success: true }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle('breakpoint:sync-rules', async (_event, rules: BreakpointRule[]) => {
+    try {
+      setProxyBreakpointRules(rules)
+      return { success: true }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  // 初始化时加载断点规则到 proxy
+  const initialSettings = sqlite.getAllSettings()
+  if (initialSettings.breakpointRules) {
+    setProxyBreakpointRules(initialSettings.breakpointRules)
+  }
 }

@@ -45,6 +45,8 @@ export interface CaptureRequest {
   selected: boolean
   /** 是否被勾选用于对比（前端状态，最多 2 个） */
   checked: boolean
+  /** 断点状态 */
+  breakpointStatus?: BreakpointStatus
 }
 
 /** 响应更新数据（通过独立 channel 推送，仅包含响应相关字段） */
@@ -109,6 +111,8 @@ export interface AppSettings {
   caCertGenerated: boolean
   /** 主题设置 */
   theme?: 'light' | 'dark' | 'system'
+  /** 断点规则 */
+  breakpointRules?: BreakpointRule[]
 }
 
 /** 设备信息 */
@@ -175,6 +179,81 @@ export interface LoadingStates {
 
 /** 代理状态 */
 export type ProxyStatus = 'stopped' | 'starting' | 'running' | 'stopping'
+
+/** 断点规则 */
+export interface BreakpointRule {
+  /** 规则 ID */
+  id: string
+  /** 是否启用 */
+  enabled: boolean
+  /** 规则名称（用户自定义） */
+  name: string
+  /** 匹配模式 */
+  match: {
+    /** URL 通配符，如 *api.shopline.com/login* */
+    urlPattern: string
+    /** HTTP 方法过滤（空 = 所有方法） */
+    methods: HttpMethod[]
+  }
+  /** 拦截阶段 */
+  stage: 'request' | 'response' | 'both'
+  /** 创建时间 */
+  createdAt: string
+}
+
+/** 拦截会话 */
+export interface InterceptSession {
+  /** 会话 ID */
+  id: string
+  /** 触发的规则 ID */
+  ruleId: string
+  /** 拦截阶段 */
+  stage: 'request' | 'response'
+  /** 用户可编辑的副本 */
+  editable: {
+    method: HttpMethod
+    url: string
+    requestHeaders: HttpHeaders
+    requestBody: string
+    /** 仅 response 阶段可编辑 */
+    statusCode?: number
+    responseHeaders?: HttpHeaders
+    responseBody?: string
+  }
+  /** 原始数据快照（用于"恢复原始"按钮） */
+  original: {
+    method: HttpMethod
+    url: string
+    requestHeaders: HttpHeaders
+    requestBody: string
+    statusCode?: number
+    responseHeaders?: HttpHeaders
+    responseBody?: string
+  }
+  /** 状态 */
+  status: 'waiting' | 'resumed' | 'aborted'
+  /** 命中时间 */
+  interceptedAt: string
+}
+
+/** 断点恢复载荷 */
+export interface BreakpointResumePayload {
+  sessionId: string
+  action: 'resume' | 'abort'
+  /** action='resume' 时，完整的编辑后数据（全量，非增量） */
+  modified?: {
+    method: HttpMethod
+    url: string
+    requestHeaders: HttpHeaders
+    requestBody: string
+    statusCode?: number
+    responseHeaders?: HttpHeaders
+    responseBody?: string
+  }
+}
+
+/** 请求断点状态 */
+export type BreakpointStatus = 'intercepting' | 'resumed' | 'aborted'
 
 /** 代理信息 */
 export interface ProxyInfo {
@@ -274,6 +353,16 @@ export const IPC_CHANNELS = {
   WIFI_GET_QR: 'wifi:get-qr',
   WIFI_GET_CURRENT: 'wifi:get-current',
   WIFI_GET_CURRENT_AIRPORT: 'wifi:get-current-airport', // 使用 airport 命令
+
+  // 断点功能
+  BREAKPOINT_ADD_RULE: 'breakpoint:add-rule',
+  BREAKPOINT_REMOVE_RULE: 'breakpoint:remove-rule',
+  BREAKPOINT_UPDATE_RULE: 'breakpoint:update-rule',
+  BREAKPOINT_GET_RULES: 'breakpoint:get-rules',
+  BREAKPOINT_INTERCEPTED: 'breakpoint:intercepted',
+  BREAKPOINT_RESUME: 'breakpoint:resume',
+  BREAKPOINT_ABORT: 'breakpoint:abort',
+  BREAKPOINT_STATUS_UPDATE: 'breakpoint:status-update',
 } as const
 
 /** IPC 通道名称类型 */

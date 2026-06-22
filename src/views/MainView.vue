@@ -28,12 +28,18 @@
       :loading-states="requestStore.loadingStates"
       :domain-filters="requestStore.domainFilters"
       :view-mode="requestStore.viewMode"
+      :breakpoint-count="breakpointStore.rules.length"
+      :show-breakpoint-rules="showBreakpointRules"
       @toggle-record="handleToggleRecord"
       @compare="handleCompare"
       @export-result="showExportMenu = true"
       @clear="handleClear"
       @switch-view="(mode: 'list' | 'group') => requestStore.setViewMode(mode)"
+      @toggle-breakpoint="showBreakpointRules = !showBreakpointRules"
     />
+
+    <!-- 断点规则面板 -->
+    <BreakpointRules v-if="showBreakpointRules" @close="showBreakpointRules = false" />
 
     <!-- 主内容区：可拖拽上下分割 -->
     <div ref="containerRef" class="flex-1 flex flex-col overflow-hidden">
@@ -97,6 +103,7 @@ import type { CaptureRequest, ExportFormat } from '../services/types'
 
 import { ipc } from '../services/ipc'
 import { useSystemProxyStore } from '../stores/system-proxy-store'
+import { useBreakpointStore } from '../stores/breakpoint-store'
 import SystemProxyBanner from '../components/SystemProxyBanner.vue'
 import DomainFilter from '../components/DomainFilter.vue'
 import RecordControl from '../components/RecordControl.vue'
@@ -104,17 +111,20 @@ import RequestList from '../components/RequestList.vue'
 import RequestDetail from '../components/RequestDetail.vue'
 import CompareResult from '../components/CompareResult.vue'
 import ExportButton from '../components/ExportButton.vue'
+import BreakpointRules from '../components/BreakpointRules.vue'
 
 const router = useRouter()
 const requestStore = useRequestStore()
 const settingsStore = useSettingsStore()
 const systemProxyStore = useSystemProxyStore()
+const breakpointStore = useBreakpointStore()
 const toast = useToast()
 
 const domainFilterRef = ref<InstanceType<typeof DomainFilter> | null>(null)
 const showExportMenu = ref<boolean>(false)
 const containerRef = ref<HTMLElement | null>(null)
 const bannerHidden = ref<boolean>(false)
+const showBreakpointRules = ref<boolean>(false)
 
 /** 当前键盘导航焦点在 displayRows 中的索引（group 模式专用，含域名头） */
 const navigationIndex = ref<number>(-1)

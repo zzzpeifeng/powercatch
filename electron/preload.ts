@@ -128,6 +128,27 @@ const electronAPI = {
     getCurrentWifi: () => ipcRenderer.invoke(IPC_CHANNELS.WIFI_GET_CURRENT),
     getCurrentWifiAirport: () => ipcRenderer.invoke(IPC_CHANNELS.WIFI_GET_CURRENT_AIRPORT),
   },
+
+  // 断点功能
+  breakpoint: {
+    addRule: (rule: any) => ipcRenderer.invoke(IPC_CHANNELS.BREAKPOINT_ADD_RULE, rule),
+    removeRule: (ruleId: string) => ipcRenderer.invoke(IPC_CHANNELS.BREAKPOINT_REMOVE_RULE, ruleId),
+    updateRule: (ruleId: string, updates: any) => ipcRenderer.invoke(IPC_CHANNELS.BREAKPOINT_UPDATE_RULE, { ruleId, updates }),
+    getRules: () => ipcRenderer.invoke(IPC_CHANNELS.BREAKPOINT_GET_RULES),
+    resume: (payload: any) => ipcRenderer.invoke(IPC_CHANNELS.BREAKPOINT_RESUME, payload),
+    abort: (sessionId: string) => ipcRenderer.invoke(IPC_CHANNELS.BREAKPOINT_ABORT, sessionId),
+    onIntercepted: (callback: (session: any) => void) => {
+      const handler = (_event: any, session: any) => callback(session)
+      ipcRenderer.on(IPC_CHANNELS.BREAKPOINT_INTERCEPTED, handler)
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.BREAKPOINT_INTERCEPTED, handler)
+    },
+    onStatusUpdate: (callback: (data: any) => void) => {
+      const handler = (_event: any, data: any) => callback(data)
+      ipcRenderer.on(IPC_CHANNELS.BREAKPOINT_STATUS_UPDATE, handler)
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.BREAKPOINT_STATUS_UPDATE, handler)
+    },
+    syncRules: (rules: any[]) => ipcRenderer.invoke('breakpoint:sync-rules', rules),
+  },
 }
 
 // 暴露 API 到渲染进程

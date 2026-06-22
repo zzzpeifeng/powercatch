@@ -1,7 +1,7 @@
 # PowerCatch 功能实现进度跟踪
 
 > 每完成一个功能，把 `[ ]` 改成 `[x]` 即可。  
-> 更新日期：2026-06-20 | 总计：32 项 | 已完成：2 | 进行中：0
+> 更新日期：2026-06-21 | 总计：32 项 | 已完成：4 | 进行中：0
 
 ---
 
@@ -23,17 +23,17 @@
   - >5MB自动截断 + 标记提示 + 按需加载完整内容
   - `mitm-server.ts` + `RequestDetail.vue`
 
-- [ ] **#5 主题切换（明/暗模式）** | 工作量:小 | 依赖:无
+- [x] **#5 主题切换（明/暗模式）** | 工作量:小 | 依赖:无 | ✅ 已实现
   - 明暗主题开关，持久化到settings-store
-  - `settings-store.ts` + `TitleBar.vue`
+  - `settings-store.ts` + `SettingsView.vue`（theme state + applyTheme + setTheme + 系统主题监听）
 
 ---
 
 ## 🔥 高价值（对标 Charles 核心能力）
 
-- [ ] **#6 断点 & 请求/响应修改** | 工作量:中 | 依赖:无
-  - URL断点拦截，手动修改headers/body/status后放行
-  - `mitm-server.ts` + 断点管理UI + Store
+- [x] **#6 断点 & 请求/响应修改** | 工作量:中 | 依赖:无 | ✅ 2026-06-21
+  - URL断点拦截，手动修改headers/body/status后放行，右键上下文菜单快速添加断点
+  - 改动文件：`breakpoint-matcher.ts`(新增) + `curl-generator.ts`(新增) + `breakpoint-store.ts`(新增) + `BreakpointDialog.vue`(新增) + `BreakpointRules.vue`(新增) + `RequestContextMenu.vue`(新增) + `types.ts` + `request-store.ts` + `mitm-server.ts` + `preload.ts` + `ipc.ts` + `sqlite.ts`
 
 - [ ] **#7 Map Local（本地映射）** | 工作量:小 | 依赖:无
   - 接口响应替换为本地文件（JSON/JS/CSS）
@@ -141,8 +141,8 @@
 | 层级 | 总数 | 已完成 | 进度 |
 |------|------|--------|------|
 | 🏗️ 基础设施 | 5 | 2 | ██░░░ 40% |
-| 🔥 高价值 | 6 | 0 | ░░░░░░ 0% |
+| 🔥 高价值 | 6 | 1 | █░░░░░ 17% |
 | 💡 中价值 | 7 | 0 | ░░░░░░░ 0% |
 | 🌟 锦上添花 | 8 | 0 | ░░░░░░░░ 0% |
 | 🛠️ 非功能 | 6 | 0 | ░░░░░░ 0% |
-| **合计** | **32** | **2** | **6%** |
+| **合计** | **32** | **5** | **16%** |

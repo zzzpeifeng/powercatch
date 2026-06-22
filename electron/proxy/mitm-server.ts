@@ -6,11 +6,21 @@ import { Proxy as HttpMitmProxy } from 'http-mitm-proxy'
 import { BrowserWindow, app } from 'electron'
 import { join } from 'path'
 import { getSslCaDir, ensureSslCaDir, cleanupOldCACerts, getCACertPath } from './ca-cert'
-import { IPC_CHANNELS, type CaptureRequest, type HttpMethod, type ProxyStatus } from '../../src/services/types'
+import {
+  IPC_CHANNELS,
+  type CaptureRequest,
+  type HttpMethod,
+  type ProxyStatus,
+  type BreakpointRule,
+  type InterceptSession,
+  type BreakpointResumePayload,
+  type BreakpointStatus,
+} from '../../src/services/types'
 import { networkInterfaces } from 'os'
 import { SSLErrorClassifier, SSLErrorFormatter, type SSLErrorDetail } from '../services/ssl-error-handler'
 import { SSLErrorLogger } from '../services/ssl-logger'
 import { gunzipSync, inflateSync, brotliDecompressSync } from 'zlib'
+import { findMatchingRule } from '../../src/utils/breakpoint-matcher'
 
 let proxyInstance: any = null
 let proxyStatus: ProxyStatus = 'stopped'
@@ -19,6 +29,13 @@ let domainFilters: string[] = []
 let deviceAliases: Record<string, string> = {}
 let requestCounter: number = 0
 let currentPort: number = 8888
+
+// 断点相关状态
+let breakpointRules: BreakpointRule[] = []
+const pendingInterceptions = new Map<string, {
+  resolve: (modified: InterceptSession) => void
+  reject: (reason: string) => void
+}>()
 
 /**
  * 获取本机局域网 IP
@@ -109,6 +126,47 @@ export function setDeviceAliases(aliases: Record<string, string>): void {
 }
 
 /**
+ * 设置断点规则
+ */
+export function setBreakpointRules(rules: BreakpointRule[]): void {
+  breakpointRules = rules.filter(r => r.enabled)
+}
+
+/**
+ * 中止所有待处理的拦截
+ */
+export function abortAllPendingInterceptions(): void {
+  for (const [id, { reject }] of pendingInterceptions) {
+    reject('aborted')
+  }
+  pendingInterceptions.clear()
+}
+
+/**
+ * 恢复断点拦截（放行）
+ * 由 ipc.ts 的 BREAKPOINT_RESUME handler 调用
+ */
+export function resolveBreakpointResume(sessionId: string, modified: InterceptSession): void {
+  const pending = pendingInterceptions.get(sessionId)
+  if (pending) {
+    pending.resolve(modified)
+    pendingInterceptions.delete(sessionId)
+  }
+}
+
+/**
+ * 中止断点拦截（丢弃）
+ * 由 ipc.ts 的 BREAKPOINT_ABORT handler 调用
+ */
+export function rejectBreakpointResume(sessionId: string): void {
+  const pending = pendingInterceptions.get(sessionId)
+  if (pending) {
+    pending.reject('aborted')
+    pendingInterceptions.delete(sessionId)
+  }
+}
+
+/**
  * 获取设备名称
  */
 function getDeviceName(clientIp: string): string {
@@ -121,6 +179,87 @@ function getDeviceName(clientIp: string): string {
 function generateRequestId(): string {
   requestCounter++
   return `req_${Date.now()}_${requestCounter}`
+}
+
+/**
+ * 生成会话 ID
+ */
+function generateSessionId(): string {
+  return `bp_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`
+}
+
+/**
+ * 等待断点恢复
+ */
+function waitForBreakpointResume(sessionId: string): Promise<InterceptSession> {
+  return new Promise((resolve, reject) => {
+    // 设置 5 分钟超时
+    const timeout = setTimeout(() => {
+      pendingInterceptions.delete(sessionId)
+      reject('timeout')
+    }, 5 * 60 * 1000)
+
+    pendingInterceptions.set(sessionId, {
+      resolve: (modified) => {
+        clearTimeout(timeout)
+        resolve(modified)
+      },
+      reject: (reason) => {
+        clearTimeout(timeout)
+        reject(reason)
+      },
+    })
+  })
+}
+
+/**
+ * 推送断点状态更新到前端
+ */
+function pushBreakpointStatus(requestId: string, status: BreakpointStatus): void {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send(IPC_CHANNELS.BREAKPOINT_STATUS_UPDATE, {
+      requestId,
+      status,
+    })
+  }
+}
+
+/**
+ * 创建拦截会话
+ */
+function createInterceptSession(params: {
+  ruleId: string
+  stage: 'request' | 'response'
+  method?: HttpMethod
+  url?: string
+  requestHeaders?: Record<string, any>
+  requestBody?: string
+  statusCode?: number
+  responseHeaders?: Record<string, any>
+  responseBody?: string
+}): InterceptSession {
+  const id = generateSessionId()
+  const now = new Date().toISOString()
+
+  const data = {
+    method: (params.method || 'GET') as HttpMethod,
+    url: params.url || '',
+    requestHeaders: params.requestHeaders || {},
+    requestBody: params.requestBody || '',
+    statusCode: params.statusCode,
+    responseHeaders: params.responseHeaders,
+    responseBody: params.responseBody,
+  }
+
+  return {
+    id,
+    ruleId: params.ruleId,
+    stage: params.stage,
+    editable: { ...data },
+    original: { ...data },
+    status: 'waiting',
+    interceptedAt: now,
+  }
 }
 
 /**
@@ -364,7 +503,124 @@ export async function startProxy(port: number, win: BrowserWindow): Promise<bool
       ctx._path = parseUrlPath(url)
       ctx._domainMatched = matchDomain(host, domainFilters)
 
-      // 收集请求体（仅匹配域名的请求，节省内存）
+      // 跳过 CONNECT 方法和 WebSocket 升级
+      if (method === 'CONNECT') return callback()
+      const upgradeHeader = ctx.clientToProxyRequest?.headers?.upgrade
+      if (upgradeHeader && upgradeHeader.toLowerCase() === 'websocket') return callback()
+
+      // 检查是否命中断点规则
+      const breakpointMatch = findMatchingRule(url, method, breakpointRules)
+      ctx._breakpointMatched = breakpointMatch !== null
+      ctx._breakpointRule = breakpointMatch
+      ctx._breakpointStage = breakpointMatch?.stage || null
+
+      // 请求阶段断点拦截
+      if (breakpointMatch && (breakpointMatch.stage === 'request' || breakpointMatch.stage === 'both')) {
+        console.log(`[Breakpoint] 🎯 请求阶段断点命中: ${breakpointMatch.name}`)
+
+        // 收集请求体
+        const requestChunks: Buffer[] = []
+
+        ctx.onRequestData((ctx: any, chunk: Buffer, cb: any) => {
+          requestChunks.push(chunk)
+          // 不转发，我们在 onRequestEnd 中处理
+          return cb()
+        })
+
+        ctx.onRequestEnd(async (ctx: any, cb: any) => {
+          try {
+            const rawBody = Buffer.concat(requestChunks)
+            const reqHeaders = ctx.clientToProxyRequest?.headers || {}
+            const decodedBody = decodeRequestBody(rawBody, reqHeaders)
+
+            // 创建拦截会话
+            const session = createInterceptSession({
+              ruleId: breakpointMatch.id,
+              stage: 'request',
+              method,
+              url,
+              requestHeaders: reqHeaders,
+              requestBody: decodedBody,
+            })
+
+            // 立即推送到前端（显示"拦截中"状态）
+            ctx._requestId = pushRequestArrived(method, url, ctx._path, ctx._host, clientIp)
+            pushBreakpointStatus(ctx._requestId, 'intercepting')
+
+            // 发送拦截事件到前端
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send(IPC_CHANNELS.BREAKPOINT_INTERCEPTED, session)
+            }
+
+            // 等待用户编辑
+            const modified = await waitForBreakpointResume(session.id)
+
+            // 【关键】在 callback() 之前应用所有修改
+            // 修改 URL（仅 path+query，不能改 host）
+            if (ctx.proxyToServerRequestOptions) {
+              try {
+                const parsedUrl = new URL(modified.editable.url)
+                ctx.proxyToServerRequestOptions.path = parsedUrl.pathname + parsedUrl.search
+              } catch {
+                // URL 解析失败，保持原样
+              }
+
+              // 修改 Method
+              ctx.proxyToServerRequestOptions.method = modified.editable.method
+
+              // 修改 Headers
+              ctx.proxyToServerRequestOptions.headers = { ...modified.editable.requestHeaders }
+
+              // 移除 Content-Encoding（不重新压缩）
+              delete ctx.proxyToServerRequestOptions.headers['content-encoding']
+              delete ctx.proxyToServerRequestOptions.headers['transfer-encoding']
+
+              // 使用 chunked transfer encoding
+              delete ctx.proxyToServerRequestOptions.headers['content-length']
+              ctx.proxyToServerRequestOptions.headers['transfer-encoding'] = 'chunked'
+            }
+
+            // 设置 onRequestData — 不转发原始数据
+            ctx.onRequestData((_ctx: any, _chunk: Buffer, cb: any) => {
+              return cb()
+            })
+
+            // 设置 onRequestEnd — 写入修改后的 body
+            ctx.onRequestEnd((ctx: any, cb: any) => {
+              const newBody = Buffer.from(modified.editable.requestBody)
+              if (ctx.proxyToServerRequest && newBody.length > 0) {
+                ctx.proxyToServerRequest.write(newBody)
+                ctx.proxyToServerRequest.end()
+              }
+              pushBreakpointStatus(ctx._requestId, 'resumed')
+              // 不调用 cb()，因为我们已经手动结束了请求
+            })
+
+            // 【关键】现在才调用 callback() — headers 带着修改发送到 Server
+            callback()
+
+          } catch (reason) {
+            if (reason === 'aborted' || reason === 'timeout') {
+              console.log(`[Breakpoint] 请求被${reason === 'aborted' ? '丢弃' : '超时'}: ${url}`)
+              ctx.proxyToClientResponse.destroy()
+              ctx.proxyToServerRequest?.destroy()
+              if (ctx._requestId) {
+                pushBreakpointStatus(ctx._requestId, 'aborted')
+              }
+              // 不调用 callback，请求终止
+            } else {
+              console.error('[Breakpoint] 意外错误:', reason)
+              // 降级：放行原始请求
+              callback()
+            }
+          }
+        })
+
+        // 【关键】不调用 callback，请求暂停
+        return
+      }
+
+      // ===== 非断点请求：原有流程 =====
       const requestChunks: Buffer[] = []
       ctx.onRequestData((ctx: any, chunk: Buffer, callback: any) => {
         if (ctx._domainMatched) {
@@ -402,6 +658,103 @@ export async function startProxy(port: number, win: BrowserWindow): Promise<bool
       const url = ctx.clientToProxyRequest?.url || ctx._url || 'unknown'
       console.log(`[Proxy] 📤 收到响应: ${url} (状态: ${ctx.serverToProxyResponse?.statusCode || 'unknown'})`)
 
+      // 检查响应阶段断点
+      const shouldInterceptResponse = ctx._breakpointMatched && 
+        (ctx._breakpointStage === 'response' || ctx._breakpointStage === 'both') &&
+        !ctx._breakpointAborted
+
+      if (shouldInterceptResponse) {
+        console.log(`[Breakpoint] 🎯 响应阶段断点命中: ${ctx._breakpointRule?.name}`)
+
+        // 收集响应体
+        ctx.onResponseData((ctx: any, chunk: Buffer, cb: any) => {
+          responseChunks.push(chunk)
+          // 不转发
+          return cb()
+        })
+
+        ctx.onResponseEnd(async (ctx: any, cb: any) => {
+          try {
+            const rawBody = Buffer.concat(responseChunks)
+            const statusCode = ctx.serverToProxyResponse?.statusCode || 200
+            const respHeaders = ctx.serverToProxyResponse?.headers || {}
+            const decodedBody = decodeResponseBody(rawBody, respHeaders)
+
+            const session = createInterceptSession({
+              ruleId: ctx._breakpointRule.id,
+              stage: 'response',
+              statusCode,
+              responseHeaders: respHeaders,
+              responseBody: decodedBody,
+              // 包含请求阶段数据（可能已修改）
+              method: ctx._method,
+              url: ctx._url,
+              requestHeaders: ctx._requestHeaders,
+              requestBody: ctx._requestBody,
+            })
+
+            if (ctx._requestId) {
+              pushBreakpointStatus(ctx._requestId, 'intercepting')
+            }
+
+            // 发送拦截事件到前端
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send(IPC_CHANNELS.BREAKPOINT_INTERCEPTED, session)
+            }
+
+            const modified = await waitForBreakpointResume(session.id)
+
+            // 【关键】在 callback() 之前应用响应修改
+            if (ctx.serverToProxyResponse) {
+              ctx.serverToProxyResponse.statusCode = modified.editable.statusCode || statusCode
+              ctx.serverToProxyResponse.headers = { ...modified.editable.responseHeaders }
+              // 移除 Content-Encoding（不重新压缩）
+              delete ctx.serverToProxyResponse.headers['content-encoding']
+              delete ctx.serverToProxyResponse.headers['transfer-encoding']
+              // 使用 chunked transfer encoding
+              delete ctx.serverToProxyResponse.headers['content-length']
+              ctx.serverToProxyResponse.headers['transfer-encoding'] = 'chunked'
+            }
+
+            // 设置 onResponseData — 不转发原始数据
+            ctx.onResponseData((_ctx: any, _chunk: Buffer, cb: any) => {
+              return cb()
+            })
+
+            // 设置 onResponseEnd — 写入修改后的响应体
+            ctx.onResponseEnd((ctx: any, cb: any) => {
+              const newBody = Buffer.from(modified.editable.responseBody || '')
+              if (ctx.proxyToClientResponse && newBody.length > 0) {
+                ctx.proxyToClientResponse.write(newBody)
+                ctx.proxyToClientResponse.end()
+              }
+              if (ctx._requestId) {
+                pushBreakpointStatus(ctx._requestId, 'resumed')
+              }
+              // 不调用 cb()
+            })
+
+            // 现在才调用 callback() — 响应头带着修改发送到 Client
+            callback()
+
+          } catch (reason) {
+            if (reason === 'aborted' || reason === 'timeout') {
+              console.log(`[Breakpoint] 响应被${reason === 'aborted' ? '丢弃' : '超时'}: ${url}`)
+              ctx.proxyToClientResponse.destroy()
+              if (ctx._requestId) {
+                pushBreakpointStatus(ctx._requestId, 'aborted')
+              }
+            } else {
+              console.error('[Breakpoint] 响应拦截错误:', reason)
+              callback()
+            }
+          }
+        })
+
+        return // 不调用 callback()
+      }
+
+      // ===== 非断点响应：原有流程 =====
       ctx.onResponseData((ctx: any, chunk: Buffer, callback: any) => {
         responseChunks.push(chunk)
         return callback(null, chunk)
@@ -543,6 +896,9 @@ export async function stopProxy(): Promise<void> {
   }
 
   proxyStatus = 'stopping'
+
+  // 先 abort 所有 pending interceptions
+  abortAllPendingInterceptions()
 
   if (proxyInstance) {
     try {
