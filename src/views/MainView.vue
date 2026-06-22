@@ -30,16 +30,22 @@
       :view-mode="requestStore.viewMode"
       :breakpoint-count="breakpointStore.rules.length"
       :show-breakpoint-rules="showBreakpointRules"
+      :map-local-count="mapLocalStore.rules.length"
+      :show-map-local-rules="showMapLocalRules"
       @toggle-record="handleToggleRecord"
       @compare="handleCompare"
       @export-result="showExportMenu = true"
       @clear="handleClear"
       @switch-view="(mode: 'list' | 'group') => requestStore.setViewMode(mode)"
       @toggle-breakpoint="showBreakpointRules = !showBreakpointRules"
+      @toggle-map-local="showMapLocalRules = !showMapLocalRules"
     />
 
     <!-- 断点规则面板 -->
     <BreakpointRules v-if="showBreakpointRules" @close="showBreakpointRules = false" />
+
+    <!-- Map Local 规则面板 -->
+    <MapLocalRules v-if="showMapLocalRules" @close="showMapLocalRules = false" />
 
     <!-- 主内容区：可拖拽上下分割 -->
     <div ref="containerRef" class="flex-1 flex flex-col overflow-hidden">
@@ -104,6 +110,7 @@ import type { CaptureRequest, ExportFormat } from '../services/types'
 import { ipc } from '../services/ipc'
 import { useSystemProxyStore } from '../stores/system-proxy-store'
 import { useBreakpointStore } from '../stores/breakpoint-store'
+import { useMapLocalStore } from '../stores/map-local-store'
 import SystemProxyBanner from '../components/SystemProxyBanner.vue'
 import DomainFilter from '../components/DomainFilter.vue'
 import RecordControl from '../components/RecordControl.vue'
@@ -112,12 +119,14 @@ import RequestDetail from '../components/RequestDetail.vue'
 import CompareResult from '../components/CompareResult.vue'
 import ExportButton from '../components/ExportButton.vue'
 import BreakpointRules from '../components/BreakpointRules.vue'
+import MapLocalRules from '../components/MapLocalRules.vue'
 
 const router = useRouter()
 const requestStore = useRequestStore()
 const settingsStore = useSettingsStore()
 const systemProxyStore = useSystemProxyStore()
 const breakpointStore = useBreakpointStore()
+const mapLocalStore = useMapLocalStore()
 const toast = useToast()
 
 const domainFilterRef = ref<InstanceType<typeof DomainFilter> | null>(null)
@@ -125,6 +134,7 @@ const showExportMenu = ref<boolean>(false)
 const containerRef = ref<HTMLElement | null>(null)
 const bannerHidden = ref<boolean>(false)
 const showBreakpointRules = ref<boolean>(false)
+const showMapLocalRules = ref<boolean>(false)
 
 /** 当前键盘导航焦点在 displayRows 中的索引（group 模式专用，含域名头） */
 const navigationIndex = ref<number>(-1)

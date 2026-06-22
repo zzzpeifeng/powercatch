@@ -17,6 +17,7 @@ import type {
   InterceptSession,
   BreakpointResumePayload,
   BreakpointStatus,
+  MapLocalRule,
 } from './types'
 
 /** Electron API 类型（由 preload.ts 暴露） */
@@ -97,6 +98,13 @@ interface ElectronAPI {
     onIntercepted: (callback: (session: InterceptSession) => void) => () => void
     onStatusUpdate: (callback: (data: { requestId: string; status: BreakpointStatus }) => void) => () => void
     syncRules: (rules: BreakpointRule[]) => Promise<{ success: boolean; error?: string }>
+  }
+  mapLocal: {
+    addRule: (rule: Omit<MapLocalRule, 'id' | 'createdAt'>) => Promise<{ success: boolean; rule?: MapLocalRule; error?: string }>
+    removeRule: (ruleId: string) => Promise<{ success: boolean; error?: string }>
+    updateRule: (ruleId: string, updates: Partial<MapLocalRule>) => Promise<{ success: boolean; error?: string }>
+    getRules: () => Promise<MapLocalRule[]>
+    syncRules: (rules: MapLocalRule[]) => Promise<{ success: boolean; error?: string }>
   }
 }
 
@@ -468,6 +476,39 @@ export const ipc = {
       const api = getElectronAPI()
       if (!api) return { success: false, error: 'Not in Electron environment' }
       return api.breakpoint.syncRules(rules)
+    },
+  },
+
+  // ===== Map Local 功能 =====
+  mapLocal: {
+    addRule: async (rule: Omit<MapLocalRule, 'id' | 'createdAt'>): Promise<{ success: boolean; rule?: MapLocalRule; error?: string }> => {
+      const api = getElectronAPI()
+      if (!api) return { success: false, error: 'Not in Electron environment' }
+      return api.mapLocal.addRule(rule)
+    },
+
+    removeRule: async (ruleId: string): Promise<{ success: boolean; error?: string }> => {
+      const api = getElectronAPI()
+      if (!api) return { success: false, error: 'Not in Electron environment' }
+      return api.mapLocal.removeRule(ruleId)
+    },
+
+    updateRule: async (ruleId: string, updates: Partial<MapLocalRule>): Promise<{ success: boolean; error?: string }> => {
+      const api = getElectronAPI()
+      if (!api) return { success: false, error: 'Not in Electron environment' }
+      return api.mapLocal.updateRule(ruleId, updates)
+    },
+
+    getRules: async (): Promise<MapLocalRule[]> => {
+      const api = getElectronAPI()
+      if (!api) return []
+      return api.mapLocal.getRules()
+    },
+
+    syncRules: async (rules: MapLocalRule[]): Promise<{ success: boolean; error?: string }> => {
+      const api = getElectronAPI()
+      if (!api) return { success: false, error: 'Not in Electron environment' }
+      return api.mapLocal.syncRules(rules)
     },
   },
 }

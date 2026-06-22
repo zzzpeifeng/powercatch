@@ -149,6 +149,15 @@ const electronAPI = {
     },
     syncRules: (rules: any[]) => ipcRenderer.invoke('breakpoint:sync-rules', rules),
   },
+
+  // Map Local 功能
+  mapLocal: {
+    addRule: (rule: any) => ipcRenderer.invoke(IPC_CHANNELS.MAP_LOCAL_ADD_RULE, rule),
+    removeRule: (ruleId: string) => ipcRenderer.invoke(IPC_CHANNELS.MAP_LOCAL_REMOVE_RULE, ruleId),
+    updateRule: (ruleId: string, updates: any) => ipcRenderer.invoke(IPC_CHANNELS.MAP_LOCAL_UPDATE_RULE, { ruleId, updates }),
+    getRules: () => ipcRenderer.invoke(IPC_CHANNELS.MAP_LOCAL_GET_RULES),
+    syncRules: (rules: any[]) => ipcRenderer.invoke(IPC_CHANNELS.MAP_LOCAL_SYNC_RULES, rules),
+  },
 }
 
 // 暴露 API 到渲染进程

@@ -47,6 +47,8 @@ export interface CaptureRequest {
   checked: boolean
   /** 断点状态 */
   breakpointStatus?: BreakpointStatus
+  /** 命中的 Map Local 规则 ID */
+  mapLocalRuleId?: string
 }
 
 /** 响应更新数据（通过独立 channel 推送，仅包含响应相关字段） */
@@ -113,6 +115,8 @@ export interface AppSettings {
   theme?: 'light' | 'dark' | 'system'
   /** 断点规则 */
   breakpointRules?: BreakpointRule[]
+  /** Map Local 规则 */
+  mapLocalRules?: MapLocalRule[]
 }
 
 /** 设备信息 */
@@ -197,6 +201,29 @@ export interface BreakpointRule {
   }
   /** 拦截阶段 */
   stage: 'request' | 'response' | 'both'
+  /** 创建时间 */
+  createdAt: string
+}
+
+/** Map Local 映射规则 */
+export interface MapLocalRule {
+  /** 规则 ID */
+  id: string
+  /** 是否启用 */
+  enabled: boolean
+  /** 规则名称（用户自定义） */
+  name: string
+  /** 匹配模式 */
+  match: {
+    /** URL 通配符，如 *api.shopline.com/users* */
+    urlPattern: string
+    /** HTTP 方法过滤（空 = 所有方法） */
+    methods: HttpMethod[]
+  }
+  /** 本地文件路径 */
+  localPath: string
+  /** 响应 MIME 类型（自动检测 if empty） */
+  mimeType: string
   /** 创建时间 */
   createdAt: string
 }
@@ -363,6 +390,13 @@ export const IPC_CHANNELS = {
   BREAKPOINT_RESUME: 'breakpoint:resume',
   BREAKPOINT_ABORT: 'breakpoint:abort',
   BREAKPOINT_STATUS_UPDATE: 'breakpoint:status-update',
+
+  // Map Local 功能
+  MAP_LOCAL_GET_RULES: 'map-local:get-rules',
+  MAP_LOCAL_ADD_RULE: 'map-local:add-rule',
+  MAP_LOCAL_REMOVE_RULE: 'map-local:remove-rule',
+  MAP_LOCAL_UPDATE_RULE: 'map-local:update-rule',
+  MAP_LOCAL_SYNC_RULES: 'map-local:sync-rules',
 } as const
 
 /** IPC 通道名称类型 */

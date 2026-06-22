@@ -44,37 +44,68 @@
       <span v-if="checkedCount > 0" class="text-blue-600 dark:text-blue-400 font-medium">· 已选 {{ checkedCount }}/2</span>
     </div>
 
-    <!-- 右侧：断点 + 操作按钮 -->
+    <!-- 右侧：下拉菜单 + 操作按钮 -->
     <div class="flex items-center gap-2">
-      <!-- 断点按钮（带红色徽章） -->
-      <button
-        class="flex items-center gap-1.5 px-2.5 h-8 text-xs font-medium rounded-md transition-all duration-200 border"
-        :class="showBreakpointRules
-          ? 'bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 border-red-200 dark:border-red-500/30'
-          : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 border border-gray-200 dark:border-gray-600/50'"
-        @click="$emit('toggle-breakpoint')"
-      >
-        <svg class="w-3.5 h-3.5" viewBox="0 0 16 16" fill="currentColor">
-          <path d="M8 1a1 1 0 011 1v1h1a1 1 0 110 2H9v2h2a1 1 0 110 2H9v2h1a1 1 0 110 2H9v1a1 1 0 11-2 0v-1H6a1 1 0 110-2h1V9H5a1 1 0 110-2h1V5H5a1 1 0 110-2h1V2a1 1 0 011-1z" />
-        </svg>
-        <span>断点</span>
-        <span
-          v-if="breakpointCount > 0"
-          class="min-w-[18px] h-[18px] flex items-center justify-center px-1 text-[10px] font-bold rounded-full bg-red-500 text-white"
+      <!-- 工具下拉菜单 -->
+      <DropdownMenu ref="toolsMenuRef" label="工具" :badge-count="breakpointCount + mapLocalCount">
+        <template #icon>
+          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z" />
+          </svg>
+        </template>
+        <button
+          class="dropdown-item"
+          @click="$emit('toggle-breakpoint'); toolsMenuRef?.close()"
         >
-          {{ breakpointCount }}
-        </span>
-      </button>
+          <svg class="w-4 h-4 text-red-500" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M8 1a1 1 0 011 1v1h1a1 1 0 110 2H9v2h2a1 1 0 110 2H9v2h1a1 1 0 110 2H9v1a1 1 0 11-2 0v-1H6a1 1 0 110-2h1V9H5a1 1 0 110-2h1V5H5a1 1 0 110-2h1V2a1 1 0 011-1z" />
+          </svg>
+          <span class="flex-1">断点</span>
+          <span
+            v-if="breakpointCount > 0"
+            class="min-w-[16px] h-[16px] flex items-center justify-center px-1 text-[9px] font-bold rounded-full bg-red-500 text-white"
+          >
+            {{ breakpointCount }}
+          </span>
+        </button>
+        <button
+          class="dropdown-item"
+          @click="$emit('toggle-map-local'); toolsMenuRef?.close()"
+        >
+          <svg class="w-4 h-4 text-green-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+          </svg>
+          <span class="flex-1">Map Local</span>
+          <span
+            v-if="mapLocalCount > 0"
+            class="min-w-[16px] h-[16px] flex items-center justify-center px-1 text-[9px] font-bold rounded-full bg-green-500 text-white"
+          >
+            {{ mapLocalCount }}
+          </span>
+        </button>
+      </DropdownMenu>
 
-      <!-- AI 对比按钮（蓝紫色实心） -->
-      <button
-        class="flex items-center gap-1.5 px-3 h-8 text-xs font-medium rounded-md transition-all duration-200 bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-        :disabled="!canCompare || loadingStates.comparing"
-        @click="$emit('compare')"
-      >
-        <span v-if="loadingStates.comparing" class="spinner w-3 h-3"></span>
-        {{ loadingStates.comparing ? '对比中...' : 'AI 对比' }}
-      </button>
+      <!-- AI 处理下拉菜单 -->
+      <DropdownMenu ref="aiMenuRef" label="AI 处理">
+        <template #icon>
+          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 2a2 2 0 012 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 017 7h1a1 1 0 011 1v3a1 1 0 01-1 1h-1v1a2 2 0 01-2 2H5a2 2 0 01-2-2v-1H2a1 1 0 01-1-1v-3a1 1 0 011-1h1a7 7 0 017-7h1V5.73c-.6-.34-1-.99-1-1.73a2 2 0 012-2z" />
+            <circle cx="8.5" cy="14.5" r="1.5" />
+            <circle cx="15.5" cy="14.5" r="1.5" />
+          </svg>
+        </template>
+        <button
+          class="dropdown-item"
+          :disabled="!canCompare || loadingStates.comparing"
+          @click="$emit('compare'); aiMenuRef?.close()"
+        >
+          <span v-if="loadingStates.comparing" class="spinner w-4 h-4"></span>
+          <svg v-else class="w-4 h-4 text-blue-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+          </svg>
+          <span class="flex-1">{{ loadingStates.comparing ? '对比中...' : 'AI 对比' }}</span>
+        </button>
+      </DropdownMenu>
 
       <!-- 导出按钮（浅灰背景带细边框） -->
       <button
@@ -99,7 +130,9 @@
 </template>
 
 <script setup lang="ts">
+import { ref } from 'vue'
 import type { CompareResult, LoadingStates } from '../services/types'
+import DropdownMenu from './DropdownMenu.vue'
 
 defineProps<{
   isRecording: boolean
@@ -113,6 +146,8 @@ defineProps<{
   viewMode: 'list' | 'group'
   breakpointCount: number
   showBreakpointRules: boolean
+  mapLocalCount: number
+  showMapLocalRules: boolean
 }>()
 
 defineEmits<{
@@ -122,5 +157,19 @@ defineEmits<{
   (e: 'clear'): void
   (e: 'switch-view', mode: 'list' | 'group'): void
   (e: 'toggle-breakpoint'): void
+  (e: 'toggle-map-local'): void
 }>()
+
+const toolsMenuRef = ref<InstanceType<typeof DropdownMenu> | null>(null)
+const aiMenuRef = ref<InstanceType<typeof DropdownMenu> | null>(null)
 </script>
+
+<style scoped>
+.dropdown-item {
+  @apply flex items-center gap-2 px-3 py-2 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer transition-colors duration-150 w-full text-left;
+}
+
+.dropdown-item:disabled {
+  @apply opacity-50 cursor-not-allowed;
+}
+</style>

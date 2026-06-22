@@ -207,6 +207,7 @@ export function getAllSettings(): AppSettings {
     caCertGenerated: settingsMap.ca_cert_generated === 'true',
     theme: settingsMap.theme || 'system',
     breakpointRules: JSON.parse(settingsMap.breakpoint_rules || '[]'),
+    mapLocalRules: JSON.parse(settingsMap.map_local_rules || '[]'),
   }
 }
 
@@ -229,6 +230,7 @@ export function saveAllSettings(settings: Partial<AppSettings>): void {
   if (settings.caCertGenerated !== undefined) mapping.ca_cert_generated = String(settings.caCertGenerated)
   if (settings.theme !== undefined) mapping.theme = settings.theme
   if (settings.breakpointRules !== undefined) mapping.breakpoint_rules = JSON.stringify(settings.breakpointRules)
+  if (settings.mapLocalRules !== undefined) mapping.map_local_rules = JSON.stringify(settings.mapLocalRules)
 
   const transaction = db.transaction(() => {
     const stmt = db.prepare(

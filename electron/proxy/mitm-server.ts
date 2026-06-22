@@ -15,12 +15,16 @@ import {
   type InterceptSession,
   type BreakpointResumePayload,
   type BreakpointStatus,
+  type MapLocalRule,
 } from '../../src/services/types'
 import { networkInterfaces } from 'os'
 import { SSLErrorClassifier, SSLErrorFormatter, type SSLErrorDetail } from '../services/ssl-error-handler'
 import { SSLErrorLogger } from '../services/ssl-logger'
 import { gunzipSync, inflateSync, brotliDecompressSync } from 'zlib'
 import { findMatchingRule } from '../../src/utils/breakpoint-matcher'
+import { matchMapLocal } from '../../src/utils/map-local-matcher'
+import { readFileSync } from 'fs'
+import { extname } from 'path'
 
 let proxyInstance: any = null
 let proxyStatus: ProxyStatus = 'stopped'
@@ -32,6 +36,9 @@ let currentPort: number = 8888
 
 // 断点相关状态
 let breakpointRules: BreakpointRule[] = []
+
+// Map Local 相关状态
+let mapLocalRules: MapLocalRule[] = []
 const pendingInterceptions = new Map<string, {
   resolve: (modified: InterceptSession) => void
   reject: (reason: string) => void
@@ -130,6 +137,13 @@ export function setDeviceAliases(aliases: Record<string, string>): void {
  */
 export function setBreakpointRules(rules: BreakpointRule[]): void {
   breakpointRules = rules.filter(r => r.enabled)
+}
+
+/**
+ * 设置 Map Local 规则
+ */
+export function setMapLocalRules(rules: MapLocalRule[]): void {
+  mapLocalRules = rules.filter(r => r.enabled)
 }
 
 /**
@@ -392,11 +406,67 @@ function pushToRenderer(request: CaptureRequest, isUpdate: boolean = false): voi
   }
 }
 
+// ===== Map Local 文件读取 =====
+
+/** 内置 MIME 类型映射 */
+const MIME_MAP: Record<string, string> = {
+  '.json': 'application/json; charset=utf-8',
+  '.js':   'application/javascript; charset=utf-8',
+  '.css':  'text/css; charset=utf-8',
+  '.html': 'text/html; charset=utf-8',
+  '.htm':  'text/html; charset=utf-8',
+  '.txt':  'text/plain; charset=utf-8',
+  '.xml':  'application/xml; charset=utf-8',
+  '.svg':  'image/svg+xml',
+  '.png':  'image/png',
+  '.jpg':  'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif':  'image/gif',
+  '.ico':  'image/x-icon',
+  '.woff': 'font/woff',
+  '.woff2':'font/woff2',
+  '.ttf':  'font/ttf',
+}
+
+/** 文本 MIME 类型（可直接转 UTF-8 string） */
+const TEXT_MIME_PREFIXES = ['text/', 'application/json', 'application/javascript', 'application/xml', 'application/x-www-form-urlencoded']
+
+function getMimeType(filePath: string, customMime: string): string {
+  if (customMime) return customMime
+  const ext = extname(filePath).toLowerCase()
+  return MIME_MAP[ext] || 'application/octet-stream'
+}
+
+function isTextMime(mimeType: string): boolean {
+  return TEXT_MIME_PREFIXES.some(prefix => mimeType.startsWith(prefix))
+}
+
+/**
+ * 读取本地文件
+ * - content: 用于存储在 CaptureRequest.responseBody（文本=原文，二进制=[Base64:...]）
+ * - rawBuffer: 原始 Buffer，用于发送给客户端（不做 [Base64:...] 编码）
+ */
+function readLocalFile(localPath: string, customMime: string): { content: string; mimeType: string; isBinary: boolean; rawBuffer: Buffer } {
+  const mimeType = getMimeType(localPath, customMime)
+  const buffer = readFileSync(localPath)
+
+  if (isTextMime(mimeType)) {
+    return { content: buffer.toString('utf-8'), mimeType, isBinary: false, rawBuffer: buffer }
+  } else {
+    // 二进制文件：content 编码为 [Base64:...] 格式（用于 responseBody 存储）
+    const base64 = buffer.toString('base64')
+    const contentType = mimeType.split(';')[0]
+    const header = `[Base64:${contentType}:${buffer.length}:`
+    return { content: header + base64 + ']', mimeType, isBinary: true, rawBuffer: buffer }
+  }
+}
+
 /**
  * 在请求到达时推送（部分数据，等响应回来再更新）
  * 返回一个 requestId 用于后续更新
+ * @param mapLocalRuleId 可选，Map Local 规则 ID
  */
-function pushRequestArrived(method: string, url: string, path: string, host: string, clientIp: string): string {
+function pushRequestArrived(method: string, url: string, path: string, host: string, clientIp: string, mapLocalRuleId?: string): string {
   const id = generateRequestId()
   const now = Date.now()
   const partial: CaptureRequest = {
@@ -417,6 +487,7 @@ function pushRequestArrived(method: string, url: string, path: string, host: str
     isRecorded: true,
     selected: false,
     checked: false,
+    mapLocalRuleId,
     _arrivedAt: now,
   }
   pushToRenderer(partial, false)
@@ -507,6 +578,51 @@ export async function startProxy(port: number, win: BrowserWindow): Promise<bool
       if (method === 'CONNECT') return callback()
       const upgradeHeader = ctx.clientToProxyRequest?.headers?.upgrade
       if (upgradeHeader && upgradeHeader.toLowerCase() === 'websocket') return callback()
+
+      // ===== Map Local 检查（优先于断点） =====
+      const mapLocalMatch = matchMapLocal(url, method, mapLocalRules)
+      if (mapLocalMatch) {
+        try {
+          const { content, mimeType, isBinary, rawBuffer } = readLocalFile(mapLocalMatch.localPath, mapLocalMatch.mimeType)
+
+          // 收集请求头和请求体
+          const reqHeaders: Record<string, string> = {}
+          ctx.clientToProxyRequest.forEach((value: string, key: string) => { reqHeaders[key] = value })
+          const requestBody = ctx._requestBody || ''
+
+          // 推送请求数据到渲染进程
+          const mapLocalRequestId = pushRequestArrived(method, url, ctx._path, ctx._host, clientIp, mapLocalMatch.id)
+
+          // 推送响应数据到渲染进程
+          pushResponseArrived(
+            mapLocalRequestId,
+            200,
+            0,
+            { 'content-type': mimeType },
+            content,
+            reqHeaders,
+            requestBody
+          )
+
+          // 构造响应返回给客户端（使用 chunked encoding）
+          const res = ctx.proxyToClientResponse
+          res.writeHead(200, {
+            'content-type': mimeType,
+            'transfer-encoding': 'chunked',
+          })
+          res.end(rawBuffer)
+
+          // 不调用 callback()，请求已处理完毕
+          return
+        } catch (error) {
+          // 文件读取失败：返回 404
+          console.error(`[Map Local] 文件读取失败: ${mapLocalMatch.localPath}`, error)
+          const res = ctx.proxyToClientResponse
+          res.writeHead(404, { 'content-type': 'text/plain' })
+          res.end(`Map Local: file not found: ${mapLocalMatch.localPath}`)
+          return
+        }
+      }
 
       // 检查是否命中断点规则
       const breakpointMatch = findMatchingRule(url, method, breakpointRules)

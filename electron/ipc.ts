@@ -2,9 +2,9 @@
  * IPC 通信层 - 注册所有 IPC 通道处理
  */
 import { ipcMain, BrowserWindow, shell } from 'electron'
-import { IPC_CHANNELS, type BreakpointRule, type BreakpointResumePayload } from '../src/services/types'
+import { IPC_CHANNELS, type BreakpointRule, type BreakpointResumePayload, type MapLocalRule } from '../src/services/types'
 import * as sqlite from './db/sqlite'
-import { startProxy, stopProxy, getProxyStatus, getLocalIP, setDomainFilters, setDeviceAliases, setBreakpointRules as setProxyBreakpointRules, abortAllPendingInterceptions, resolveBreakpointResume, rejectBreakpointResume } from './proxy/mitm-server'
+import { startProxy, stopProxy, getProxyStatus, getLocalIP, setDomainFilters, setDeviceAliases, setBreakpointRules as setProxyBreakpointRules, setMapLocalRules as setProxyMapLocalRules, abortAllPendingInterceptions, resolveBreakpointResume, rejectBreakpointResume } from './proxy/mitm-server'
 import { generateCACert, isCAGenerated, getCertFilePath } from './proxy/ca-cert'
 import { setSystemProxy, clearSystemProxy, getSystemProxyStatus } from './proxy/system-proxy'
 import { executeCompare, testConnection, isCompareInProgress } from './services/ai-service'
@@ -514,9 +514,85 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     }
   })
 
-  // 初始化时加载断点规则到 proxy
+  // ===== Map Local 功能 =====
+
+  ipcMain.handle(IPC_CHANNELS.MAP_LOCAL_ADD_RULE, async (_event, rule: Omit<MapLocalRule, 'id' | 'createdAt'>) => {
+    try {
+      const settings = sqlite.getAllSettings()
+      const rules = settings.mapLocalRules || []
+
+      const newRule: MapLocalRule = {
+        ...rule,
+        id: `map_local_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+        createdAt: new Date().toISOString(),
+      }
+
+      rules.push(newRule)
+      sqlite.saveAllSettings({ mapLocalRules: rules })
+      setProxyMapLocalRules(rules.filter(r => r.enabled))
+
+      return { success: true, rule: newRule }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.MAP_LOCAL_REMOVE_RULE, async (_event, ruleId: string) => {
+    try {
+      const settings = sqlite.getAllSettings()
+      const rules = (settings.mapLocalRules || []).filter(r => r.id !== ruleId)
+      sqlite.saveAllSettings({ mapLocalRules: rules })
+      setProxyMapLocalRules(rules.filter(r => r.enabled))
+      return { success: true }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.MAP_LOCAL_UPDATE_RULE, async (_event, { ruleId, updates }: { ruleId: string; updates: Partial<MapLocalRule> }) => {
+    try {
+      const settings = sqlite.getAllSettings()
+      const rules = settings.mapLocalRules || []
+      const index = rules.findIndex(r => r.id === ruleId)
+
+      if (index === -1) {
+        return { success: false, error: '规则不存在' }
+      }
+
+      rules[index] = { ...rules[index], ...updates }
+      sqlite.saveAllSettings({ mapLocalRules: rules })
+      setProxyMapLocalRules(rules.filter(r => r.enabled))
+
+      return { success: true }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.MAP_LOCAL_GET_RULES, () => {
+    try {
+      const settings = sqlite.getAllSettings()
+      return settings.mapLocalRules || []
+    } catch {
+      return []
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.MAP_LOCAL_SYNC_RULES, async (_event, rules: MapLocalRule[]) => {
+    try {
+      setProxyMapLocalRules(rules)
+      return { success: true }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  // 初始化时加载断点规则和 Map Local 规则到 proxy
   const initialSettings = sqlite.getAllSettings()
   if (initialSettings.breakpointRules) {
     setProxyBreakpointRules(initialSettings.breakpointRules)
+  }
+  if (initialSettings.mapLocalRules) {
+    setProxyMapLocalRules(initialSettings.mapLocalRules.filter(r => r.enabled))
   }
 }
