@@ -764,10 +764,83 @@ export interface AnalysisProgress {
  * SSE 消息格式
  */
 export interface SSEMessage {
-  /** 事件类型 */
-  event: 'log' | 'progress' | 'done' | 'error'
-  /** 事件数据 */
+  /** 消息类型 */
+  type: 'connected' | 'log' | 'progress' | 'agent_thinking' | 'agent_tool_call' | 'agent_tool_result' | 'heartbeat' | 'done' | 'error' | 'disconnect'
+  /** 消息数据 */
   data: any
+  /** 时间戳 */
+  timestamp?: number
+}
+
+/**
+ * SSE 连接状态
+ */
+export type SSEConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error' | 'reconnecting'
+
+/**
+ * SSE 事件类型（后端推送）
+ */
+export interface SSEEvent {
+  /** 事件类型 */
+  event: string
+  /** 事件数据（JSON 字符串或对象） */
+  data: string | object
+  /** 时间戳 */
+  timestamp?: number
+}
+
+/**
+ * 心跳消息
+ */
+export interface SSEHeartbeat {
+  timestamp: number
+}
+
+/**
+ * 连接成功消息
+ */
+export interface SSEConnected {
+  message: string
+}
+
+/**
+ * 进度消息
+ */
+export interface SSEProgress {
+  phase: string
+  message: string
+  extra?: any
+}
+
+/**
+ * 日志消息
+ */
+export interface SSELog {
+  level: 'info' | 'warn' | 'error' | 'debug'
+  message: string
+}
+
+/**
+ * AI Agent 思考过程消息
+ */
+export interface SSEAgentThinking {
+  content: string
+}
+
+/**
+ * AI Agent 工具调用消息
+ */
+export interface SSEAgentToolCall {
+  tool: string
+  args?: any
+}
+
+/**
+ * AI Agent 工具结果消息
+ */
+export interface SSEAgentToolResult {
+  tool: string
+  result: any
 }
 
 /** 状态码分组（含 pending：请求已发出但响应未到达） */

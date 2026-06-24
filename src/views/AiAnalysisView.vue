@@ -283,7 +283,19 @@
             <span class="text-sm font-medium text-gray-700 dark:text-gray-300">
               <!-- 扫描进度 -->
               <template v-if="store.scanProgress">
-                正在扫描路由文件... ({{ store.scanProgress.scanned }}/{{ store.scanProgress.total }}) {{ store.scanProgress.percent }}%
+                <span v-if="store.scanProgress.phase === 'scan-mapping'">扫描路由映射...</span>
+                <span v-else-if="store.scanProgress.phase === 'match-route'">匹配路由规则...</span>
+                <span v-else-if="store.scanProgress.phase === 'done'">扫描完成</span>
+                <span v-else>正在扫描路由文件...</span>
+                <span class="ml-2 text-gray-500 dark:text-gray-400">
+                  {{ store.scanProgress.percent }}%
+                </span>
+                <span v-if="store.scanProgress.currentFile" class="ml-2 text-gray-400 dark:text-gray-500 text-xs font-mono">
+                  {{ store.scanProgress.currentFile }}
+                </span>
+                <span v-if="store.scanProgress.matchCount !== undefined && store.scanProgress.matchCount > 0" class="ml-2 text-green-600 dark:text-green-400 text-xs">
+                  (已匹配 {{ store.scanProgress.matchCount }} 个)
+                </span>
               </template>
               <template v-else>
                 AI 正在分析代码...
@@ -316,7 +328,7 @@
           <div class="flex justify-end">
             <button
               class="btn btn-danger text-sm"
-              @click="store.abortAnalysis()"
+              @click="store.cancelAnalysis()"
             >
               中断分析
             </button>
@@ -345,10 +357,10 @@
             >
               curl 测试用例
               <span
-                v-if="store.result?.scenarios?.length > 0"
+                v-if="store.result?.scenarios && store.result.scenarios.length > 0"
                 class="ml-1 text-xs bg-gray-200 dark:bg-gray-700 px-1.5 py-0.5 rounded-full"
               >
-                {{ store.result?.scenarios?.length ?? 0 }}
+                {{ store.result.scenarios.length }}
               </span>
             </button>
           </div>
@@ -371,7 +383,7 @@
             </div>
 
             <!-- 场景卡片列表 -->
-            <div v-if="store.result?.scenarios?.length > 0">
+            <div v-if="store.result?.scenarios && store.result.scenarios.length > 0">
               <TestScenarioCard
                 v-for="(scenario, index) in store.result.scenarios"
                 :key="index"
@@ -386,7 +398,7 @@
             <!-- 底部操作栏 -->
             <div class="flex justify-between items-center mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
               <div class="text-xs text-gray-500 dark:text-gray-400">
-                模型: {{ store.result?.modelName }} | 分析时间: {{ formatTime(store.result?.analyzedAt) }}
+                模型: {{ store.result?.modelName || '未知' }} | 分析时间: {{ formatTime(store.result?.analyzedAt || '') }}
               </div>
               <div class="flex gap-3">
                 <button
@@ -631,7 +643,10 @@ async function handleStartAnalysis(): Promise<void> {
     request: requestInfo.value,
   }
 
-  await store.startAnalysis(request)
+  await store.startAnalysis(request, true)  // 启用深度分析
+
+  // 导航到进度页面
+  router.push('/ai-analysis/progress')
 }
 
 function handleReanalyze(): void {
@@ -644,7 +659,7 @@ function handleCleanup(): void {
 }
 
 async function copyAllScenarios(): Promise<void> {
-  if (!store.result?.scenarios.length) return
+  if (!store.result?.scenarios || store.result.scenarios.length === 0) return
 
   const content = store.result.scenarios
     .map((s, i) => `# 场景 ${i + 1}: ${s.title} (${s.type})\n${s.description}\n\n# cURL\n${s.curl}\n\n# Python 断言\n${s.pythonAssertion}`)
@@ -686,15 +701,22 @@ onMounted(async () => {
   }
 })
 
-onUnmounted(() => {
-  store.reset()
+onUnmounted(async () => {
+  // 离开页面时自动保存配置（确保 URL 和 Token 不丢失）
+  if (store.repoConfig.repoUrl.trim()) {
+    await store.saveConfig()
+  }
+  // 注意：不在这里调用 store.reset()，因为点击"开始分析"后组件卸载会中断 SSE 连接
+  // reset() 已在 AiAnalysisProgressView 的分析完成后调用
   if (toastTimer) clearTimeout(toastTimer)
 })
 
 // 分析完成后自动切换到结果 Tab
 watch(() => store.result, (newResult) => {
-  if (newResult) {
-    activeTab.value = newResult.scenarios.length > 0 ? 'curls' : 'analysis'
+  if (newResult && newResult.scenarios && newResult.scenarios.length > 0) {
+    activeTab.value = 'curls'
+  } else if (newResult) {
+    activeTab.value = 'analysis'
   }
 })
 </script>

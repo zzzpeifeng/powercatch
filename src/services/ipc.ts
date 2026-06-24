@@ -15,10 +15,16 @@ import type {
   SystemProxyStatus,
   BreakpointRule,
   InterceptSession,
-  BreakpointResumePayload,
   BreakpointStatus,
   MapLocalRule,
   MapRemoteRule,
+  CodeAnalysisRequest,
+  CodeAnalysisResult,
+  CloneProgress,
+  DiskSpaceResult,
+  GitAvailabilityResult,
+  AnalysisLogEntry,
+  AIDeepAnalysisResult,
 } from './types'
 
 /** Electron API 类型（由 preload.ts 暴露） */
@@ -39,6 +45,71 @@ interface ElectronAPI {
     onStreamChunk: (callback: (chunk: string) => void) => () => void
     onStreamEnd: (callback: (result: CompareResult) => void) => () => void
     testConnection: (apiUrl: string, apiKey: string, modelName: string) => Promise<{ success: boolean; message: string }>
+  }
+  aiCodeAnalysis: {
+    // ===== 兼容旧版本 =====
+    analyze: (request: CodeAnalysisRequest) => Promise<{ success: boolean; error?: string }>
+    abort: () => Promise<{ success: boolean }>
+    cleanupRepo: (repoName: string) => Promise<{ success: boolean; error?: string }>
+    checkGitAvailability: () => Promise<GitAvailabilityResult>
+    checkDiskSpace: (cloneDir: string) => Promise<DiskSpaceResult>
+    fetchBranches: (repoUrl: string, token: string, authMethod: string) => Promise<string[]>
+    onScanProgress: (callback: (progress: { scanned: number; total: number; percent: number; phase?: string; currentFile?: string; matchCount?: number }) => void) => () => void
+    onCloneProgress: (callback: (progress: CloneProgress) => void) => () => void
+    onStreamChunk: (callback: (chunk: string) => void) => () => void
+    onStreamEnd: (callback: (result: CodeAnalysisResult) => void) => () => void
+
+    // ===== 新增：混合模式 API =====
+
+    /**
+     * 开始分析（支持混合模式）
+     */
+    startAnalysis: (request: CodeAnalysisRequest, enableDeepAnalysis: boolean) => Promise<{ success: boolean; error?: string }>
+
+    /**
+     * 取消分析
+     */
+    cancelAnalysis: () => Promise<{ success: boolean; error?: string }>
+
+    /**
+     * 获取 SSE 服务器端口号
+     */
+    getSSEPort: () => Promise<{ success: boolean; port?: number; error?: string }>
+
+    /**
+     * 启动 SSE 服务器
+     */
+    startSSEServer: () => Promise<{ success: boolean; port?: number; error?: string }>
+
+    /**
+     * 停止 SSE 服务器
+     */
+    stopSSEServer: () => Promise<{ success: boolean; error?: string }>
+
+    /**
+     * 获取增量日志（IPC 轮询降级方案）
+     */
+    getLogs: (lastLogId: number) => Promise<{ logs: AnalysisLogEntry[]; lastLogId: number }>
+
+    /**
+     * 监听分析日志（通过 IPC 推送）
+     */
+    onAnalysisLog: (callback: (log: AnalysisLogEntry) => void) => () => void
+
+    /**
+     * 监听分析进度（通过 IPC 推送）
+     */
+    onAnalysisProgress: (callback: (progress: { phase: string; percent: number; currentStep?: string }) => void) => () => void
+
+    /**
+     * 监听分析完成（通过 IPC 推送）
+     */
+    onAnalysisDone: (callback: (result: { success: boolean; result?: AIDeepAnalysisResult }) => void) => () => void
+
+    /**
+     * 监听分析错误（通过 IPC 推送）
+     */
+    onAnalysisError: (callback: (error: { message: string }) => void) => () => void
   }
   export: {
     file: (format: ExportFormat, compareResult: CompareResult, requestA: CaptureRequest, requestB: CaptureRequest) => Promise<{ success: boolean; filePath?: string; error?: string }>
@@ -94,7 +165,7 @@ interface ElectronAPI {
     removeRule: (ruleId: string) => Promise<{ success: boolean; error?: string }>
     updateRule: (ruleId: string, updates: Partial<BreakpointRule>) => Promise<{ success: boolean; error?: string }>
     getRules: () => Promise<BreakpointRule[]>
-    resume: (payload: BreakpointResumePayload) => Promise<{ success: boolean; error?: string }>
+    resume: (payload: any) => Promise<{ success: boolean; error?: string }>
     abort: (sessionId: string) => Promise<{ success: boolean; error?: string }>
     onIntercepted: (callback: (session: InterceptSession) => void) => () => void
     onStatusUpdate: (callback: (data: { requestId: string; status: BreakpointStatus }) => void) => () => void
@@ -229,6 +300,187 @@ export const ipc = {
       const api = getElectronAPI()
       if (!api) return { success: false, message: 'Not in Electron environment' }
       return api.ai.testConnection(apiUrl, apiKey, modelName)
+    },
+  },
+
+  // ===== AI 代码分析 =====
+  aiCodeAnalysis: {
+    // ===== 兼容旧版本 =====
+
+    analyze: async (request: CodeAnalysisRequest): Promise<{ success: boolean; error?: string }> => {
+      const api = getElectronAPI()
+      if (!api) return { success: false, error: 'Not in Electron environment' }
+      return api.aiCodeAnalysis.analyze(request)
+    },
+
+    abort: async (): Promise<{ success: boolean }> => {
+      const api = getElectronAPI()
+      if (!api) return { success: false }
+      return api.aiCodeAnalysis.abort()
+    },
+
+    cleanupRepo: async (repoName: string): Promise<{ success: boolean; error?: string }> => {
+      const api = getElectronAPI()
+      if (!api) return { success: false, error: 'Not in Electron environment' }
+      return api.aiCodeAnalysis.cleanupRepo(repoName)
+    },
+
+    checkGitAvailability: async (): Promise<GitAvailabilityResult> => {
+      const api = getElectronAPI()
+      if (!api) return { available: false, error: 'Not in Electron environment' }
+      return api.aiCodeAnalysis.checkGitAvailability()
+    },
+
+    checkDiskSpace: async (cloneDir: string): Promise<DiskSpaceResult> => {
+      const api = getElectronAPI()
+      if (!api) return { hasEnoughSpace: false, error: 'Not in Electron environment' }
+      return api.aiCodeAnalysis.checkDiskSpace(cloneDir)
+    },
+
+    fetchBranches: async (repoUrl: string, token: string, authMethod: string): Promise<string[]> => {
+      const api = getElectronAPI()
+      if (!api) return []
+      return api.aiCodeAnalysis.fetchBranches(repoUrl, token, authMethod)
+    },
+
+    onScanProgress: (callback: (progress: {
+      scanned: number; total: number; percent: number;
+      phase?: string; currentFile?: string; matchCount?: number
+    }) => void): (() => void) => {
+      const api = getElectronAPI()
+      if (!api) return () => {}
+      return api.aiCodeAnalysis.onScanProgress(callback)
+    },
+
+    onCloneProgress: (callback: (progress: CloneProgress) => void): (() => void) => {
+      const api = getElectronAPI()
+      if (!api) return () => {}
+      return api.aiCodeAnalysis.onCloneProgress(callback)
+    },
+
+    onStreamChunk: (callback: (chunk: string) => void): (() => void) => {
+      const api = getElectronAPI()
+      if (!api) return () => {}
+      return api.aiCodeAnalysis.onStreamChunk(callback)
+    },
+
+    onStreamEnd: (callback: (result: CodeAnalysisResult) => void): (() => void) => {
+      const api = getElectronAPI()
+      if (!api) return () => {}
+      return api.aiCodeAnalysis.onStreamEnd(callback)
+    },
+
+    // ===== 新增：混合模式 API =====
+
+    /**
+     * 开始分析（支持混合模式）
+     * @param request 分析请求参数
+     * @param enableDeepAnalysis 是否启用深度分析（阶段2）
+     */
+    startAnalysis: async (
+      request: CodeAnalysisRequest,
+      enableDeepAnalysis: boolean = false
+    ): Promise<{ success: boolean; error?: string }> => {
+      const api = getElectronAPI()
+      if (!api) return { success: false, error: 'Not in Electron environment' }
+      // 参数格式需要与 preload.ts 中的 ipcRenderer.invoke 调用匹配
+      // preload.ts 中：ipcRenderer.invoke(IPC_CHANNELS.AI_START_ANALYSIS, { request, enableDeepAnalysis })
+      // 因此这里需要传递两个参数，而不是一个对象
+      return api.aiCodeAnalysis.startAnalysis(request, enableDeepAnalysis)
+    },
+
+    /**
+     * 取消分析
+     */
+    cancelAnalysis: async (): Promise<{ success: boolean; error?: string }> => {
+      const api = getElectronAPI()
+      if (!api) return { success: false, error: 'Not in Electron environment' }
+      return api.aiCodeAnalysis.cancelAnalysis()
+    },
+
+    /**
+     * 获取 SSE 服务器端口号
+     * @returns { success: boolean, port?: number, error?: string }
+     */
+    getSSEPort: async (): Promise<{ success: boolean; port?: number; error?: string }> => {
+      const api = getElectronAPI()
+      if (!api) return { success: false, error: 'Not in Electron environment' }
+      return api.aiCodeAnalysis.getSSEPort()
+    },
+
+    /**
+     * 启动 SSE 服务器
+     * @returns { success: boolean, port?: number, error?: string }
+     */
+    startSSEServer: async (): Promise<{ success: boolean; port?: number; error?: string }> => {
+      const api = getElectronAPI()
+      if (!api) return { success: false, error: 'Not in Electron environment' }
+      return api.aiCodeAnalysis.startSSEServer()
+    },
+
+    /**
+     * 停止 SSE 服务器
+     * @returns { success: boolean, error?: string }
+     */
+    stopSSEServer: async (): Promise<{ success: boolean; error?: string }> => {
+      const api = getElectronAPI()
+      if (!api) return { success: false, error: 'Not in Electron environment' }
+      return api.aiCodeAnalysis.stopSSEServer()
+    },
+
+    /**
+     * 获取增量日志（IPC 轮询降级方案）
+     * @param lastLogId 上次获取的日志 ID
+     * @returns { logs: AnalysisLogEntry[], lastLogId: number }
+     */
+    getLogs: async (lastLogId: number = 0): Promise<{ logs: AnalysisLogEntry[]; lastLogId: number }> => {
+      const api = getElectronAPI()
+      if (!api) return { logs: [], lastLogId: 0 }
+      return api.aiCodeAnalysis.getLogs(lastLogId)
+    },
+
+    /**
+     * 监听分析日志（通过 IPC 推送）
+     * @param callback 日志回调函数
+     * @returns 取消监听的函数
+     */
+    onAnalysisLog: (callback: (log: AnalysisLogEntry) => void): (() => void) => {
+      const api = getElectronAPI()
+      if (!api) return () => {}
+      return api.aiCodeAnalysis.onAnalysisLog(callback)
+    },
+
+    /**
+     * 监听分析进度（通过 IPC 推送）
+     * @param callback 进度回调函数
+     * @returns 取消监听的函数
+     */
+    onAnalysisProgress: (callback: (progress: { phase: string; percent: number; currentStep?: string }) => void): (() => void) => {
+      const api = getElectronAPI()
+      if (!api) return () => {}
+      return api.aiCodeAnalysis.onAnalysisProgress(callback)
+    },
+
+    /**
+     * 监听分析完成（通过 IPC 推送）
+     * @param callback 完成回调函数
+     * @returns 取消监听的函数
+     */
+    onAnalysisDone: (callback: (result: { success: boolean; result?: AIDeepAnalysisResult }) => void): (() => void) => {
+      const api = getElectronAPI()
+      if (!api) return () => {}
+      return api.aiCodeAnalysis.onAnalysisDone(callback)
+    },
+
+    /**
+     * 监听分析错误（通过 IPC 推送）
+     * @param callback 错误回调函数
+     * @returns 取消监听的函数
+     */
+    onAnalysisError: (callback: (error: { message: string }) => void): (() => void) => {
+      const api = getElectronAPI()
+      if (!api) return () => {}
+      return api.aiCodeAnalysis.onAnalysisError(callback)
     },
   },
 
@@ -456,7 +708,7 @@ export const ipc = {
       return api.breakpoint.getRules()
     },
 
-    resume: async (payload: BreakpointResumePayload): Promise<{ success: boolean; error?: string }> => {
+    resume: async (payload: any): Promise<{ success: boolean; error?: string }> => {
       const api = getElectronAPI()
       if (!api) return { success: false, error: 'Not in Electron environment' }
       return api.breakpoint.resume(payload)

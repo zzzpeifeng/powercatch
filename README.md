@@ -1,12 +1,12 @@
 # 🐰 PowerCatch
 
-一款基于 Electron 的 HTTP/HTTPS 抓包调试工具，类似 Charles/Fiddler，支持流量拦截、查看、AI 智能对比分析。
+一款基于 Electron 的 HTTP/HTTPS 抓包调试工具，类似 Charles/Fiddler，支持流量拦截、查看、AI 智能代码分析。
 
 ## ✨ 功能特性
 
 - 🔍 **HTTP/HTTPS 抓包** — 基于 MITM 代理，支持全量流量拦截与解密
 - 📱 **移动端抓包** — 支持 WiFi 代理配置，手机连接同一网络即可抓包
-- 🤖 **AI 对比分析** — 接入 OpenAI 兼容接口，对请求/响应进行智能对比分析
+- 🤖 **AI 智能代码分析** — 纯 AI Agent 模式，自动分析 API 对应的后端代码实现（v1.1.0 重构）
 - 🎨 **主题切换** — 支持浅色/深色/跟随系统三种主题，即时生效
 - 📋 **请求详情** — 请求头/请求体/响应头/响应体分 Tab 展示，支持 JSON 高亮
 - 📤 **导出功能** — 支持将抓包记录导出为文件
@@ -79,19 +79,27 @@ npm run electron:build
 
 ```
 powercatch/
-├── electron/              # Electron 主进程
-│   ├── main.ts           # 入口文件
-│   ├── ipc.ts            # IPC 通信处理
-│   ├── preload.ts        # 预加载脚本
-│   ├── proxy/            # MITM 代理服务
-│   └── db/              # SQLite 数据库
-├── src/                  # 渲染进程（Vue 3）
-│   ├── components/       # 组件
-│   ├── views/           # 页面视图
-│   ├── stores/          # Pinia 状态管理
-│   └── styles/          # 全局样式
-├── resources/            # 图标、证书等资源
-└── release/             # 构建产物输出目录
+├── electron/                    # Electron 主进程
+│   ├── main.ts                 # 入口文件
+│   ├── ipc.ts                 # IPC 通信处理
+│   ├── preload.ts             # 预加载脚本
+│   ├── sse-manager.ts         # SSE 管理器
+│   ├── proxy/                 # MITM 代理服务
+│   ├── db/                   # SQLite 数据库
+│   └── services/              # 业务服务
+│       ├── ai-analyze-service.ts      # AI 分析服务（纯 AI Agent 模式）
+│       └── ai-agent-tool-executor.ts  # AI Agent 工具调用执行器
+├── src/                       # 渲染进程（Vue 3）
+│   ├── components/            # 组件
+│   ├── views/                # 页面视图
+│   │   └── AiAnalysisView.vue   # AI 分析页面
+│   ├── stores/               # Pinia 状态管理
+│   └── services/             # 前端服务（API 调用）
+│       └── ai-analysis-api.ts    # AI 分析 API 客户端
+├── docs/                      # 文档
+├── tests/                     # 测试
+├── resources/                 # 图标、证书等资源
+└── release/                  # 构建产物输出目录
 ```
 
 ## ⚙️ 配置

@@ -54,6 +54,132 @@ const electronAPI = {
       ipcRenderer.invoke(IPC_CHANNELS.AI_TEST_CONNECTION, { apiUrl, apiKey, modelName }),
   },
 
+  // AI 代码分析
+  aiCodeAnalysis: {
+    // ===== 兼容旧版本 =====
+    analyze: (request: any) =>
+      ipcRenderer.invoke(IPC_CHANNELS.AI_ANALYZE, request),
+    abort: () =>
+      ipcRenderer.invoke(IPC_CHANNELS.AI_ABORT),
+    cleanupRepo: (repoName: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.AI_CLEANUP_REPO, repoName),
+    checkGitAvailability: () =>
+      ipcRenderer.invoke(IPC_CHANNELS.AI_CHECK_GIT_AVAILABILITY),
+    checkDiskSpace: (cloneDir: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.AI_CHECK_DISK_SPACE, cloneDir),
+    fetchBranches: (repoUrl: string, token: string, authMethod: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.AI_FETCH_BRANCHES, { repoUrl, accessToken: token, authMethod }),
+    onScanProgress: (callback: (progress: any) => void) => {
+      const handler = (_event: any, progress: any) => callback(progress)
+      ipcRenderer.on(IPC_CHANNELS.AI_SCAN_PROGRESS, handler)
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.AI_SCAN_PROGRESS, handler)
+    },
+    onCloneProgress: (callback: (progress: any) => void) => {
+      const handler = (_event: any, progress: any) => callback(progress)
+      ipcRenderer.on(IPC_CHANNELS.AI_CLONE_PROGRESS, handler)
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.AI_CLONE_PROGRESS, handler)
+    },
+    onStreamChunk: (callback: (chunk: string) => void) => {
+      const handler = (_event: any, chunk: string) => callback(chunk)
+      ipcRenderer.on(IPC_CHANNELS.AI_CODE_ANALYZE_STREAM_CHUNK, handler)
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.AI_CODE_ANALYZE_STREAM_CHUNK, handler)
+    },
+    onStreamEnd: (callback: (result: any) => void) => {
+      const handler = (_event: any, result: any) => callback(result)
+      ipcRenderer.on(IPC_CHANNELS.AI_CODE_ANALYZE_STREAM_END, handler)
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.AI_CODE_ANALYZE_STREAM_END, handler)
+    },
+
+    // ===== 新增：混合模式 API =====
+
+    /**
+     * 开始分析（支持混合模式）
+     * @param request 分析请求参数
+     * @param enableDeepAnalysis 是否启用深度分析（阶段2）
+     */
+    startAnalysis: (request: any, enableDeepAnalysis: boolean = false) =>
+      ipcRenderer.invoke(IPC_CHANNELS.AI_START_ANALYSIS, { request, enableDeepAnalysis }),
+
+    /**
+     * 取消分析
+     */
+    cancelAnalysis: () =>
+      ipcRenderer.invoke(IPC_CHANNELS.AI_CANCEL_ANALYSIS),
+
+    /**
+     * 获取 SSE 服务器端口号
+     * @returns { success: boolean, port?: number }
+     */
+    getSSEPort: () =>
+      ipcRenderer.invoke(IPC_CHANNELS.AI_SSE_GET_PORT),
+
+    /**
+     * 启动 SSE 服务器
+     * @returns { success: boolean, port?: number }
+     */
+    startSSEServer: () =>
+      ipcRenderer.invoke(IPC_CHANNELS.AI_SSE_START),
+
+    /**
+     * 停止 SSE 服务器
+     * @returns { success: boolean }
+     */
+    stopSSEServer: () =>
+      ipcRenderer.invoke(IPC_CHANNELS.AI_SSE_STOP),
+
+    /**
+     * 获取增量日志（IPC 轮询降级方案）
+     * @param lastLogId 上次获取的日志 ID
+     * @returns { logs: AnalysisLogEntry[], lastLogId: number }
+     */
+    getLogs: (lastLogId: number = 0) =>
+      ipcRenderer.invoke(IPC_CHANNELS.AI_GET_LOGS, lastLogId),
+
+    /**
+     * 监听分析日志（通过 IPC 推送）
+     * @param callback 日志回调函数
+     * @returns 取消监听的函数
+     */
+    onAnalysisLog: (callback: (log: any) => void) => {
+      const handler = (_event: any, log: any) => callback(log)
+      ipcRenderer.on(IPC_CHANNELS.AI_ANALYSIS_LOG, handler)
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.AI_ANALYSIS_LOG, handler)
+    },
+
+    /**
+     * 监听分析进度（通过 IPC 推送）
+     * @param callback 进度回调函数
+     * @returns 取消监听的函数
+     */
+    onAnalysisProgress: (callback: (progress: any) => void) => {
+      const handler = (_event: any, progress: any) => callback(progress)
+      ipcRenderer.on(IPC_CHANNELS.AI_ANALYSIS_PROGRESS, handler)
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.AI_ANALYSIS_PROGRESS, handler)
+    },
+
+    /**
+     * 监听分析完成（通过 IPC 推送）
+     * @param callback 完成回调函数
+     * @returns 取消监听的函数
+     */
+    onAnalysisDone: (callback: (result: any) => void) => {
+      const handler = (_event: any, result: any) => callback(result)
+      ipcRenderer.on(IPC_CHANNELS.AI_ANALYSIS_DONE, handler)
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.AI_ANALYSIS_DONE, handler)
+    },
+
+    /**
+     * 监听分析错误（通过 IPC 推送）
+     * @param callback 错误回调函数
+     * @returns 取消监听的函数
+     */
+    onAnalysisError: (callback: (error: any) => void) => {
+      const handler = (_event: any, error: any) => callback(error)
+      ipcRenderer.on(IPC_CHANNELS.AI_ANALYSIS_ERROR, handler)
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.AI_ANALYSIS_ERROR, handler)
+    },
+  },
+
   // 导出
   export: {
     file: (format: string, compareResult: any, requestA: any, requestB: any) =>

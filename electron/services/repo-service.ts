@@ -1,6 +1,9 @@
 /**
  * 仓库代码获取服务
- * 负责 Clone 仓库、检测 Git 可用性、检查磁盘空间、扫描路由文件、提取调用链
+ * 负责 Clone 仓库、检测 Git 可用性、检查磁盘空间
+ *
+ * 注意：CPU 密集型路由扫描逻辑已迁移到 Worker 线程 (electron/workers/scan-worker.ts)
+ * 由 ScanWorkerManager (electron/services/scan-worker-manager.ts) 管理
  */
 import { spawn, execFile } from 'child_process'
 import { promisify } from 'util'
@@ -12,8 +15,6 @@ import type {
   GitAvailabilityResult,
   CloneProgress,
   DiskSpaceResult,
-  CodeFile,
-  RouteMatch,
 } from '../../src/services/types'
 
 const execFileAsync = promisify(execFile)
@@ -24,7 +25,7 @@ export interface CloneOptions {
   branch: string
   accessToken: string
   authMethod: 'http' | 'ssh'
-  cloneDir: string
+  cloneDir?: string
 }
 
 /** 仓库信息 */
@@ -39,32 +40,6 @@ export interface CleanupResult {
   cleanedCount: number
   freedBytes: number
 }
-
-/** 路由扫描正则 - lego/webx 框架（POC 验证更新版） */
-const GO_ROUTE_SCAN_REGEX =
-  /\.Group\s*\(\s*["'][^"']+["']\s*\)\.\s*(?:GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\s*\(\s*["'][^"']+["']\s*,\s*\w+\.(?:ControllerWithResp|ControllerWithReqResp|ControllerWithoutReq|NewController|NewControllerWithoutReq)\s*\(\s*\w+\.\w+\s*\)/g
-
-/** 路由提取正则（精细匹配，用于解析扫描结果） */
-const GO_ROUTE_EXTRACT_REGEX =
-  /\.Group\s*\(\s*["']([^"']+)["']\s*\)\.\s*(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\s*\(\s*["']([^"']+)["']\s*,\s*(\w+)\.(?:ControllerWithResp|ControllerWithReqResp|ControllerWithoutReq|NewController|NewControllerWithoutReq)\s*\(\s*(\w+)\.(\w+)\s*\)/
-
-/** 通用 Go 路由匹配正则（Gin/Echo 等框架 + lego adapter 模式） */
-const GO_GENERIC_ROUTE_REGEX =
-  /\.(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\s*\(\s*["']([^"']+)["']\s*,\s*(?:\w+\.(?:NewController|NewControllerWithoutReq|ControllerWithResp|ControllerWithReqResp|ControllerWithoutReq)\s*\(\s*(\w+(?:\.\w+)?)\s*\)|(\w+(?:\.\w+)?))\s*\)/g
-
-/** 应跳过的目录 */
-const SKIP_DIRS = new Set([
-  '.git', 'vendor', 'node_modules', '.idea', '.vscode',
-  'dist', 'build', 'target', 'docs', 'doc',
-])
-
-/** 应跳过的文件后缀 */
-const SKIP_FILE_PATTERNS = [
-  /_test\.go$/,
-  /Test\.java$/,
-  /\.test\./,
-  /\.spec\./,
-]
 
 /** 默认 Clone 目录 */
 function getDefaultCloneDir(): string {
@@ -109,6 +84,7 @@ export async function checkGitAvailability(): Promise<GitAvailabilityResult> {
  * 获取远程仓库分支列表
  */
 export async function fetchBranches(repoUrl: string, accessToken: string, authMethod: string): Promise<string[]> {
+  if (!repoUrl) return []
   try {
     const cleanUrl = repoUrl.trim()
     if (!cleanUrl) return []
@@ -202,6 +178,7 @@ export async function checkDiskSpace(dirPath: string): Promise<DiskSpaceResult> 
  * 构建 Clone URL
  */
 function buildCloneUrl(repoUrl: string, token: string, authMethod: string): string {
+  if (!repoUrl) return ''
   // 去除首尾空白
   const cleanUrl = repoUrl.trim()
   if (!cleanUrl) return cleanUrl
@@ -239,6 +216,7 @@ function buildCloneUrl(repoUrl: string, token: string, authMethod: string): stri
  * 从 URL 提取仓库名
  */
 function extractRepoName(repoUrl: string): string {
+  if (!repoUrl) return 'unknown-repo'
   try {
     const url = new URL(repoUrl.trim())
     const parts = url.pathname.split('/').filter(Boolean)
@@ -259,6 +237,7 @@ function parseGitProgress(stderr: string): CloneProgress | null {
   const receivingMatch = stderr.match(/Receiving objects:\s+(\d+)%/)
   if (receivingMatch) {
     return {
+      status: 'cloning',
       percent: parseInt(receivingMatch[1], 10),
       message: `正在下载对象... ${receivingMatch[1]}%`,
     }
@@ -268,6 +247,7 @@ function parseGitProgress(stderr: string): CloneProgress | null {
   const deltaMatch = stderr.match(/Resolving deltas:\s+(\d+)%/)
   if (deltaMatch) {
     return {
+      status: 'cloning',
       percent: 80 + parseInt(deltaMatch[1], 10) * 0.2,
       message: `正在解析增量... ${deltaMatch[1]}%`,
     }
@@ -277,6 +257,7 @@ function parseGitProgress(stderr: string): CloneProgress | null {
   const countingMatch = stderr.match(/remote: Counting objects:\s+(\d+)%/)
   if (countingMatch) {
     return {
+      status: 'cloning',
       percent: parseInt(countingMatch[1], 10) * 0.3,
       message: `正在统计对象... ${countingMatch[1]}%`,
     }
@@ -284,7 +265,7 @@ function parseGitProgress(stderr: string): CloneProgress | null {
 
   // 匹配: Cloning into 'xxx'
   if (stderr.includes('Cloning into')) {
-    return { percent: 5, message: '正在初始化 Clone...' }
+    return { status: 'cloning', percent: 5, message: '正在初始化 Clone...' }
   }
 
   return null
@@ -311,10 +292,12 @@ function parseGitError(stderr: string): string {
 
 /**
  * M2: 使用 spawn 执行 Clone，带进度推送
+ * @param progressCallback 进度回调函数（用于 SSE 推送）
  */
 export async function cloneRepoWithProgress(
   options: CloneOptions,
-  mainWindow: BrowserWindow
+  mainWindow: BrowserWindow,
+  progressCallback?: (progress: CloneProgress) => void
 ): Promise<RepoInfo> {
   const { repoUrl, branch, accessToken, authMethod, cloneDir } = options
   const targetDir = cloneDir || getDefaultCloneDir()
@@ -358,11 +341,23 @@ export async function cloneRepoWithProgress(
 
       // 解析进度并推送
       const progress = parseGitProgress(text)
-      if (progress && mainWindow && !mainWindow.isDestroyed()) {
-        try {
-          mainWindow.webContents.send('ai:repo-clone-progress', progress)
-        } catch (e) {
-          console.error('[RepoService] 推送 Clone 进度失败:', e)
+      if (progress) {
+        // 通过 IPC 推送（前端未连接 SSE 时使用）
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          try {
+            mainWindow.webContents.send('ai:clone-progress', progress)
+          } catch (e) {
+            console.error('[RepoService] 推送 Clone 进度失败:', e)
+          }
+        }
+
+        // 通过回调推送（前端已连接 SSE 时使用）
+        if (progressCallback) {
+          try {
+            progressCallback(progress)
+          } catch (e) {
+            console.error('[RepoService] 回调推送 Clone 进度失败:', e)
+          }
         }
       }
     })
@@ -378,7 +373,8 @@ export async function cloneRepoWithProgress(
         // 推送 100% 进度
         if (mainWindow && !mainWindow.isDestroyed()) {
           try {
-            mainWindow.webContents.send('ai:repo-clone-progress', {
+            mainWindow.webContents.send('ai:clone-progress', {
+              status: 'done',
               percent: 100,
               message: 'Clone 完成',
             })
@@ -426,400 +422,6 @@ export function detectProjectType(clonePath: string): 'go' | 'java' | 'unknown' 
     return 'java'
   }
   return 'unknown'
-}
-
-/**
- * 递归遍历目录，收集 .go 文件（异步，避免阻塞事件循环）
- */
-async function walkGoFiles(dir: string, maxFiles: number = 500): Promise<string[]> {
-  const results: string[] = []
-
-  async function walk(currentDir: string): Promise<void> {
-    if (results.length >= maxFiles) return
-
-    let entries: fs.Dirent[]
-    try {
-      entries = await fs.promises.readdir(currentDir, { withFileTypes: true })
-    } catch {
-      return
-    }
-
-    for (const entry of entries) {
-      if (results.length >= maxFiles) return
-
-      const fullPath = path.join(currentDir, entry.name)
-
-      if (entry.isDirectory()) {
-        if (!SKIP_DIRS.has(entry.name)) {
-          await walk(fullPath)
-        }
-      } else if (entry.name.endsWith('.go')) {
-        const shouldSkip = SKIP_FILE_PATTERNS.some((pattern) => pattern.test(entry.name))
-        if (!shouldSkip) {
-          results.push(fullPath)
-        }
-      }
-    }
-  }
-
-  await walk(dir)
-  return results
-}
-
-/**
- * 异步延迟：让出事件循环
- */
-function yieldEventLoop(): Promise<void> {
-  return new Promise(resolve => setImmediate(resolve))
-}
-
-/**
- * 将多行 Go 代码 collapse 为单行（用于正则匹配链式调用）
- */
-function collapseGoCode(content: string): string {
-  return content.replace(/\n\s*/g, ' ')
-}
-
-/**
- * 扫描路由文件（异步分批，避免阻塞主进程）
- * v1.0 只支持 Go 项目
- * @param onProgress 进度回调 (scanned, total) => void
- */
-export async function scanRouteFiles(
-  clonePath: string,
-  projectType: string,
-  method: string,
-  requestPath: string,
-  onProgress?: (scanned: number, total: number) => void
-): Promise<RouteMatch[]> {
-  if (projectType !== 'go') {
-    console.warn('[RepoService] v1.0 只支持 Go 项目路由扫描，跳过')
-    return []
-  }
-
-  const goFiles = await walkGoFiles(clonePath)
-  const totalFiles = goFiles.length
-  console.log(`[RepoService] 开始扫描 ${totalFiles} 个 Go 文件...`)
-
-  // 第一步：分批读取 web 目录下文件，收集 contextPath 和 RegisterRoutes 映射
-  const registerRoutesMap = new Map<string, string>()
-  let contextPath = ''
-
-  for (let i = 0; i < goFiles.length; i++) {
-    const filePath = goFiles[i]
-    if (!filePath.includes('/internal/web/')) continue
-
-    try {
-      const stats = await fs.promises.stat(filePath)
-      if (stats.size > 100000) continue
-      const content = await fs.promises.readFile(filePath, 'utf-8')
-
-      const cpMatch = content.match(/contextPath\s*=\s*["']([^"']+)["']/)
-      if (cpMatch) {
-        contextPath = cpMatch[1]
-      }
-
-      const regRegex = /(\w+)\.RegisterRoutes\s*\(\s*\w+\.Group\s*\(\s*["']\/?([^"']+)["']\s*\)/g
-      let regMatch
-      while ((regMatch = regRegex.exec(content)) !== null) {
-        const pkgName = regMatch[1]
-        const groupPrefix = regMatch[2].startsWith('/') ? regMatch[2] : '/' + regMatch[2]
-        registerRoutesMap.set(pkgName, groupPrefix)
-      }
-    } catch {
-      // ignore
-    }
-
-    // 每处理 10 个文件让出事件循环（更频繁 yield，保持 UI 响应）
-    if (i % 10 === 0) {
-      if (onProgress) {
-        onProgress(i, totalFiles)
-      }
-      await yieldEventLoop()
-    }
-  }
-
-  console.log(`[RepoService] 找到 ${registerRoutesMap.size} 个 RegisterRoutes 映射，contextPath: ${contextPath}`)
-
-  // 第二步：分批扫描所有 Go 文件，匹配路由
-  const matches: RouteMatch[] = []
-
-  for (let i = 0; i < goFiles.length; i++) {
-    const filePath = goFiles[i]
-    if (filePath.includes('_test.go') || filePath.includes('/vendor/') || filePath.includes('/docs/')) {
-      if (onProgress && i % 20 === 0) {
-        onProgress(i, totalFiles)
-      }
-      continue
-    }
-
-    try {
-      const stats = await fs.promises.stat(filePath)
-      if (stats.size > 100000) continue
-      const content = await fs.promises.readFile(filePath, 'utf-8')
-
-      // 推断包名
-      let filePkgPrefix = ''
-      const goModPath = path.join(clonePath, 'go.mod')
-      if (fs.existsSync(goModPath)) {
-        try {
-          const goModContent = await fs.promises.readFile(goModPath, 'utf-8')
-          const modMatch = goModContent.match(/^module\s+(.+)$/m)
-          if (modMatch) {
-            const moduleName = modMatch[1].trim()
-            const relPath = filePath.replace(clonePath, '').replace(/^\//, '')
-            const pkgMatch = relPath.match(/internal\/domain\/(?:\w+\/)*(\w+)\//)
-            if (pkgMatch) {
-              filePkgPrefix = pkgMatch[1]
-            }
-          }
-        } catch { /* ignore */ }
-      }
-
-      const hasRegisterRoutes = /func\s+RegisterRoutes\s*\(/.test(content)
-      const groupPrefix = registerRoutesMap.get(filePkgPrefix) || ''
-
-      const singleLine = collapseGoCode(content)
-
-      // 尝试精确正则
-      GO_ROUTE_EXTRACT_REGEX.lastIndex = 0
-      let match = GO_ROUTE_EXTRACT_REGEX.exec(singleLine)
-      if (match) {
-        do {
-          const [, prefix, httpMethod, subPath, , handlerPkg, handlerFunc] = match
-          const fullPath = prefix + subPath
-          if (matchRequestPath(fullPath, method, requestPath)) {
-            matches.push({
-              filePath,
-              content: content.slice(0, 2000),
-              routePattern: fullPath,
-              handlerName: `${handlerPkg}.${handlerFunc}`,
-              lineNumber: 0,
-            })
-          }
-        } while ((match = GO_ROUTE_EXTRACT_REGEX.exec(singleLine)) !== null)
-      }
-
-      // 通用正则
-      if (matches.length === 0) {
-        GO_GENERIC_ROUTE_REGEX.lastIndex = 0
-        let genericMatch = GO_GENERIC_ROUTE_REGEX.exec(singleLine)
-        if (genericMatch) {
-          do {
-            const [, httpMethod, routePath, handlerFromCall, handlerDirect] = genericMatch
-            const handler = handlerFromCall || handlerDirect
-            let fullPath = routePath
-            if (hasRegisterRoutes && groupPrefix) {
-              fullPath = contextPath + groupPrefix + routePath
-            }
-            if (matchRequestPath(fullPath, method, requestPath)) {
-              const beforeMatch = content.slice(0, content.indexOf(genericMatch[0].replace(/\s+/g, ' ')))
-              const lineNumber = (beforeMatch.match(/\n/g) || []).length + 1
-              matches.push({
-                filePath,
-                content: content.slice(0, 2000),
-                routePattern: fullPath,
-                handlerName: handler,
-                lineNumber,
-              })
-            }
-          } while ((genericMatch = GO_GENERIC_ROUTE_REGEX.exec(singleLine)) !== null)
-        }
-      }
-    } catch {
-      continue
-    }
-
-    if (onProgress && i % 20 === 0) {
-      onProgress(i, totalFiles)
-    }
-
-    // 每处理 20 个文件让出事件循环
-    if (i % 20 === 0) {
-      await yieldEventLoop()
-    }
-  }
-
-  console.log(`[RepoService] 路由扫描完成，扫描 ${totalFiles} 个文件，找到 ${matches.length} 个匹配`)
-  return matches
-}
-
-/**
- * 路径匹配（支持路径参数 :id 等）
- */
-function matchRequestPath(routePath: string, requestMethod: string, requestPath: string): boolean {
-  // 先检查 HTTP 方法（宽松匹配，不区分大小写）
-  // 由于正则已经按方法过滤，这里只做路径匹配
-
-  // 精确匹配
-  if (routePath === requestPath) return true
-
-  // 去掉尾部斜杠后比较
-  const normalizedRoute = routePath.replace(/\/+$/, '')
-  const normalizedRequest = requestPath.replace(/\/+$/, '')
-  if (normalizedRoute === normalizedRequest) return true
-
-  // 支持路径参数匹配（如 /users/:id 匹配 /users/123）
-  const routeParts = normalizedRoute.split('/')
-  const requestParts = normalizedRequest.split('/')
-  if (routeParts.length !== requestParts.length) return false
-
-  for (let i = 0; i < routeParts.length; i++) {
-    if (routeParts[i].startsWith(':') || routeParts[i].startsWith('{')) {
-      continue // 路径参数，匹配任意值
-    }
-    if (routeParts[i] !== requestParts[i]) return false
-  }
-
-  return true
-}
-
-/**
- * 查找 Handler 函数所在的文件
- */
-function findHandlerFile(clonePath: string, handlerPkg: string, handlerFunc: string): string | null {
-  // 在仓库中搜索包含该函数定义的文件
-  const goFiles = walkGoFiles(clonePath, 500)
-  for (const filePath of goFiles) {
-    try {
-      const content = fs.readFileSync(filePath, 'utf-8')
-      // 匹配 func HandlerFunc( 或 func (receiver) HandlerFunc(
-      const funcRegex = new RegExp(`func\\s+(?:\\([^)]+\\)\\s+)?${handlerFunc}\\s*\\(`)
-      if (funcRegex.test(content)) {
-        return filePath
-      }
-    } catch {
-      continue
-    }
-  }
-  return null
-}
-
-/**
- * 提取调用链文件
- * 读取 handler 文件，解析 import，提取同仓库的引用文件
- */
-export function extractCallChain(
-  clonePath: string,
-  projectType: string,
-  handlerFile: CodeFile
-): CodeFile[] {
-  if (projectType !== 'go') {
-    return [handlerFile]
-  }
-
-  const result: CodeFile[] = [handlerFile]
-  const visited = new Set<string>([handlerFile.filePath])
-  const MAX_FILES = 15
-
-  // 提取 import 路径
-  const importRegex = /import\s+(?:\(\s*([\s\S]*?)\s*\)|"([^"]+)")/g
-  const imports: string[] = []
-
-  let importMatch = importRegex.exec(handlerFile.content)
-  while (importMatch) {
-    if (importMatch[1]) {
-      // 多行 import
-      const lines = importMatch[1].split('\n')
-      for (const line of lines) {
-        const pathMatch = line.match(/"([^"]+)"/)
-        if (pathMatch) {
-          imports.push(pathMatch[1])
-        }
-      }
-    } else if (importMatch[2]) {
-      imports.push(importMatch[2])
-    }
-    importMatch = importRegex.exec(handlerFile.content)
-  }
-
-  // 获取仓库的 Go module 名
-  let moduleName = ''
-  try {
-    const goModPath = path.join(clonePath, 'go.mod')
-    if (fs.existsSync(goModPath)) {
-      const goModContent = fs.readFileSync(goModPath, 'utf-8')
-      const modMatch = goModContent.match(/^module\s+(.+)$/m)
-      if (modMatch) {
-        moduleName = modMatch[1].trim()
-      }
-    }
-  } catch {
-    // 忽略
-  }
-
-  // 解析内部包引用
-  for (const importPath of imports) {
-    if (result.length >= MAX_FILES) break
-
-    // 只处理同仓库的包
-    if (moduleName && importPath.startsWith(moduleName)) {
-      const relativePath = importPath.slice(moduleName.length)
-      const localPath = path.join(clonePath, relativePath)
-
-      // 可能是目录（包含多个 .go 文件）
-      let targetDir = localPath
-      if (!fs.existsSync(targetDir) || !fs.statSync(targetDir).isDirectory()) {
-        // 尝试去掉最后一个路径段作为文件
-        targetDir = path.dirname(localPath)
-      }
-
-      if (fs.existsSync(targetDir) && fs.statSync(targetDir).isDirectory()) {
-        try {
-          const entries = fs.readdirSync(targetDir)
-          for (const entry of entries) {
-            if (result.length >= MAX_FILES) break
-            if (!entry.endsWith('.go')) continue
-            if (SKIP_FILE_PATTERNS.some((p) => p.test(entry))) continue
-
-            const fullPath = path.join(targetDir, entry)
-            if (visited.has(fullPath)) continue
-            visited.add(fullPath)
-
-            try {
-              const content = fs.readFileSync(fullPath, 'utf-8')
-              const fileType = classifyGoFile(fullPath, content)
-              result.push({ filePath: fullPath, content: content.slice(0, 5000), fileType })
-            } catch {
-              continue
-            }
-          }
-        } catch {
-          continue
-        }
-      }
-    }
-  }
-
-  return result
-}
-
-/**
- * 分类 Go 文件类型
- */
-function classifyGoFile(filePath: string, content: string): CodeFile['fileType'] {
-  const fileName = path.basename(filePath).toLowerCase()
-  const dirName = path.basename(path.dirname(filePath)).toLowerCase()
-
-  if (dirName.includes('model') || dirName.includes('dto') || dirName.includes('entity')) {
-    return 'model'
-  }
-  if (dirName.includes('service') || dirName.includes('biz') || dirName.includes('usecase')) {
-    return 'service'
-  }
-  if (dirName.includes('handler') || dirName.includes('controller') || dirName.includes('api')) {
-    return 'handler'
-  }
-  if (fileName.includes('handler') || fileName.includes('controller')) {
-    return 'handler'
-  }
-  if (fileName.includes('service') || fileName.includes('biz')) {
-    return 'service'
-  }
-  if (fileName.includes('model') || fileName.includes('dto') || fileName.includes('param') || fileName.includes('resp')) {
-    return 'model'
-  }
-  return 'other'
 }
 
 /**

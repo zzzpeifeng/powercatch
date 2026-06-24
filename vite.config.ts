@@ -15,7 +15,9 @@ export default defineConfig({
           build: {
             outDir: 'dist-electron',
             rollupOptions: {
-              external: ['better-sqlite3', 'http-mitm-proxy', 'electron-store', 'selfsigned']
+              external: (id: string) => {
+                return ['better-sqlite3', 'http-mitm-proxy', 'electron-store', 'selfsigned', 'electron'].some(pkg => id === pkg || id.startsWith(pkg + '/'))
+              }
             }
           }
         }

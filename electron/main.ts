@@ -187,7 +187,7 @@ app.whenReady().then(async () => {
     console.warn('[Dock Icon] 设置失败:', e)
   }
 
-  createAndInitWindow()
+  await createAndInitWindow()
 
   // 启动恢复：检查上次是否有异常退出（遗留快照文件）
   // 如果存在快照，说明上次退出时代理未被正常恢复，尝试自动恢复

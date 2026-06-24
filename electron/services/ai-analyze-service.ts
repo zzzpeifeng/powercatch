@@ -18,7 +18,7 @@ import type { RouteMatch, AnalysisScenario } from '../../src/services/types'
 import OpenAI from 'openai'
 import { AIAgentToolExecutor, type ToolCallResult } from './ai-agent-tool-executor'
 // @ts-ignore - sse-manager.ts 导出在运行时可用
-import { pushLog, pushProgress, pushDone, pushError, pushSSEEvent } from './sse-manager'
+import { pushLog, pushProgress, pushDone, pushError, pushSSEEvent } from '../sse-manager'
 
 /**
  * 进度推送回调
