@@ -5,7 +5,9 @@
   >
     <!-- 左侧：标题（留出 macOS 红绿灯按钮空间） -->
     <div class="flex items-center gap-2">
-      <span class="text-sm font-semibold text-gray-700 dark:text-gray-300">PowerCatch</span>
+      <span class="text-sm font-semibold text-gray-700 dark:text-gray-300">
+        {{ titleMap[route.path] || 'PowerCatch' }}
+      </span>
     </div>
 
     <!-- 右侧：导航 -->
@@ -33,4 +35,11 @@ import { useRouter, useRoute } from 'vue-router'
 
 const router = useRouter()
 const route = useRoute()
+
+const titleMap: Record<string, string> = {
+  '/': 'PowerCatch',
+  '/ai-analysis': 'AI 代码分析',
+  '/settings': '设置',
+  '/ssl-errors': 'SSL 错误',
+}
 </script>

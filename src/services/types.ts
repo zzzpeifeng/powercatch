@@ -121,6 +121,115 @@ export interface AppSettings {
   mapLocalRules?: MapLocalRule[]
   /** Map Remote 规则 */
   mapRemoteRules?: MapRemoteRule[]
+  /** AI 代码分析配置 */
+  aiCodeAnalysisConfig?: {
+    repoUrl?: string
+    branch?: string
+    accessToken?: string
+    authMethod?: 'http' | 'ssh'
+    cloneDir?: string
+    repoUrlHistory?: string[]
+  }
+}
+
+/** 仓库配置（AI 代码分析） */
+export interface RepoConfig {
+  repoUrl: string
+  repoType: 'github' | 'gitlab' | 'gitee' | 'bitbucket' | 'unknown'
+  branch: string
+  accessToken: string
+  authMethod: 'http' | 'ssh'
+  cloneDir: string
+  repoUrlHistory: string[]
+}
+
+/** AI 代码分析请求参数 */
+export interface CodeAnalysisRequest {
+  repoUrl: string
+  branch: string
+  accessToken: string
+  authMethod: 'http' | 'ssh'
+  method: string
+  url: string
+  path: string
+  requestBody?: string
+  requestHeaders?: Record<string, string | string[]>
+  modelName?: string
+  apiUrl?: string
+  apiKey?: string
+  request?: CaptureRequest | AnalysisRequestInfo
+}
+
+/** 测试场景 */
+export interface TestScenario {
+  type: string
+  title: string
+  description?: string
+  curl: string
+  pythonAssertion: string
+}
+
+/** AI 代码分析结果 */
+export interface CodeAnalysisResult {
+  success: boolean
+  routeMatches?: RouteMatch[]
+  repoInfo?: any
+  repoName?: string
+  scenarios?: TestScenario[]
+  routeInfo?: any
+  modelName?: string
+  analyzedAt?: string
+  analysis?: string
+  message?: string
+  error?: string
+}
+
+/** Clone 进度 */
+export interface CloneProgress {
+  status: 'cloning' | 'done' | 'error'
+  percent: number
+  message?: string
+}
+
+/** 磁盘空间检查结果 */
+export interface DiskSpaceResult {
+  hasEnoughSpace: boolean
+  warning?: string
+  error?: string
+}
+
+/** Git 可用性检查结果 */
+export interface GitAvailabilityResult {
+  available: boolean
+  error?: string
+}
+
+/** 请求信息（用于分析） */
+export interface AnalysisRequestInfo {
+  method: string
+  url: string
+  path: string
+  requestBody?: string
+  requestHeaders?: Record<string, string | string[]>
+}
+
+/** 代码文件类型分类 */
+export type FileType = 'handler' | 'model' | 'service' | 'other'
+
+/** 代码文件（用于 AI 分析上下文） */
+export interface CodeFile {
+  filePath: string
+  content: string
+  fileType: FileType
+}
+
+/** 路由匹配结果 */
+export interface RouteMatch {
+  filePath: string
+  content: string
+  routePattern: string
+  handlerName: string
+  lineNumber: number
 }
 
 /** 设备信息 */
@@ -415,6 +524,34 @@ export const IPC_CHANNELS = {
   WIFI_GET_CURRENT: 'wifi:get-current',
   WIFI_GET_CURRENT_AIRPORT: 'wifi:get-current-airport', // 使用 airport 命令
 
+  // ===== AI 代码分析 =====
+  AI_ANALYZE: 'ai:analyze',
+  AI_ABORT: 'ai:abort',
+  AI_CLEANUP_REPO: 'ai:cleanup-repo',
+  AI_CHECK_GIT_AVAILABILITY: 'ai:check-git-availability',
+  AI_CLONE_PROGRESS: 'ai:clone-progress',
+  AI_CHECK_DISK_SPACE: 'ai:check-disk-space',
+  AI_FETCH_BRANCHES: 'ai:fetch-branches',
+  AI_CODE_ANALYZE_STREAM_CHUNK: 'ai:code-analyze-stream-chunk',
+  AI_CODE_ANALYZE_STREAM_END: 'ai:code-analyze-stream-end',
+
+  // ===== AI 混合模式（新增）=====
+  // SSE 服务器控制
+  AI_SSE_START: 'ai:sse-start',
+  AI_SSE_STOP: 'ai:sse-stop',
+  AI_SSE_GET_PORT: 'ai:sse-get-port',
+
+  // 分析控制
+  AI_START_ANALYSIS: 'ai:start-analysis',
+  AI_CANCEL_ANALYSIS: 'ai:cancel-analysis',
+  AI_GET_LOGS: 'ai:get-logs',
+
+  // 分析进度推送
+  AI_ANALYSIS_LOG: 'ai:analysis-log',
+  AI_ANALYSIS_PROGRESS: 'ai:analysis-progress',
+  AI_ANALYSIS_DONE: 'ai:analysis-done',
+  AI_ANALYSIS_ERROR: 'ai:analysis-error',
+
   // 断点功能
   BREAKPOINT_ADD_RULE: 'breakpoint:add-rule',
   BREAKPOINT_REMOVE_RULE: 'breakpoint:remove-rule',
@@ -524,6 +661,113 @@ export interface FilterState {
   sizeRanges: SizeRange[]
   /** 设备 IP 列表（空数组 = 不过滤） */
   clientIps: string[]
+}
+
+// ===== AI 混合模式类型定义（新增）=====
+
+/**
+ * 分析阶段枚举
+ */
+export type AnalysisPhase =
+  | 'idle'              // 空闲
+  | 'cloning'          // 克隆仓库中
+  | 'scanning'         // 阶段1：扫描中
+  | 'scan-failed'      // 阶段1：扫描失败
+  | 'analyzing'        // 阶段2：AI 分析中
+  | 'generating'       // 生成报告中
+  | 'done'             // 完成
+  | 'error'            // 错误
+
+/**
+ * 实时日志条目
+ */
+export interface AnalysisLogEntry {
+  /** 日志 ID（递增） */
+  id: number
+  /** 时间戳（ISO 8601） */
+  timestamp: string
+  /** 日志级别 */
+  level: 'info' | 'warn' | 'error' | 'debug'
+  /** 日志消息 */
+  message: string
+}
+
+/**
+ * 场景调用链路步骤
+ */
+export interface CallChainStep {
+  /** 步骤序号 */
+  step: number
+  /** 组件类型（Router/Handler/Service/Model/DB） */
+  component: string
+  /** 文件路径 */
+  filePath: string
+  /** 函数名 */
+  functionName: string
+  /** 描述 */
+  description: string
+}
+
+/**
+ * 场景定义（3 个场景）
+ */
+export interface AnalysisScenario {
+  /** 场景名称（正常流程/参数校验失败/权限校验失败） */
+  scenarioName: string
+  /** 场景类型 */
+  scenarioType: 'normal' | 'param-error' | 'auth-error'
+  /** 调用链路 */
+  callChain: CallChainStep[]
+  /** curl 命令 */
+  curlCommand: string
+  /** Python 断言代码 */
+  pythonAssertion: string
+}
+
+/**
+ * AI 深度分析结果
+ */
+export interface AIDeepAnalysisResult {
+  /** 是否成功 */
+  success: boolean
+  /** 仓库名称 */
+  repoName?: string
+  /** Handler 文件 */
+  handlerFile?: string
+  /** Handler 函数 */
+  handlerFunction?: string
+  /** 3 个场景 */
+  scenarios: AnalysisScenario[]
+  /** 分析摘要（Markdown） */
+  analysisSummary?: string
+  /** 错误信息 */
+  error?: string
+  /** 是否触发了兜底分析（阶段1失败后自动触发阶段2） */
+  usedFallback?: boolean
+}
+
+/**
+ * 分析进度（实时推送）
+ */
+export interface AnalysisProgress {
+  /** 当前阶段 */
+  phase: AnalysisPhase
+  /** 进度百分比（0-100） */
+  percent: number
+  /** 当前步骤描述 */
+  currentStep?: string
+  /** 日志条目列表 */
+  logs: AnalysisLogEntry[]
+}
+
+/**
+ * SSE 消息格式
+ */
+export interface SSEMessage {
+  /** 事件类型 */
+  event: 'log' | 'progress' | 'done' | 'error'
+  /** 事件数据 */
+  data: any
 }
 
 /** 状态码分组（含 pending：请求已发出但响应未到达） */
