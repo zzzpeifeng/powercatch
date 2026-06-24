@@ -42,7 +42,7 @@
             📋 复制
           </button>
         </div>
-        <pre class="code-block text-xs p-3 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 overflow-x-auto"><code class="font-mono text-gray-800 dark:text-gray-200 whitespace-pre-wrap">{{ scenario.curl }}</code></pre>
+        <pre class="code-block text-xs p-3 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 max-w-full"><code class="font-mono text-gray-800 dark:text-gray-200 whitespace-pre-wrap break-words">{{ scenario.curl }}</code></pre>
       </div>
 
       <!-- Python 断言 -->
@@ -56,7 +56,7 @@
             📋 复制
           </button>
         </div>
-        <pre class="code-block text-xs p-3 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 overflow-x-auto"><code class="font-mono text-gray-800 dark:text-gray-200 whitespace-pre-wrap">{{ scenario.pythonAssertion }}</code></pre>
+        <pre class="code-block text-xs p-3 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 max-w-full"><code class="font-mono text-gray-800 dark:text-gray-200 whitespace-pre-wrap break-words">{{ scenario.pythonAssertion }}</code></pre>
       </div>
     </div>
   </div>
