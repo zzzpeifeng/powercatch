@@ -29,8 +29,8 @@
       {{ scenario.description }}
     </p>
 
-    <!-- 上下布局：curl | Python 断言 -->
-    <div class="flex flex-col gap-3">
+    <!-- 左右布局：curl | Python 断言 -->
+    <div class="flex gap-3 min-w-0">
       <!-- curl -->
       <div class="flex-1 min-w-0">
         <div class="flex items-center justify-between mb-2">
@@ -42,7 +42,7 @@
             📋 复制
           </button>
         </div>
-        <pre class="code-block text-xs overflow-x-auto p-3 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 min-h-[100px]"><code class="font-mono text-gray-800 dark:text-gray-200 whitespace-pre-wrap">{{ scenario.curl }}</code></pre>
+        <pre class="code-block text-xs p-3 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 overflow-hidden"><code class="font-mono text-gray-800 dark:text-gray-200 whitespace-pre-wrap break-all">{{ scenario.curl }}</code></pre>
       </div>
 
       <!-- Python 断言 -->
@@ -56,7 +56,7 @@
             📋 复制
           </button>
         </div>
-        <pre class="code-block text-xs overflow-x-auto p-3 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 min-h-[100px]"><code class="font-mono text-gray-800 dark:text-gray-200 whitespace-pre-wrap">{{ scenario.pythonAssertion }}</code></pre>
+        <pre class="code-block text-xs p-3 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 overflow-hidden"><code class="font-mono text-gray-800 dark:text-gray-200 whitespace-pre-wrap break-all">{{ scenario.pythonAssertion }}</code></pre>
       </div>
     </div>
   </div>
