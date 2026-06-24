@@ -8,6 +8,13 @@ import { startProxy, stopProxy, getProxyStatus, getLocalIP, setDomainFilters, se
 import { generateCACert, isCAGenerated, getCertFilePath } from './proxy/ca-cert'
 import { setSystemProxy, clearSystemProxy, getSystemProxyStatus } from './proxy/system-proxy'
 import { executeCompare, testConnection, isCompareInProgress } from './services/ai-service'
+import {
+  cloneRepoWithProgress,
+  cleanupRepo as cleanupRepoService,
+  checkGitAvailability,
+  checkDiskSpace,
+  fetchBranches,
+} from './services/repo-service'
 import { exportCompareResult } from './services/export-service'
 import { SSLErrorLogger } from './services/ssl-logger'
 import type { CaptureRequest, AppSettings } from '../src/services/types'
@@ -15,6 +22,101 @@ import { generateWifiConfig, generateWifiQRContent } from './wifi-config'
 import { startConfigServer, stopConfigServer, getConfigServerUrl } from './config-server'
 import { generateQRCode } from './qr-generator'
 import { getCurrentWifiInfo, getCurrentWifiInfoWithSudo, getWifiSsidWithAppleScript } from './wifi-info'
+import { AIAnalyzeService, ProgressCallback } from './services/ai-analyze-service'
+import { pushSSEEvent, pushProgress, pushLog, pushDone, pushError, getSSEPort, getBufferedLogs } from './sse-manager'
+
+/** 全局 AIAnalyzeService 引用（用于分析控制和退出清理） */
+let aiAnalyzeServiceRef: AIAnalyzeService | null = null
+
+/** 分析是否正在运行 */
+let isAnalysisRunning = false
+
+
+/**
+ * 异步执行 AI 分析（不阻塞 IPC 返回）
+ */
+async function executeAnalysisAsync(params: {
+  repoUrl: string
+  branch: string
+  accessToken: string
+  authMethod: string
+  method: string
+  url: string
+  enableDeepAnalysis: boolean
+  apiKey: string
+  apiUrl: string
+  modelName: string
+  mainWindow: BrowserWindow
+}): Promise<void> {
+  try {
+    pushLog('info', `开始克隆仓库: ${params.repoUrl}`)
+
+    // Step 1: Clone 仓库
+    const repoInfo = await cloneRepoWithProgress(
+      {
+        repoUrl: params.repoUrl,
+        branch: params.branch,
+        accessToken: params.accessToken,
+        authMethod: params.authMethod,
+      },
+      params.mainWindow,
+      // 进度回调：通过 SSE 推送 Clone 进度
+      (progress) => {
+        pushProgress('cloning', `正在克隆仓库... ${progress.percent}%`, {
+          cloneProgress: progress,
+        })
+      }
+    )
+
+    pushLog('info', `仓库克隆完成: ${repoInfo.repoName}`)
+    pushProgress('scanning', '正在扫描路由...')
+
+    // Step 2: 创建 AIAnalyzeService 并运行分析
+    const progressCallback: ProgressCallback = (event, data) => {
+      if (event === 'log') {
+        pushLog(data.level || 'info', data.message || '')
+      } else if (event === 'progress') {
+        pushProgress(data.phase || 'analyzing', data.message || '')
+      }
+    }
+
+    aiAnalyzeServiceRef = new AIAnalyzeService(
+      params.mainWindow,
+      params.apiKey,
+      params.apiUrl,
+      progressCallback,
+    )
+
+    pushLog('info', '开始 AI 分析...')
+
+    // 调用分析方法
+    const result = await aiAnalyzeServiceRef.analyze({
+      clonePath: repoInfo.clonePath,
+      method: params.method,
+      url: params.url,
+    })
+
+    pushLog('info', '分析完成！')
+
+    // 构造 AIDeepAnalysisResult 格式
+    pushDone({
+      success: true,
+      repoName: repoInfo.repoName,
+      handlerFile: result.matches?.[0]?.filePath || '',
+      handlerFunction: result.matches?.[0]?.handlerName || '',
+      scenarios: result.scenarios || [],
+      analysisSummary: result.analysis || '',
+    })
+
+    isAnalysisRunning = false
+    aiAnalyzeServiceRef = null
+  } catch (error: any) {
+    console.error('[IPC] 分析执行失败:', error.message)
+    pushError(error.message || '分析失败')
+    isAnalysisRunning = false
+    aiAnalyzeServiceRef = null
+  }
+}
 
 /**
  * 注册所有 IPC 通道
@@ -172,6 +274,44 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       return await testConnection(apiUrl, apiKey, modelName)
     } catch (error: any) {
       return { success: false, message: error.message }
+    }
+  })
+
+  // ===== AI 代码分析 =====
+
+  ipcMain.handle(IPC_CHANNELS.AI_CLEANUP_REPO, async (_event, repoName: string) => {
+    try {
+      const result = await cleanupRepoService(repoName)
+      return { success: true, ...result }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.AI_CHECK_GIT_AVAILABILITY, async () => {
+    try {
+      const result = await checkGitAvailability()
+      return result
+    } catch (error: any) {
+      return { available: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.AI_CHECK_DISK_SPACE, async (_event, cloneDir: string) => {
+    try {
+      const result = await checkDiskSpace(cloneDir)
+      return result
+    } catch (error: any) {
+      return { hasEnoughSpace: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.AI_FETCH_BRANCHES, async (_event, { repoUrl, accessToken, authMethod }) => {
+    try {
+      const result = await fetchBranches(repoUrl, accessToken, authMethod)
+      return result
+    } catch (error: any) {
+      throw new Error(`获取分支失败: ${error.message}`)
     }
   })
 
@@ -656,6 +796,99 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       setProxyMapRemoteRules(rules)
       return { success: true }
     } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  // ===== AI 混合模式（使用 sse-manager.ts）=====
+
+  /**
+   * 获取 SSE 服务器端口
+   */
+  ipcMain.handle(IPC_CHANNELS.AI_SSE_GET_PORT, () => {
+    return { success: true, port: getSSEPort() }
+  })
+
+  /**
+   * 开始 AI 分析（混合模式）
+   */
+  ipcMain.handle(IPC_CHANNELS.AI_START_ANALYSIS, async (event, args: any) => {
+    try {
+      if (isAnalysisRunning) {
+        return { success: false, error: '分析正在进行中，请等待完成后再试。' }
+      }
+
+      // preload 发送的是 { request, enableDeepAnalysis }
+      const { request, enableDeepAnalysis } = args
+      const { repoUrl, branch, accessToken, authMethod, method, url, requestBody, requestHeaders } = request || {}
+
+      console.log('[IPC] AI 混合模式分析开始，深度分析:', enableDeepAnalysis)
+
+      // 获取 API 配置
+      const settings = sqlite.getAllSettings()
+      if (!settings.apiKey) {
+        return { success: false, error: '请先在设置页面配置 API Key。' }
+      }
+
+      isAnalysisRunning = true
+
+      // 获取 mainWindow（从 IPC event）
+      const mainWindow = BrowserWindow.fromWebContents(event.sender)
+
+      // 推送分析开始事件
+      pushLog('info', '开始 AI 代码分析...')
+
+      // 异步执行分析（不阻塞 IPC 返回）
+      executeAnalysisAsync({
+        repoUrl,
+        branch,
+        accessToken,
+        authMethod,
+        method,
+        url,
+        enableDeepAnalysis: enableDeepAnalysis || false,
+        apiKey: settings.apiKey,
+        apiUrl: settings.apiUrl,
+        modelName: settings.modelName,
+        mainWindow,
+      }).catch((err) => {
+        console.error('[IPC] 分析执行失败:', err.message)
+        isAnalysisRunning = false
+      })
+
+      return { success: true, message: '分析已启动' }
+    } catch (error: any) {
+      console.error('[IPC] AI 分析启动失败:', error.message)
+      isAnalysisRunning = false
+      return { success: false, error: error.message }
+    }
+  })
+
+  /**
+   * 取消 AI 分析
+   */
+  ipcMain.handle(IPC_CHANNELS.AI_CANCEL_ANALYSIS, async () => {
+    try {
+      // TODO: 实现取消逻辑（终止 Worker、关闭 SSE 连接）
+      console.log('[IPC] AI 分析取消请求')
+
+      return { success: true }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  /**
+   * 获取分析日志（IPC 轮询备选方案）
+   */
+  ipcMain.handle(IPC_CHANNELS.AI_GET_LOGS, async (_event, lastLogId: number) => {
+    try {
+      console.log(`[IPC][AI_GET_LOGS] 收到请求，lastLogId=${lastLogId}`)
+      const { logs, lastId } = getBufferedLogs(lastLogId || 0)
+      console.log(`[IPC][AI_GET_LOGS] 返回 ${logs.length} 条日志，lastId=${lastId}`)
+      return { success: true, logs, lastLogId: lastId, hasMore: false }
+    } catch (error: any) {
+      console.error(`[IPC][AI_GET_LOGS] 错误:`, error.message)
       return { success: false, error: error.message }
     }
   })

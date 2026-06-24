@@ -2,7 +2,7 @@
  * Electron 主进程入口
  * 负责窗口管理、IPC 注册、服务初始化
  */
-import { app, BrowserWindow, Menu, nativeImage, nativeTheme, globalShortcut } from 'electron'
+const { app, BrowserWindow, Menu, nativeImage, nativeTheme, globalShortcut, ipcMain, shell, Tray } = require('electron') as any
 import { join } from 'path'
 import { initDatabase, closeDatabase, getAllSettings, saveAllSettings } from './db/sqlite'
 import { registerIpcHandlers } from './ipc'
@@ -10,10 +10,14 @@ import { setDomainFilters, setDeviceAliases, getLocalIP, stopProxy } from './pro
 import { startCertServer, stopCertServer } from './proxy/cert-server'
 import { preGenerateCA, cleanupOldCACerts } from './proxy/ca-cert'
 import { clearSystemProxy, hasPendingSnapshot } from './proxy/system-proxy'
+import { startSSEServer, stopSSEServer, pushSSEEvent, getSSEPort } from './sse-manager'
 
 let mainWindow: BrowserWindow | null = null
 let isQuitting = false
 let isCleaningUp = false
+
+// ===== SSE 服务器相关变量（已迁移到 sse-manager.ts）=====
+// 保留 getSSEPort 函数供其他模块使用
 
 /**
  * 创建应用菜单
@@ -72,7 +76,7 @@ function createAppMenu(): void {
 /**
  * 创建主窗口并初始化所有服务
  */
-function createAndInitWindow(): void {
+async function createAndInitWindow(): Promise<void> {
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
@@ -111,6 +115,14 @@ function createAndInitWindow(): void {
 
   // 启动证书下载服务（不阻塞窗口显示）
   startCertServer(8889).catch((err) => console.error('Cert server error:', err))
+
+  // 启动 SSE 服务器（用于实时推送分析进度）
+  try {
+    const port = await startSSEServer(3001)
+    console.log(`[Main] SSE 服务器启动成功，端口: ${port}`)
+  } catch (err) {
+    console.error('[Main] SSE 服务器启动失败:', err)
+  }
 
   // 加载页面（IPC 已全部就绪）
   if (process.env.VITE_DEV_SERVER_URL) {
@@ -267,6 +279,13 @@ async function cleanupBeforeQuit(): Promise<void> {
       globalShortcut.unregisterAll()
     } catch (e) {
       console.error('[Main] 注销全局快捷键失败:', e)
+    }
+
+    // 4. 停止 SSE 服务器
+    try {
+      stopSSEServer()
+    } catch (e) {
+      console.error('[Main] 停止 SSE 服务器失败:', e)
     }
   })()
 
