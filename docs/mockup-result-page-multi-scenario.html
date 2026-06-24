@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI 代码分析结果页 - 效果图</title>
+<style>
+  :root {
+    --bg-primary: #1a1a2e;
+    --bg-secondary: #2d2d44;
+    --bg-tertiary: #1e1e36;
+    --border-color: #3d3d55;
+    --text-primary: #e0e0e0;
+    --text-secondary: #a0a0c0;
+    --text-muted: #8888a8;
+    --accent-blue: #569CD6;
+    --accent-green: #6A9955;
+    --accent-orange: #CE9178;
+    --accent-purple: #C586C0;
+    --accent-yellow: #DCDCAA;
+    --scrollbar-bg: #252540;
+    --scrollbar-thumb: #4a4a6a;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+  /* 滚动条 */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: var(--scrollbar-bg); }
+  ::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 3px; }
+  /* 页面容器 */
+  .page-container {
+    max-width: 1600px;
+    margin: 0 auto;
+    padding: 24px 32px;
+  }
+  /* 页面标题 */
+  .page-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 28px;
+  }
+  .page-title {
+    font-size: 22px;
+    font-weight: 600;
+    color: #ffffff;
+    letter-spacing: -0.3px;
+  }
+  .page-subtitle {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-top: 6px;
+  }
+  .btn-group { display: flex; gap: 12px; }
+  .btn {
+    padding: 8px 20px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    border: none;
+    transition: all 0.2s;
+  }
+  .btn-primary {
+    background: var(--accent-blue);
+    color: #ffffff;
+  }
+  .btn-secondary {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+  }
+  /* 场景卡片 */
+  .scenario-card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    margin-bottom: 28px;
+    overflow: hidden;
+  }
+  /* 卡片头部 - 链路分析表格 */
+  .card-header {
+    display: grid;
+    grid-template-columns: 1.5fr 2.5fr 0.8fr;
+    padding: 12px 16px;
+    background: #252540;
+    border-bottom: 1px solid var(--border-color);
+    font-size: 12px;
+    color: var(--text-muted);
+    font-weight: 500;
+  }
+  .card-row {
+    display: grid;
+    grid-template-columns: 1.5fr 2.5fr 0.8fr;
+    padding: 14px 16px;
+    border-bottom: 0.5px solid var(--border-color);
+    font-size: 13px;
+    align-items: center;
+  }
+  .card-row:last-child { border-bottom: none; }
+  .scenario-name { font-weight: 500; color: var(--text-primary); }
+  .link-detail {
+    font-family: 'SF Mono', Monaco, monospace;
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+  .btn-sm {
+    padding: 4px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    background: rgba(86, 156, 214, 0.15);
+    color: var(--accent-blue);
+    border: 1px solid rgba(86, 156, 214, 0.3);
+    cursor: pointer;
+  }
+  /* 场景详情区 - 左右分栏 */
+  .scenario-detail {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0;
+    border-top: 1px solid var(--border-color);
+  }
+  .detail-panel {
+    padding: 16px;
+    position: relative;
+  }
+  .detail-panel:first-child {
+    border-right: 1px solid var(--border-color);
+  }
+  .detail-title {
+    font-size: 13px;
+    font-weight: 500;
+    margin-bottom: 12px;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .btn-copy {
+    padding: 3px 10px;
+    border-radius: 5px;
+    font-size: 11px;
+    background: rgba(106, 153, 85, 0.15);
+    color: var(--accent-green);
+    border: 1px solid rgba(106, 153, 85, 0.3);
+    cursor: pointer;
+    font-weight: 500;
+  }
+  /* curl 代码块 */
+  .code-block {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 12px 14px;
+    font-family: 'SF Mono', Monaco, monospace;
+    font-size: 12px;
+    line-height: 1.8;
+    color: var(--text-secondary);
+    overflow-y: auto;
+    height: 200px;
+    white-space: pre;
+  }
+  /* Python 断言代码块 - 语法高亮 */
+  .py-keyword { color: var(--accent-purple); font-weight: 500; }
+  .py-string { color: var(--accent-orange); }
+  .py-number { color: var(--accent-yellow); }
+  .py-function { color: var(--accent-blue); }
+  .py-comment { color: var(--accent-green); font-style: italic; }
+</style>
+</head>
+<body>
+<div class="page-container">
+  <!-- 页面标题 -->
+  <div class="page-header">
+    <div>
+      <div class="page-title">AI 代码分析结果</div>
+      <div class="page-subtitle">GET /api/v1/users/:id &nbsp;·&nbsp; 3 个测试场景</div>
+    </div>
+    <div class="btn-group">
+      <button class="btn btn-secondary">← 返回列表</button>
+      <button class="btn btn-primary">重新分析</button>
+    </div>
+  </div>
+
+  <!-- 场景 1 -->
+  <div class="scenario-card">
+    <div class="card-header">
+      <div>场景名称</div>
+      <div>链路详情</div>
+      <div>操作</div>
+    </div>
+    <div class="card-row">
+      <div class="scenario-name">正常场景 - 获取用户成功</div>
+      <div class="link-detail">Handler.GetUser → UserService.GetUser → UserRepository.GetByID</div>
+      <div><button class="btn-sm">查看代码</button></div>
+    </div>
+    <div class="scenario-detail">
+      <!-- 左侧：curl 请求信息 -->
+      <div class="detail-panel">
+        <div class="detail-title">
+          <span>curl 请求信息</span>
+          <button class="btn-copy" onclick="copyCode(this, 'curl1')">复制 curl</button>
+        </div>
+        <div class="code-block" id="curl1">curl -X GET "https://api.example.com/api/v1/users/123" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
+  -d '{
+    "include_profile": true
+  }'</div>
+      </div>
+      <!-- 右侧：Python 断言结果 -->
+      <div class="detail-panel">
+        <div class="detail-title">
+          <span>Python 断言结果</span>
+          <button class="btn-copy" onclick="copyCode(this, 'assert1')">复制断言</button>
+        </div>
+        <div class="code-block" id="assert1"><span class="py-keyword">import</span> requests
+<span class="py-keyword">import</span> json
+
+<span class="py-comment"># 正常场景 - 获取用户成功</span>
+response = requests.<span class="py-function">get</span>(
+    <span class="py-string">"https://api.example.com/api/v1/users/123"</span>,
+    headers={<span class="py-string">"Authorization"</span>: <span class="py-string">"Bearer ..."</span>}
+)
+
+<span class="py-comment"># 断言：状态码为 200</span>
+<span class="py-keyword">assert</span> response.status_code == <span class="py-number">200</span>, \
+    <span class="py-string">f"预期 200, 实际 {response.status_code}"</span>
+
+<span class="py-comment"># 断言：响应体包含 data.id</span>
+data = response.<span class="py-function">json</span>()
+<span class="py-keyword">assert</span> <span class="py-string">"id"</span> <span class="py-keyword">in</span> data[<span class="py-string">"data"</span>], \
+    <span class="py-string">"响应体缺少 data.id"</span>
+
+<span class="py-comment"># 断言：用户 ID 正确</span>
+<span class="py-keyword">assert</span> data[<span class="py-string">"data"</span>][<span class="py-string">"id"</span>] == <span class="py-number">123</span>, \
+    <span class="py-string">"用户 ID 不匹配"</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 场景 2 -->
+  <div class="scenario-card">
+    <div class="card-header">
+      <div>场景名称</div>
+      <div>链路详情</div>
+      <div>操作</div>
+    </div>
+    <div class="card-row">
+      <div class="scenario-name">异常场景 - 用户不存在</div>
+      <div class="link-detail">Handler.GetUser → UserService.GetUser → UserRepository.GetByID</div>
+      <div><button class="btn-sm">查看代码</button></div>
+    </div>
+    <div class="scenario-detail">
+      <div class="detail-panel">
+        <div class="detail-title">
+          <span>curl 请求信息</span>
+          <button class="btn-copy" onclick="copyCode(this, 'curl2')">复制 curl</button>
+        </div>
+        <div class="code-block" id="curl2">curl -X GET "https://api.example.com/api/v1/users/999" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."</div>
+      </div>
+      <div class="detail-panel">
+        <div class="detail-title">
+          <span>Python 断言结果</span>
+          <button class="btn-copy" onclick="copyCode(this, 'assert2')">复制断言</button>
+        </div>
+        <div class="code-block" id="assert2"><span class="py-keyword">import</span> requests
+<span class="py-keyword">import</span> json
+
+<span class="py-comment"># 异常场景 - 用户不存在</span>
+response = requests.<span class="py-function">get</span>(
+    <span class="py-string">"https://api.example.com/api/v1/users/999"</span>,
+    headers={<span class="py-string">"Authorization"</span>: <span class="py-string">"Bearer ..."</span>}
+)
+
+<span class="py-comment"># 断言：状态码为 404</span>
+<span class="py-keyword">assert</span> response.status_code == <span class="py-number">404</span>, \
+    <span class="py-string">f"预期 404, 实际 {response.status_code}"</span>
+
+<span class="py-comment"># 断言：响应体包含 error</span>
+data = response.<span class="py-function">json</span>()
+<span class="py-keyword">assert</span> <span class="py-string">"error"</span> <span class="py-keyword">in</span> data, \
+    <span class="py-string">"响应体缺少 error 字段"</span>
+
+<span class="py-comment"># 断言：错误信息正确</span>
+<span class="py-keyword">assert</span> <span class="py-string">"not found"</span> <span class="py-keyword">in</span> data[<span class="py-string">"error"</span>].<span class="py-function">lower</span>(), \
+    <span class="py-string">"错误信息不正确"</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 场景 3 -->
+  <div class="scenario-card">
+    <div class="card-header">
+      <div>场景名称</div>
+      <div>链路详情</div>
+      <div>操作</div>
+    </div>
+    <div class="card-row">
+      <div class="scenario-name">边界场景 - 参数越界</div>
+      <div class="link-detail">Handler.UpdateUser → UserService.Validate → UserRepository.Update</div>
+      <div><button class="btn-sm">查看代码</button></div>
+    </div>
+    <div class="scenario-detail">
+      <div class="detail-panel">
+        <div class="detail-title">
+          <span>curl 请求信息</span>
+          <button class="btn-copy" onclick="copyCode(this, 'curl3')">复制 curl</button>
+        </div>
+        <div class="code-block" id="curl3">curl -X PUT "https://api.example.com/api/v1/users/123" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
+  -d '{
+    "name": "A",
+    "age": 0
+  }'</div>
+      </div>
+      <div class="detail-panel">
+        <div class="detail-title">
+          <span>Python 断言结果</span>
+          <button class="btn-copy" onclick="copyCode(this, 'assert3')">复制断言</button>
+        </div>
+        <div class="code-block" id="assert3"><span class="py-keyword">import</span> requests
+<span class="py-keyword">import</span> json
+
+<span class="py-comment"># 边界场景 - 参数越界</span>
+response = requests.<span class="py-function">put</span>(
+    <span class="py-string">"https://api.example.com/api/v1/users/123"</span>,
+    headers={<span class="py-string">"Authorization"</span>: <span class="py-string">"Bearer ..."</span>},
+    json={<span class="py-string">"name"</span>: <span class="py-string">"A"</span>, <span class="py-string">"age"</span>: <span class="py-number">0</span>}
+)
+
+<span class="py-comment"># 断言：状态码为 400</span>
+<span class="py-keyword">assert</span> response.status_code == <span class="py-number">400</span>, \
+    <span class="py-string">f"预期 400, 实际 {response.status_code}"</span>
+
+<span class="py-comment"># 断言：响应体包含 validation error</span>
+data = response.<span class="py-function">json</span>()
+<span class="py-keyword">assert</span> <span class="py-string">"validation"</span> <span class="py-keyword">in</span> data, \
+    <span class="py-string">"响应体缺少 validation 字段"</span>
+
+<span class="py-comment"># 断言：错误信息包含 age</span>
+<span class="py-keyword">assert</span> <span class="py-string">"age"</span> <span class="py-keyword">in</span> <span class="py-function">str</span>(data), \
+    <span class="py-string">"错误信息缺少 age 字段提示"</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function copyCode(btn, id) {
+  const el = document.getElementById(id);
+  const text = el.innerText || el.textContent;
+  navigator.clipboard.writeText(text).then(() => {
+    const original = btn.textContent;
+    btn.textContent = '已复制 ✓';
+    btn.style.background = 'rgba(99, 153, 37, 0.2)';
+    btn.style.color = '#639922';
+    setTimeout(() => {
+      btn.textContent = original;
+      btn.style.background = '';
+      btn.style.color = '';
+    }, 2000);
+  });
+}
+</script>
+</body>
+</html>

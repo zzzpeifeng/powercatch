@@ -1,0 +1,83 @@
+classDiagram
+    class AIAnalyzeService {
+        -openai: OpenAI
+        -modelName: string
+        -maxToolCalls: number
+        +analyze(request: AnalyzeRequest): Promise~AnalyzeResult~
+        +analyzeWithAgent(request: AgentAnalyzeRequest): Promise~AgentAnalyzeResult~
+        -buildSystemPrompt(): string
+        -buildUserPrompt(method: string, url: string): string
+        -parseAIResponse(content: string): ParsedResponse
+    }
+
+    class AIAgentToolExecutor {
+        -clonePath: string
+        +executeTool(toolName: string, args: Record~string, any~): Promise~string~
+        +listDirectory(path: string): string
+        +readFile(path: string): string
+        +searchCode(keyword: string, filePattern?: string): string
+        +getFileTree(): string
+    }
+
+    class AIAnalysisCache {
+        -cache: Map~string, CacheEntry~
+        +get(cacheKey: string): AnalyzeResult | null
+        +set(cacheKey: string, result: AnalyzeResult): void
+        +invalidate(cacheKey: string): void
+        +clear(): void
+    }
+
+    class ScanWorkerManager {
+        -worker: Worker | null
+        -ready: boolean
+        +abort(): void
+        +destroy(): void
+    }
+
+    class AIAnalysisStore {
+        -analyzing: boolean
+        -phase: AnalysisPhase
+        -logs: AnalysisLogEntry[]
+        -deepAnalysisMode: boolean
+        +startAnalysis(request: CodeAnalysisRequest): Promise~void~
+        +cancelAnalysis(): Promise~void~
+        +appendLog(entry: LogEntry): void
+    }
+
+    class AnalyzeRequest {
+        +clonePath: string
+        +method: string
+        +url: string
+        +enableDeepAnalysis: boolean
+    }
+
+    class AgentAnalyzeRequest {
+        +clonePath: string
+        +method: string
+        +url: string
+        +analysisDepth: "quick" | "deep"
+    }
+
+    class AnalyzeResult {
+        +success: boolean
+        +analysis: string
+        +scenarios: AnalysisScenario[]
+        +handlerFile: string
+        +handlerFunction: string
+    }
+
+    class AnalysisScenario {
+        +scenarioName: string
+        +scenarioType: string
+        +callChain: CallChainStep[]
+        +curlCommand: string
+        +pythonAssertion: string
+    }
+
+    AIAnalyzeService --> AIAgentToolExecutor : uses
+    AIAnalyzeService --> AIAnalysisCache : uses (optional)
+    AIAnalyzeService --> OpenAI : uses
+    AIAnalysisStore --> AIAnalyzeService : calls
+    AIAnalyzeService ..> AnalyzeRequest : accepts
+    AIAnalyzeService ..> AnalyzeResult : returns
+    AnalyzeResult --> AnalysisScenario : contains

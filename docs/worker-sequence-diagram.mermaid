@@ -1,0 +1,52 @@
+sequenceDiagram
+    participant R as 渲染进程 (Vue)
+    participant IPC as 主进程 IPC Handler
+    participant RS as RepoService
+    participant MGR as ScanWorkerManager
+    participant W as Worker Thread
+    participant FS as 文件系统
+
+    Note over R,W: AI 代码分析 - 完整流程
+
+    R->>IPC: invoke('ai:analyze', request)
+
+    Note over IPC,RS: Step 1: Clone 仓库（spawn, 不阻塞主进程）
+
+    IPC->>RS: cloneRepoWithProgress(options, mainWindow)
+    RS->>RS: spawn('git', ['clone', ...])
+    RS-->>R: send('ai:clone-progress', { percent, message })
+    RS-->>IPC: RepoInfo { clonePath, projectType, repoName }
+
+    Note over IPC,MGR: Step 2: 通过 Worker 扫描路由
+
+    IPC->>MGR: scan({ clonePath, projectType, method, requestPath })
+
+    MGR->>MGR: ensureWorker()
+    Note over MGR: 首次调用: new Worker('scan-worker.js')
+    MGR->>W: postMessage({ type: 'scan', id, payload })
+
+    Note over W,FS: === Worker 线程执行（主进程不阻塞）===
+
+    W->>FS: walkGoFiles(clonePath) [readdirSync, 递归]
+    FS-->>W: goFiles: string[]
+
+    Note over W: 第一遍: 收集 RegisterRoutes 映射
+    loop 每个含 /internal/web/ 的文件
+        W->>FS: readFileSync(filePath) [sync]
+        W->>W: 正则匹配 contextPath, RegisterRoutes
+    end
+
+    Note over W: 第二遍: 路由匹配
+    loop 每个通过预过滤的 .go 文件
+        W->>FS: statSync + readFileSync [sync]
+        W->>W: 预过滤 → collapseGoCode → 正则匹配
+        W->>MGR: postMessage({ type: 'progress', id, payload })
+        MGR-->>R: send('ai:scan-progress', { scanned, total, percent })
+    end
+
+    W->>MGR: postMessage({ type: 'result', id, payload: { matches } })
+
+    Note over W: === Worker 扫描完成，主进程全程未阻塞 ===
+
+    MGR-->>IPC: resolve({ matches: RouteMatch[] })
+    IPC-->>R: { success: true, result: { routeMatches, repoInfo } }

@@ -1,0 +1,34 @@
+sequenceDiagram
+    participant User as 用户
+    participant UI as Vue 组件
+    participant Store as AIAnalysisStore
+    participant Service as AIAnalyzeService
+    participant AI as OpenAI API
+    participant Tool as AIAgentToolExecutor
+    participant FS as 文件系统
+
+    User->>UI: 点击"开始分析"
+    UI->>Store: startAnalysis(request)
+    Store->>Store: 重置状态（phase = 'analyzing'）
+    Store->>Service: analyze(request)
+
+    loop AI Agent 推理循环（最多 10 轮）
+        Service->>AI: chat.completions.create(messages, tools)
+        AI-->>Service: response (message)
+
+        alt AI 调用工具
+            Service->>Tool: executeTool(toolName, args)
+            Tool->>FS: 读取文件/搜索代码
+            FS-->>Tool: 文件内容/搜索结果
+            Tool-->>Service: toolResult (JSON)
+            Service->>Service: 将 toolResult 加入 messages
+        else AI 生成最终报告
+            Service->>Service: parseAIResponse(content)
+            break 分析完成
+        end
+    end
+
+    Service-->>Store: AnalyzeResult
+    Store->>Store: 更新状态（phase = 'done'）
+    Store-->>UI: 响应式更新
+    UI-->>User: 显示分析报告

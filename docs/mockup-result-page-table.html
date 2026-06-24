@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI 代码分析结果页 - 表格模式</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  background: #f5f5f5;
+  color: #1a1a1a;
+  padding: 24px;
+}
+/* 主容器 */
+.container {
+  max-width: 1400px;
+  margin: 0 auto;
+  background: white;
+  border-radius: 12px;
+  border: 0.5px solid rgba(0,0,0,0.15);
+  overflow: hidden;
+}
+/* TitleBar */
+.titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 0.5px solid rgba(0,0,0,0.15);
+  background: #fafafa;
+}
+.titlebar h1 { font-size: 15px; font-weight: 500; margin: 0; }
+.titlebar-actions { display: flex; gap: 8px; }
+.btn {
+  padding: 6px 14px;
+  font-size: 13px;
+  border: 0.5px solid rgba(0,0,0,0.3);
+  border-radius: 8px;
+  background: white;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.btn:hover { background: #f5f5f5; }
+
+/* 上部区域：场景链路分析表格 */
+.section-upper {
+  padding: 20px;
+  border-bottom: 0.5px solid rgba(0,0,0,0.15);
+}
+.section-header {
+  font-size: 14px;
+  font-weight: 500;
+  margin-bottom: 12px;
+  color: #1a1a1a;
+}
+.table-wrapper {
+  border: 0.5px solid rgba(0,0,0,0.15);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.table-header {
+  display: grid;
+  grid-template-columns: 1.5fr 2fr 0.8fr 0.8fr;
+  background: #fafafa;
+  border-bottom: 0.5px solid rgba(0,0,0,0.15);
+}
+.table-header > div {
+  padding: 10px 12px;
+  font-size: 12px;
+  color: #888780;
+  font-weight: 500;
+}
+.table-row {
+  display: grid;
+  grid-template-columns: 1.5fr 2fr 0.8fr 0.8fr;
+  border-bottom: 0.5px solid rgba(0,0,0,0.15);
+  font-size: 13px;
+  transition: background 0.15s;
+}
+.table-row:last-child { border-bottom: none; }
+.table-row:hover { background: #fafafa; }
+.table-row > div {
+  padding: 12px;
+  display: flex;
+  align-items: center;
+}
+.col-link { font-family: 'SF Mono', Monaco, monospace; font-size: 12px; color: #444441; }
+.status-pass { color: #3B6D11; font-weight: 500; }
+.status-fail { color: #A32D2D; font-weight: 500; }
+.status-warn { color: #BA7517; font-weight: 500; }
+.status-dot { margin-right: 4px; }
+.btn-sm {
+  padding: 4px 10px;
+  font-size: 12px;
+  border: 0.5px solid rgba(0,0,0,0.3);
+  border-radius: 6px;
+  background: white;
+  cursor: pointer;
+}
+
+/* 下部区域：左右分栏 */
+.section-lower {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  padding: 20px;
+  border-bottom: 0.5px solid rgba(0,0,0,0.15);
+}
+.panel {
+  border: 0.5px solid rgba(0,0,0,0.15);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.panel-header {
+  padding: 12px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  background: #fafafa;
+  border-bottom: 0.5px solid rgba(0,0,0,0.15);
+}
+.panel-body { padding: 16px; font-size: 13px; line-height: 1.6; }
+
+/* curl 请求信息 */
+.field-label {
+  font-size: 12px;
+  color: #888780;
+  margin-bottom: 4px;
+  margin-top: 12px;
+}
+.field-label:first-child { margin-top: 0; }
+.method-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  background: #E6F1FB;
+  color: #0C447C;
+  border-radius: 6px;
+  font-family: 'SF Mono', Monaco, monospace;
+  font-size: 12px;
+  font-weight: 500;
+}
+.code-block {
+  font-family: 'SF Mono', Monaco, monospace;
+  font-size: 12px;
+  background: #fafafa;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 0.5px solid rgba(0,0,0,0.15);
+  line-height: 1.8;
+  overflow-x: auto;
+  color: #444441;
+}
+
+/* 断言结果表格 */
+.assert-table { width: 100%; }
+.assert-table .assert-header {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 0.8fr;
+  background: #fafafa;
+  border-bottom: 0.5px solid rgba(0,0,0,0.15);
+  font-size: 12px;
+  color: #888780;
+  font-weight: 500;
+}
+.assert-table .assert-header > div { padding: 8px 10px; }
+.assert-table .assert-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 0.8fr;
+  border-bottom: 0.5px solid rgba(0,0,0,0.15);
+  font-size: 13px;
+}
+.assert-table .assert-row:last-child { border-bottom: none; }
+.assert-table .assert-row > div {
+  padding: 10px;
+  display: flex;
+  align-items: center;
+  font-family: 'SF Mono', Monaco, monospace;
+  font-size: 12px;
+}
+.assert-table .assert-row > div:first-child {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 13px;
+}
+.assert-status { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important; font-size: 12px !important; }
+
+/* 底部操作栏 */
+.footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 16px 20px;
+  background: #fafafa;
+}
+</style>
+</head>
+<body>
+
+<div class="container">
+  
+  <!-- TitleBar -->
+  <div class="titlebar">
+    <h1>AI 代码分析 - 分析结果</h1>
+    <div class="titlebar-actions">
+      <button class="btn" onclick="alert('返回主页')">返回</button>
+      <button class="btn" onclick="alert('清理临时仓库')">清理临时仓库</button>
+    </div>
+  </div>
+
+  <!-- 上部区域：场景链路分析表格 -->
+  <div class="section-upper">
+    <div class="section-header">场景链路分析</div>
+    <div class="table-wrapper">
+      <!-- 表头 -->
+      <div class="table-header">
+        <div>场景名称</div>
+        <div>链路详情</div>
+        <div>状态标识</div>
+        <div>操作</div>
+      </div>
+      <!-- 行 1：正常场景 -->
+      <div class="table-row">
+        <div>正常场景 - 获取用户成功</div>
+        <div class="col-link">Handler.GetUser → UserService.GetUser → UserRepository.GetByID</div>
+        <div><span class="status-pass"><span class="status-dot">●</span>通过</span></div>
+        <div><button class="btn-sm" onclick="alert('查看场景1详情')">查看</button></div>
+      </div>
+      <!-- 行 2：异常场景 -->
+      <div class="table-row">
+        <div>异常场景 - 用户不存在</div>
+        <div class="col-link">Handler.GetUser → UserService.GetUser → UserRepository.GetByID</div>
+        <div><span class="status-fail"><span class="status-dot">●</span>失败</span></div>
+        <div><button class="btn-sm" onclick="alert('查看场景2详情')">查看</button></div>
+      </div>
+      <!-- 行 3：边界场景 -->
+      <div class="table-row">
+        <div>边界场景 - 参数越界</div>
+        <div class="col-link">Handler.UpdateUser → UserService.Validate → UserRepository.Update</div>
+        <div><span class="status-warn"><span class="status-dot">●</span>警告</span></div>
+        <div><button class="btn-sm" onclick="alert('查看场景3详情')">查看</button></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 下部区域：左右分栏 -->
+  <div class="section-lower">
+    
+    <!-- 左侧：curl 请求信息 -->
+    <div class="panel">
+      <div class="panel-header">curl 请求信息</div>
+      <div class="panel-body">
+        <div class="field-label">请求方法</div>
+        <div><span class="method-badge">GET</span></div>
+        <div class="field-label">请求 URL</div>
+        <div class="code-block">https://api.example.com/api/v1/users/123</div>
+        <div class="field-label">请求头</div>
+        <div class="code-block">
+          Content-Type: application/json<br>
+          Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+        </div>
+        <div class="field-label">请求参数</div>
+        <div class="code-block">
+          {<br>
+          &nbsp;&nbsp;"id": 123,<br>
+          &nbsp;&nbsp;"include_profile": true<br>
+          }
+        </div>
+      </div>
+    </div>
+
+    <!-- 右侧：断言结果 -->
+    <div class="panel">
+      <div class="panel-header">断言结果</div>
+      <div class="panel-body" style="padding: 0;">
+        <div class="assert-table">
+          <!-- 表头 -->
+          <div class="assert-header">
+            <div>断言类型</div>
+            <div>预期值</div>
+            <div>实际值</div>
+            <div>状态</div>
+          </div>
+          <!-- 行 1 -->
+          <div class="assert-row">
+            <div>状态码</div>
+            <div>200</div>
+            <div>200</div>
+            <div class="assert-status"><span class="status-pass"><span class="status-dot">●</span>通过</span></div>
+          </div>
+          <!-- 行 2 -->
+          <div class="assert-row">
+            <div>响应时间</div>
+            <div>< 500ms</div>
+            <div>320ms</div>
+            <div class="assert-status"><span class="status-pass"><span class="status-dot">●</span>通过</span></div>
+          </div>
+          <!-- 行 3 -->
+          <div class="assert-row">
+            <div>响应体结构</div>
+            <div>包含 data.id</div>
+            <div>包含 data.id</div>
+            <div class="assert-status"><span class="status-pass"><span class="status-dot">●</span>通过</span></div>
+          </div>
+          <!-- 行 4 -->
+          <div class="assert-row">
+            <div>业务逻辑</div>
+            <div>返回用户完整信息</div>
+            <div>返回用户完整信息</div>
+            <div class="assert-status"><span class="status-pass"><span class="status-dot">●</span>通过</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- 底部操作栏 -->
+  <div class="footer">
+    <button class="btn" onclick="alert('复制全部用例')">复制全部用例</button>
+    <button class="btn" onclick="alert('重新分析')">重新分析</button>
+  </div>
+
+</div>
+
+</body>
+</html>

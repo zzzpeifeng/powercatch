@@ -1,0 +1,85 @@
+classDiagram
+    class ScanWorkerManager {
+        -worker: Worker | null
+        -mainWindow: BrowserWindow
+        -currentRequestId: string | null
+        -pendingResolve: ((value: any) => void) | null
+        -pendingReject: ((reason: any) => void) | null
+        +constructor(mainWindow: BrowserWindow)
+        -ensureWorker(): Worker
+        -handleWorkerMessage(msg: WorkerResponseMessage): void
+        -forwardProgress(payload: ProgressPayload): void
+        -sendRequest(type: string, payload: any): Promise~any~
+        +scan(payload: ScanPayload): Promise~ScanResultPayload~
+        +findHandler(payload: FindHandlerPayload): Promise~FindHandlerResultPayload~
+        +extractCallChain(payload: ExtractCallChainPayload): Promise~ExtractCallChainResultPayload~
+        +abort(): void
+        -cleanup(): void
+        +destroy(): void
+    }
+
+    class ScanWorker {
+        -parentPort: MessagePort
+        -walkGoFiles(dir: string, maxFiles: number): string[]
+        -collapseGoCode(content: string): string
+        -matchRequestPath(routePath: string, requestPath: string): boolean
+        -classifyGoFile(filePath: string, content: string): FileType
+        -scanRouteFiles(clonePath: string, projectType: string, method: string, requestPath: string, requestId: string): RouteMatch[]
+        -findHandlerFile(clonePath: string, handlerPkg: string, handlerFunc: string): string | null
+        -extractCallChain(clonePath: string, projectType: string, handlerFile: CodeFile): CodeFile[]
+        +onMessage(msg: WorkerRequestMessage): void
+    }
+
+    class WorkerProtocol {
+        <<types>>
+        +WorkerRequestMessage: DiscriminatedUnion
+        +WorkerResponseMessage: DiscriminatedUnion
+        +ScanPayload
+        +FindHandlerPayload
+        +ExtractCallChainPayload
+        +ProgressPayload
+        +ScanResultPayload
+        +FindHandlerResultPayload
+        +ExtractCallChainResultPayload
+    }
+
+    class RepoService {
+        +checkGitAvailability(): Promise~GitAvailabilityResult~
+        +fetchBranches(repoUrl: string, token: string, authMethod: string): Promise~string[]~
+        +checkDiskSpace(dirPath: string): Promise~DiskSpaceResult~
+        +cloneRepoWithProgress(options: CloneOptions, mainWindow: BrowserWindow): Promise~RepoInfo~
+        +detectProjectType(clonePath: string): ProjectType
+        +cleanupRepo(clonePath: string): Promise~void~
+        +cleanupOldRepos(cloneDir: string, maxAgeDays: number): Promise~CleanupResult~
+    }
+
+    class IpcHandler {
+        +registerIpcHandlers(mainWindow: BrowserWindow): void
+        -scanWorkerManager: ScanWorkerManager | null
+        -handleAIAnalyze(request: any): Promise~any~
+        -handleAIAbort(): Promise~any~
+    }
+
+    class CodeFile {
+        +filePath: string
+        +content: string
+        +fileType: FileType
+    }
+
+    class RouteMatch {
+        +filePath: string
+        +content: string
+        +routePattern: string
+        +handlerName: string
+        +lineNumber: number
+    }
+
+    type FileType = "handler" | "model" | "service" | "other"
+
+    ScanWorkerManager --> ScanWorker : creates and manages via Worker API
+    ScanWorkerManager ..> WorkerProtocol : uses message types
+    ScanWorker ..> WorkerProtocol : uses message types
+    ScanWorker ..> CodeFile : produces
+    ScanWorker ..> RouteMatch : produces
+    IpcHandler --> ScanWorkerManager : delegates scan operations
+    IpcHandler --> RepoService : delegates clone / git operations

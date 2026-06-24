@@ -30,6 +30,38 @@ const BODY_TOO_LARGE_RE = /^\[Body too large: (\d+) bytes, Content-Type: ([^\]]+
 const BINARY_DATA_RE = /^\[Binary Data: (\d+) bytes(?:, Content-Type: ([^\]]*))?\]$/
 
 /**
+ * 尝试将字符串解析为 JSON，成功返回解析结果，失败返回 null
+ */
+function tryParseJson(str: string): any | null {
+  try {
+    return JSON.parse(str)
+  } catch {
+    return null
+  }
+}
+
+/**
+ * 检测字符串是否为合法的 UTF-8 文本
+ */
+function isUtf8Text(str: string): boolean {
+  try {
+    // 如果字符串包含大量控制字符（除了常见的空白字符），认为是二进制
+    let controlCharCount = 0
+    for (let i = 0; i < str.length; i++) {
+      const code = str.charCodeAt(i)
+      // 控制字符：0x00-0x08, 0x0B-0x0C, 0x0E-0x1F, 0x7F
+      if ((code <= 0x08) || (code >= 0x0B && code <= 0x0C) || (code >= 0x0E && code <= 0x1F) || code === 0x7F) {
+        controlCharCount++
+      }
+    }
+    // 如果控制字符占比超过 10%，认为是二进制
+    return controlCharCount / str.length < 0.1
+  } catch {
+    return false
+  }
+}
+
+/**
  * 解析 body 字符串，返回 ParsedBody
  */
 export function parseBody(body: string, contentType: string): ParsedBody {
@@ -49,7 +81,33 @@ export function parseBody(body: string, contentType: string): ParsedBody {
         meta: { contentType: ct, size, isBinary: true, dataUrl: `data:${ct};base64,${base64Data}` },
       }
     }
-    // 非图片二进制 → Hex 模式
+
+    // 非图片二进制 → 尝试解码后检测是否为 JSON 或文本
+    try {
+      const decoded = Buffer.from(base64Data, 'base64').toString('utf-8')
+
+      // 优先检测是否为 JSON
+      if (tryParseJson(decoded)) {
+        return {
+          mode: 'json',
+          content: decoded,
+          meta: { contentType: ct, size, isBinary: false },
+        }
+      }
+
+      // 再检测是否为合法 UTF-8 文本
+      if (isUtf8Text(decoded)) {
+        return {
+          mode: 'text',
+          content: decoded,
+          meta: { contentType: ct, size, isBinary: false },
+        }
+      }
+    } catch {
+      // 解码失败，走 Hex 模式
+    }
+
+    // 无法解析为 JSON 或文本 → Hex 模式
     return {
       mode: 'hex',
       content: base64Data,

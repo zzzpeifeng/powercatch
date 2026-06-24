@@ -1,0 +1,29 @@
+sequenceDiagram
+    participant AI as AI Model
+    participant Service as AIAnalyzeService
+    participant Tool as AIAgentToolExecutor
+    participant FS as FileSystem
+
+    AI->>Service: tool_call: get_file_tree
+    Service->>Tool: executeTool('get_file_tree', {})
+    Tool->>FS: readdirSync(clonePath)
+    FS-->>Tool: 文件列表
+    Tool-->>Service: JSON.stringify(fileTree)
+    Service-->>AI: tool_result: [文件树]
+
+    AI->>Service: tool_call: search_code
+    Service->>Tool: executeTool('search_code', {keyword: 'RegisterRoutes'})
+    Tool->>FS: 遍历文件 + 正则匹配
+    FS-->>Tool: 匹配行
+    Tool-->>Service: JSON.stringify(matches)
+    Service-->>AI: tool_result: [匹配结果]
+
+    AI->>Service: tool_call: read_file
+    Service->>Tool: executeTool('read_file', {path: 'internal/web/handler.go'})
+    Tool->>FS: readFileSync(filePath)
+    FS-->>Tool: 文件内容
+    Tool-->>Service: fileContent
+    Service-->>AI: tool_result: [文件内容]
+
+    AI->>Service: 最终报告（无 tool_call）
+    Service-->>Service: parseAIResponse(content)

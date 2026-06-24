@@ -1,0 +1,200 @@
+```mermaid
+classDiagram
+    class RepoConfig {
+        +repoUrl: string
+        +repoType: RepoType
+        +branch: string
+        +accessToken: string
+        +authMethod: 'http' | 'ssh'
+        +cloneDir: string
+    }
+
+    class CodeAnalysisRequest {
+        +request: AnalysisRequestInfo
+        +repo: RepoConfig
+        +aiConfig: AiConfig
+    }
+
+    class AnalysisRequestInfo {
+        +method: HttpMethod
+        +url: string
+        +path: string
+        +requestBody?: string
+        +requestHeaders?: HttpHeaders
+    }
+
+    class AiConfig {
+        +apiUrl: string
+        +apiKey: string
+        +modelName: string
+    }
+
+    class TestScenario {
+        +type: '正常' | '边界值' | '异常'
+        +title: string
+        +description: string
+        +curl: string
+        +pythonAssertion: string
+    }
+
+    class CodeAnalysisResult {
+        +routeInfo: string
+        +analysis: string
+        +scenarios: TestScenario[]
+        +modelName: string
+        +analyzedAt: string
+        +repoName: string
+    }
+
+    class CloneOptions {
+        +repoUrl: string
+        +branch: string
+        +accessToken: string
+        +authMethod: 'http' | 'ssh'
+        +cloneDir: string
+    }
+
+    class RepoInfo {
+        +clonePath: string
+        +projectType: 'go' | 'java' | 'unknown'
+        +repoName: string
+    }
+
+    class RouteMatch {
+        +filePath: string
+        +content: string
+        +routePattern: string
+        +handlerName: string
+        +lineNumber: number
+    }
+
+    class CodeFile {
+        +filePath: string
+        +content: string
+        +fileType: 'handler' | 'service' | 'model' | 'dto' | 'other'
+    }
+
+    class RepoService {
+        <<electron/services/repo-service.ts>>
+        +cloneRepo(options: CloneOptions): Promise~RepoInfo~
+        +detectProjectType(clonePath: string): 'go' | 'java' | 'unknown'
+        +scanRouteFiles(clonePath: string, projectType: string, method: string, path: string): RouteMatch[]
+        +extractCallChain(clonePath: string, projectType: string, handlerFile: CodeFile): CodeFile[]
+        +cleanupRepo(clonePath: string): Promise~void~
+        -buildCloneUrl(repoUrl: string, token: string, authMethod: string, repoType: string): string
+        -detectRepoType(repoUrl: string): 'github' | 'gitlab'
+        -shouldSkipDir(dirName: string): boolean
+        -resolveGoImport(importPath: string, modulePath: string): string
+        -resolveJavaImport(importPath: string, srcBasePath: string): string
+    }
+
+    class PromptBuilder {
+        <<electron/services/prompt-builder.ts>>
+        +buildBasePrompt(): string
+        +buildGoExtension(): string
+        +buildJavaExtension(): string
+        +buildRouteIdentificationPrompt(request: AnalysisRequestInfo, routeFiles: RouteMatch[]): string
+        +buildFullAnalysisPrompt(request: AnalysisRequestInfo, codeContext: CodeFile[], projectType: string): string
+        -buildCodeContextBlock(files: CodeFile[]): string
+    }
+
+    class AiService {
+        <<electron/services/ai-service.ts>>
+        -isAnalyzing: boolean
+        +executeCompare(request, onChunk, onEnd): Promise~CompareResult~
+        +executeCodeAnalysis(request, onChunk, onEnd): Promise~CodeAnalysisResult~
+        -callAIForRouteIdentification(request, routeFiles, aiConfig): Promise~RouteMatch~
+        -callAIForFullAnalysis(request, codeContext, projectType, aiConfig, onChunk): Promise~string~
+        -parseAnalysisResult(rawContent: string, modelName: string, repoName: string): CodeAnalysisResult
+        +isAnalysisInProgress(): boolean
+    }
+
+    class AiAnalysisStore {
+        <<src/stores/ai-analysis-store.ts>>
+        +analyzing: Ref~boolean~
+        +streamContent: Ref~string~
+        +result: Ref~CodeAnalysisResult | null~
+        +error: Ref~string | null~
+        +repoConfig: Ref~RepoConfig~
+        +cleanupStatus: Ref~string~
+        +loadConfig(): Promise~void~
+        +saveConfig(): Promise~void~
+        +startAnalysis(request: CodeAnalysisRequest): Promise~void~
+        +abortAnalysis(): Promise~void~
+        +cleanupRepo(): Promise~void~
+        +reset(): void
+    }
+
+    class TestScenarioCard {
+        <<src/components/TestScenarioCard.vue>>
+        +scenario: TestScenario
+        +copyCurl(): void
+        +copyPython(): void
+    }
+
+    CodeAnalysisRequest --> RepoConfig
+    CodeAnalysisRequest --> AnalysisRequestInfo
+    CodeAnalysisRequest --> AiConfig
+    CodeAnalysisResult --> TestScenario
+    RepoService ..> CloneOptions : uses
+    RepoService ..> RepoInfo : returns
+    RepoService ..> RouteMatch : returns
+    RepoService ..> CodeFile : returns
+    AiService --> RepoService : calls
+    AiService --> PromptBuilder : calls
+    AiService ..> CodeAnalysisResult : returns
+    AiAnalysisStore ..> AiService : via IPC
+    AiAnalysisStore ..> CodeAnalysisResult : manages
+    TestScenarioCard --> TestScenario
+```
+```mermaid
+sequenceDiagram
+    participant User as 用户
+    participant RCM as RequestContextMenu
+    participant Router as Vue Router
+    participant View as AiAnalysisView
+    participant Store as ai-analysis-store
+    participant IpcFront as ipc.ts (前端)
+    participant Preload as preload.ts
+    participant IpcMain as ipc.ts (主进程)
+    participant RepoSvc as repo-service
+    participant PromptBld as prompt-builder
+    participant AiSvc as ai-service
+    participant OpenAI as OpenAI API
+
+    %% ===== 入口：右键菜单 =====
+    User->>RCM: 右键请求 → 点击「🤖 AI 代码分析」
+    RCM->>Router: router.push({ path: '/ai-analysis', query: { method, url, path, requestBody, requestHeaders } })
+    RCM->>RCM: handleClose()
+
+    %% ===== 页面加载 =====
+    Router->>View: 加载 AiAnalysisView.vue
+    View->>Store: loadConfig()
+    Store->>IpcFront: ipc.settings.getAll()
+    IpcFront->>Preload: api.settings.getAll()
+    Preload->>IpcMain: ipcRenderer.invoke('settings:get-all')
+    IpcMain-->>Preload: AppSettings (含 aiCodeAnalysisConfig)
+    Preload-->>IpcFront: settings
+    IpcFront-->>Store: settings
+    Store-->>View: repoConfig 已填充
+
+    %% ===== 配置仓库 =====
+    User->>View: 填写仓库链接、分支、Token、认证方式
+    View->>View: URL 实时检测 → 显示 GitHub/GitLab badge
+    User->>View: 点击「开始分析」
+
+    %% ===== 发起分析 =====
+    View->>Store: saveConfig() + startAnalysis(request)
+    Store->>IpcFront: ipc.settings.saveAll({ aiCodeAnalysisConfig })
+    Store->>IpcFront: ipc.aiCodeAnalysis.analyze(request)
+    IpcFront->>Preload: api.aiCodeAnalysis.analyze(request)
+    Preload->>IpcMain: ipcRenderer.invoke('ai:code-analyze', request)
+
+    %% ===== 主进程：Stage 1 - Clone =====
+    IpcMain->>RepoSvc: cloneRepo({ repoUrl, branch, accessToken, authMethod, cloneDir })
+    Note over RepoSvc: 1. 检测仓库类型 (github/gitlab)<br/>2. 构建认证 URL<br/>3. git clone --depth 1 --branch {branch}
+    RepoSvc-->>IpcMain: RepoInfo { clonePath, projectType, repoName }
+
+    %% ===== 主进程：Stage 1 - 路由扫描 =====
+    IpcMain->>RepoSvc: detectProjectType(clonePath)
+    RepoSvc-->>IpcMain: 'go' | 'java'

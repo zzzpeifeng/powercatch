@@ -41,6 +41,14 @@
 
         <div class="menu-divider"></div>
 
+        <!-- AI 代码分析 -->
+        <div class="menu-item" @click="handleAiAnalysis">
+          <span class="menu-icon">🤖</span>
+          <span class="menu-label">AI 代码分析</span>
+        </div>
+
+        <div class="menu-divider"></div>
+
         <!-- 复制 URL -->
         <div class="menu-item" @click="handleCopyUrl">
           <span class="menu-icon">📋</span>
@@ -67,8 +75,10 @@
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { useBreakpointStore } from '../stores/breakpoint-store'
 import { useRequestStore } from '../stores/request-store'
+import { useAiAnalysisStore } from '../stores/ai-analysis-store'
 import { generateCurl } from '../utils/curl-generator'
 import type { CaptureRequest } from '../services/types'
 
@@ -86,6 +96,8 @@ const emit = defineEmits<{
 
 const breakpointStore = useBreakpointStore()
 const requestStore = useRequestStore()
+const router = useRouter()
+const aiAnalysisStore = useAiAnalysisStore()
 
 // 子菜单状态
 const showSubmenu = ref(false)
@@ -135,9 +147,24 @@ async function handleAddBreakpoint(stage: 'request' | 'response' | 'both') {
   }
 
   handleClose()
-}
+  }
 
-// 复制 URL
+  // AI 代码分析
+  async function handleAiAnalysis() {
+    if (!props.request) return
+    // 通过 query 参数把请求信息传给 AiAnalysisView
+    await router.push({
+      path: '/ai-analysis',
+      query: {
+        method: props.request.method,
+        url: props.request.url,
+        path: props.request.url.replace(/^https?:\/\/[^/]+/, '') || '/',
+      },
+    })
+    handleClose()
+  }
+
+  // 复制 URL
 async function handleCopyUrl() {
   if (!props.request) return
 

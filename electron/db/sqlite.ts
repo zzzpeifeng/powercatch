@@ -209,6 +209,9 @@ export function getAllSettings(): AppSettings {
     breakpointRules: JSON.parse(settingsMap.breakpoint_rules || '[]'),
     mapLocalRules: JSON.parse(settingsMap.map_local_rules || '[]'),
     mapRemoteRules: JSON.parse(settingsMap.map_remote_rules || '[]'),
+    aiCodeAnalysisConfig: settingsMap.ai_code_analysis_config
+      ? JSON.parse(settingsMap.ai_code_analysis_config)
+      : undefined,
   }
 }
 
@@ -233,6 +236,7 @@ export function saveAllSettings(settings: Partial<AppSettings>): void {
   if (settings.breakpointRules !== undefined) mapping.breakpoint_rules = JSON.stringify(settings.breakpointRules)
   if (settings.mapLocalRules !== undefined) mapping.map_local_rules = JSON.stringify(settings.mapLocalRules)
   if (settings.mapRemoteRules !== undefined) mapping.map_remote_rules = JSON.stringify(settings.mapRemoteRules)
+  if (settings.aiCodeAnalysisConfig !== undefined) mapping.ai_code_analysis_config = JSON.stringify(settings.aiCodeAnalysisConfig)
 
   const transaction = db.transaction(() => {
     const stmt = db.prepare(
