@@ -283,7 +283,14 @@ export const useAiAnalysisStore = defineStore('aiAnalysis', () => {
       phase?: string; currentFile?: string; matchCount?: number
     }) => {
       scanProgress.value = progress
-      phase.value = 'scanning'
+      // 不再硬编码 phase = 'scanning'
+      // AI 分析期间 AIAnalyzeService.pushProgress 也会通过 IPC 发送 ai:scan-progress，
+      // 如果硬编码为 'analyzing'，会把 SSE 驱动的 phase 从 'analyzing' 打回 'scanning'，
+      // 导致进度条计算出 NaN% 而消失。
+      // 仅当确实在扫描阶段时才更新 phase，避免干扰 AI 分析阶段的状态。
+      if (phase.value !== 'analyzing' && phase.value !== 'generating' && phase.value !== 'done' && phase.value !== 'error') {
+        phase.value = 'scanning'
+      }
     })
 
     // 注册流式 chunk 监听（兼容旧版本）
@@ -376,6 +383,39 @@ export const useAiAnalysisStore = defineStore('aiAnalysis', () => {
         appendLog(log)
       }
 
+      sseService.onProgress = (progress) => {
+        console.log('[AiAnalysisStore] onProgress 回调触发:', progress)
+        // 更新 phase 状态
+        if (progress.phase) {
+          // Phase 映射：将 AI 分析相关的非标准 phase 统一映射到 'analyzing'
+          // 后端 AIAnalyzeService 会发送 'ai-agent'、'ai-tool-call'、'ai-tool-result' 等
+          // 非标准 phase，需要映射为前端识别的 'analyzing'
+          const phaseMapping: Record<string, AnalysisPhase> = {
+            'ai-agent': 'analyzing',
+            'ai-tool-call': 'analyzing',
+            'ai-tool-result': 'analyzing',
+          }
+          const mappedPhase = phaseMapping[progress.phase] || progress.phase
+
+          // 验证 phase 值是否有效
+          const validPhases: AnalysisPhase[] = ['idle', 'cloning', 'scanning', 'scan-failed', 'analyzing', 'generating', 'done', 'error']
+          const newPhase = validPhases.includes(mappedPhase as AnalysisPhase) 
+            ? (mappedPhase as AnalysisPhase) 
+            : phase.value // 如果无效，保持当前 phase
+          
+          // 如果 phase 从 cloning 切换到其他阶段，清空 cloneProgress
+          if (phase.value === 'cloning' && newPhase !== 'cloning') {
+            cloneProgress.value = null
+          }
+          phase.value = newPhase
+        }
+        // 记录日志
+        appendLog({
+          level: 'info',
+          message: progress.message || `进度更新: ${progress.phase}`,
+        })
+      }
+
       sseService.onAgentThinking = (content) => {
         console.log('[AiAnalysisStore] onAgentThinking 回调触发:', content.substring(0, 50) + '...')
         agentThinking.value += content
@@ -406,6 +446,8 @@ export const useAiAnalysisStore = defineStore('aiAnalysis', () => {
         deepAnalysisResult.value = result
         analyzing.value = false
         phase.value = 'done'
+        // 保存到历史记录，防止刷新页面后数据丢失
+        saveResultToHistory(result)
         disconnectSSE()
       }
 
@@ -445,7 +487,6 @@ export const useAiAnalysisStore = defineStore('aiAnalysis', () => {
   function disconnectSSE(): void {
     if (sseService) {
       console.log('[AiAnalysisStore] 断开 SSE 连接')
-      console.trace('[AiAnalysisStore] disconnectSSE 调用栈:')
       sseService.disconnect()
       sseService = null
       sseConnected.value = false
@@ -623,11 +664,13 @@ export const useAiAnalysisStore = defineStore('aiAnalysis', () => {
 
   /** 清理临时仓库 */
   async function cleanupRepo(): Promise<void> {
-    if (!result.value?.repoName) return
+    // 优先使用深度分析结果，回退到旧版结果
+    const repoName = deepAnalysisResult.value?.repoName || result.value?.repoName
+    if (!repoName) return
 
     cleanupStatus.value = 'cleaning'
     try {
-      const response = await ipc.aiCodeAnalysis.cleanupRepo(result.value.repoName)
+      const response = await ipc.aiCodeAnalysis.cleanupRepo(repoName)
       if (response.success) {
         cleanupStatus.value = 'done'
       } else {

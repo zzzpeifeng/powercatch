@@ -159,6 +159,8 @@ async function handleAddBreakpoint(stage: 'request' | 'response' | 'both') {
         method: props.request.method,
         url: props.request.url,
         path: props.request.url.replace(/^https?:\/\/[^/]+/, '') || '/',
+        requestBody: props.request.requestBody || undefined,
+        requestHeaders: props.request.requestHeaders ? JSON.stringify(props.request.requestHeaders) : undefined,
       },
     })
     handleClose()

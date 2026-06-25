@@ -397,14 +397,10 @@ export class AIAnalyzeService {
         finalMatches = matches
       }
 
-      // 推送完成消息
+      // 推送 agent_complete 事件（通知前端 AI 推理结束）
       this.pushAgentComplete(finalAnalysis, finalScenarios)
-      this.pushDone({
-        analysis: finalAnalysis,
-        scenarios: finalScenarios,
-        matches: finalMatches,
-      })
-
+      // 注意：不再在此处调用 pushDone，由上层 executeAnalysisAsync 统一发送 done 事件，
+      // 避免 done 事件重复触发导致 analyzing 状态被提前置为 false。
       console.log(`[AIAnalyzeService] 分析完成，共执行 ${toolCallCount} 次工具调用`)
 
       return {

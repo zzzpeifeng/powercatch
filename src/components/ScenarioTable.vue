@@ -4,11 +4,11 @@
     <div
       v-for="(scenario, index) in scenarios"
       :key="index"
-      class="mb-4 bg-[#2d2d44] rounded-lg overflow-hidden"
+      class="mb-4 bg-white dark:bg-gray-800 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700"
     >
       <!-- 场景 Header -->
       <div
-        class="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-[#3d3d54] transition-colors"
+        class="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors"
         @click="toggleScenario(index)"
       >
         <div class="flex items-center gap-3">
@@ -34,28 +34,28 @@
       <!-- 场景内容（展开状态） -->
       <div
         v-if="expandedScenarios[index]"
-        class="border-t border-gray-700/50"
+        class="border-t border-gray-200 dark:border-gray-700"
       >
         <!-- 调用链路 -->
         <div class="px-4 py-3">
-          <h4 class="text-xs font-semibold text-gray-400 mb-2">调用链路</h4>
+          <h4 class="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2">调用链路</h4>
           <div class="space-y-2">
             <div
               v-for="(step, stepIndex) in scenario.callChain"
               :key="stepIndex"
               class="flex items-start gap-3"
             >
-              <div class="flex-shrink-0 w-8 h-8 rounded-full bg-[#1a1a2e] flex items-center justify-center text-xs font-bold text-blue-400">
+              <div class="flex-shrink-0 w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center text-xs font-bold text-blue-500 dark:text-blue-400">
                 {{ step.step }}
               </div>
               <div class="flex-1 min-w-0">
                 <div class="flex items-center gap-2 mb-1">
-                  <span class="text-xs font-semibold text-gray-300">{{ step.component }}</span>
-                  <span class="text-xs text-gray-500">→</span>
-                  <span class="text-xs text-blue-400 font-mono">{{ step.functionName }}</span>
+                  <span class="text-xs font-semibold text-gray-700 dark:text-gray-300">{{ step.component }}</span>
+                  <span class="text-xs text-gray-400">→</span>
+                  <span class="text-xs text-blue-500 dark:text-blue-400 font-mono">{{ step.functionName }}</span>
                 </div>
-                <p class="text-xs text-gray-400">{{ step.description }}</p>
-                <p class="text-xs text-gray-500 mt-1 font-mono truncate">{{ step.filePath }}</p>
+                <p class="text-xs text-gray-600 dark:text-gray-400">{{ step.description }}</p>
+                <p class="text-xs text-gray-400 dark:text-gray-500 mt-1 font-mono truncate">{{ step.filePath }}</p>
               </div>
             </div>
           </div>
@@ -66,7 +66,7 @@
     <!-- 空状态 -->
     <div
       v-if="!scenarios || scenarios.length === 0"
-      class="text-center py-8 text-gray-500"
+      class="text-center py-8 text-gray-400 dark:text-gray-500"
     >
       暂无场景数据
     </div>
@@ -94,11 +94,11 @@ function toggleScenario(index: number): void {
 
 function scenarioBadgeClass(type: string): string {
   const classes: Record<string, string> = {
-    normal: 'bg-green-900/50 text-green-400',
-    'param-error': 'bg-yellow-900/50 text-yellow-400',
-    'auth-error': 'bg-red-900/50 text-red-400',
+    normal: 'bg-green-100 dark:bg-green-900/50 text-green-600 dark:text-green-400',
+    'param-error': 'bg-yellow-100 dark:bg-yellow-900/50 text-yellow-600 dark:text-yellow-400',
+    'auth-error': 'bg-red-100 dark:bg-red-900/50 text-red-600 dark:text-red-400',
   }
-  return classes[type] || 'bg-gray-900/50 text-gray-400'
+  return classes[type] || 'bg-gray-100 dark:bg-gray-900/50 text-gray-600 dark:text-gray-400'
 }
 </script>
 

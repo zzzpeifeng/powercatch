@@ -1,16 +1,16 @@
 <template>
-  <div class="analysis-log-viewer h-full flex flex-col bg-[#1a1a2e] rounded-lg overflow-hidden">
+  <div class="analysis-log-viewer h-full flex flex-col bg-white dark:bg-gray-900 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
     <!-- 工具栏 -->
-    <div class="flex items-center justify-between px-4 py-2 bg-[#2d2d44] border-b border-gray-700/50">
+    <div class="flex items-center justify-between px-4 py-2 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
       <div class="flex items-center gap-2">
         <div
           class="w-2 h-2 rounded-full"
           :class="connected ? 'bg-green-400' : 'bg-red-400'"
         />
-        <span class="text-xs text-gray-400">
+        <span class="text-xs text-gray-600 dark:text-gray-400">
           {{ connected ? '已连接' : '未连接' }}
         </span>
-        <span class="text-xs text-gray-500 ml-2">
+        <span class="text-xs text-gray-400 dark:text-gray-500 ml-2">
           共 {{ logs.length }} 条日志
         </span>
       </div>
@@ -43,7 +43,7 @@
         class="log-entry mb-1 leading-relaxed"
         :class="levelClass(log.level)"
       >
-        <span class="text-gray-500 mr-2">[{{ formatTime(log.timestamp) }}]</span>
+        <span class="text-gray-400 dark:text-gray-500 mr-2">[{{ formatTime(log.timestamp) }}]</span>
         <span class="log-level mr-2">[{{ log.level }}]</span>
         <span class="log-message">{{ log.message }}</span>
       </div>
@@ -51,7 +51,7 @@
       <!-- 空状态 -->
       <div
         v-if="logs.length === 0"
-        class="flex items-center justify-center h-full text-gray-500"
+        class="flex items-center justify-center h-full text-gray-400 dark:text-gray-500"
       >
         等待分析开始...
       </div>
@@ -122,12 +122,12 @@ function formatTime(isoString: string): string {
 
 function levelClass(level: string): string {
   const classes: Record<string, string> = {
-    info: 'text-blue-400',
-    warn: 'text-yellow-400',
-    error: 'text-red-400',
-    debug: 'text-gray-500',
+    info: 'text-blue-500 dark:text-blue-400',
+    warn: 'text-yellow-500 dark:text-yellow-400',
+    error: 'text-red-500 dark:text-red-400',
+    debug: 'text-gray-400 dark:text-gray-500',
   }
-  return classes[level] || 'text-gray-400'
+  return classes[level] || 'text-gray-500 dark:text-gray-400'
 }
 
 // 暴露方法供父组件调用
