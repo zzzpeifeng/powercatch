@@ -98,6 +98,17 @@
             {{ mapRemoteCount }}
           </span>
         </button>
+        <button
+          class="dropdown-item"
+          :disabled="checkedCount !== 2"
+          @click="$emit('open-diff'); toolsMenuRef?.close()"
+        >
+          <svg class="w-4 h-4 text-purple-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+          </svg>
+          <span class="flex-1">Diff 视图</span>
+          <span class="text-[10px] text-gray-400">{{ checkedCount }}/2</span>
+        </button>
       </DropdownMenu>
 
       <!-- AI 处理下拉菜单 -->
@@ -176,6 +187,7 @@ defineEmits<{
   (e: 'toggle-breakpoint'): void
   (e: 'toggle-map-local'): void
   (e: 'toggle-map-remote'): void
+  (e: 'open-diff'): void
 }>()
 
 const toolsMenuRef = ref<InstanceType<typeof DropdownMenu> | null>(null)

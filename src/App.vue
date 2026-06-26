@@ -2,8 +2,12 @@
   <div id="app-root" class="h-screen flex flex-col overflow-hidden">
     <!-- 标题栏 -->
     <TitleBar />
-    <!-- 路由视图 -->
-    <router-view class="flex-1 overflow-y-auto" />
+    <!-- 路由视图（带 keep-alive） -->
+    <router-view v-slot="{ Component }">
+      <keep-alive :include="['DiffView']">
+        <component :is="Component" class="flex-1 overflow-y-auto" />
+      </keep-alive>
+    </router-view>
     <!-- 全局 Toast -->
     <ToastContainer />
     <!-- 断点编辑弹窗 -->

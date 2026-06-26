@@ -42,6 +42,7 @@
       @toggle-breakpoint="showBreakpointRules = !showBreakpointRules"
       @toggle-map-local="showMapLocalRules = !showMapLocalRules"
       @toggle-map-remote="showMapRemoteRules = !showMapRemoteRules"
+      @open-diff="openDiff"
     />
 
     <!-- 断点规则面板 -->
@@ -118,6 +119,7 @@ import { useSystemProxyStore } from '../stores/system-proxy-store'
 import { useBreakpointStore } from '../stores/breakpoint-store'
 import { useMapLocalStore } from '../stores/map-local-store'
 import { useMapRemoteStore } from '../stores/map-remote-store'
+import { useDiffStore } from '../stores/diff-store'
 import SystemProxyBanner from '../components/SystemProxyBanner.vue'
 import DomainFilter from '../components/DomainFilter.vue'
 import RecordControl from '../components/RecordControl.vue'
@@ -136,6 +138,7 @@ const systemProxyStore = useSystemProxyStore()
 const breakpointStore = useBreakpointStore()
 const mapLocalStore = useMapLocalStore()
 const mapRemoteStore = useMapRemoteStore()
+const diffStore = useDiffStore()
 const toast = useToast()
 
 const domainFilterRef = ref<InstanceType<typeof DomainFilter> | null>(null)
@@ -278,6 +281,17 @@ async function handleExport(format: ExportFormat): Promise<void> {
 function handleClear(): void {
   requestStore.clearRequests()
   toast.info('已清空所有请求')
+}
+
+/** 打开 Diff 视图 */
+function openDiff(): void {
+  const checked = requestStore.checkedRequests
+  if (checked.length !== 2) {
+    toast.warning('请先勾选 2 个请求')
+    return
+  }
+  diffStore.setRequests(checked[0], checked[1])
+  router.push('/diff')
 }
 
 /** 提示条：关闭本机代理 */

@@ -36,6 +36,13 @@ const routes: RouteRecordRaw[] = [
     name: 'SslErrors',
     component: () => import('../views/SslErrorView.vue'),
   },
+  // 新增：Diff 对比页面
+  {
+    path: '/diff',
+    name: 'DiffView',
+    component: () => import('../views/DiffView.vue'),
+    meta: { keepAlive: true }
+  },
 ]
 
 const router = createRouter({

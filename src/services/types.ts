@@ -711,6 +711,41 @@ export interface CallChainStep {
 }
 
 /**
+ * 场景来源引用（P0-6 新增）
+ * 说明测试场景覆盖了哪个代码结论
+ */
+export interface SourceRef {
+  /** 来源类型 */
+  sourceType: 'param' | 'branch' | 'businessRule' | 'errorPath' | 'externalCall' | 'featureFlag'
+  /** 来源标识（如 params.ProductInfos、businessRules[0]） */
+  sourceId: string
+  /** 文件路径 */
+  filePath: string
+  /** 行范围（如 "45-52"） */
+  lineRange: string
+  /** 触发条件 */
+  condition?: string
+  /** 覆盖意图（为什么需要这个场景） */
+  coverageIntent: string
+}
+
+/**
+ * 场景校验警告（P1-1 新增）
+ */
+export interface ScenarioValidationWarning {
+  /** 警告代码 */
+  code: string
+  /** 警告消息 */
+  message: string
+  /** 严重程度 */
+  severity: 'info' | 'warning' | 'error'
+  /** 相关来源类型 */
+  sourceType?: string
+  /** 相关来源标识 */
+  sourceId?: string
+}
+
+/**
  * 场景类型（两阶段 Pipeline 使用）
  * 保留旧类型 (param-error/auth-error) 作为过渡，Phase 3.2 删除
  */
@@ -750,6 +785,10 @@ export interface AnalysisScenario {
   curlCommand: string
   /** Python 断言代码 */
   pythonAssertion: string
+  /** 场景来源引用（P0-6 新增，说明覆盖了哪个代码结论） */
+  sourceRefs?: SourceRef[]
+  /** 场景校验警告（P1-1 新增） */
+  validationWarnings?: ScenarioValidationWarning[]
 }
 
 /**
@@ -923,4 +962,39 @@ export interface FlatTreeNode {
   hasChecked?: boolean
   /** request 字段 */
   request?: CaptureRequest
+}
+
+/** Diff 对比结果 */
+export interface DiffResult {
+  /** 概览统计 */
+  overview: {
+    same: string[]
+    different: string[]
+    stats: {
+      requestHeaders: { added: number; removed: number; modified: number }
+      requestBody: { changes: number }
+      responseHeaders: { added: number; removed: number; modified: number }
+      responseBody: { changes: number }
+    }
+  }
+  requestHeaders: {
+    added: Record<string, string>
+    removed: Record<string, string>
+    modified: Array<{ key: string; old: string; new: string }>
+  }
+  requestBody: {
+    type: 'json' | 'text' | 'binary' | 'empty'
+    delta?: any
+    changes?: Array<{ value: string; added?: boolean; removed?: boolean }>
+  }
+  responseHeaders: {
+    added: Record<string, string>
+    removed: Record<string, string>
+    modified: Array<{ key: string; old: string; new: string }>
+  }
+  responseBody: {
+    type: 'json' | 'text' | 'binary' | 'empty'
+    delta?: any
+    changes?: Array<{ value: string; added?: boolean; removed?: boolean }>
+  }
 }
