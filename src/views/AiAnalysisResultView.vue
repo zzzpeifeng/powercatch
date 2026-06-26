@@ -67,6 +67,18 @@
             <p class="text-xs font-mono text-gray-700 dark:text-gray-300">{{ store.deepAnalysisResult.handlerFile }}</p>
           </div>
 
+          <!-- 场景类型分布统计 -->
+          <div v-if="scenarios.length > 0" class="flex flex-wrap gap-2 mb-3">
+            <span
+              v-for="(count, type) in scenarioTypeDistribution"
+              :key="type"
+              class="text-xs px-2 py-1 rounded"
+              :class="scenarioBadgeClass(type as string)"
+            >
+              {{ scenarioTypeLabel(type as string) }}: {{ count }}
+            </span>
+          </div>
+
           <!-- 操作按钮 -->
           <div class="flex justify-end gap-2">
             <button
@@ -98,6 +110,8 @@
             :scenario-name="scenario.scenarioName"
             :curl-command="scenario.curlCommand"
             :python-assertion="scenario.pythonAssertion"
+            :expected-status-code="scenario.expectedStatusCode"
+            :test-data="scenario.testData"
           />
         </div>
 
@@ -138,6 +152,58 @@ const renderedAnalysis = computed(() => {
   // 使用项目已有的 markdown-it 工具进行渲染
   return renderMarkdown(store.deepAnalysisResult.analysisSummary)
 })
+
+/** 场景类型分布统计 */
+const scenarioTypeDistribution = computed(() => {
+  const distribution: Record<string, number> = {}
+  for (const s of scenarios.value) {
+    const type = s.scenarioType || 'unknown'
+    distribution[type] = (distribution[type] || 0) + 1
+  }
+  return distribution
+})
+
+/** 场景类型 badge 样式 */
+function scenarioBadgeClass(type: string): string {
+  const classes: Record<string, string> = {
+    normal:           'bg-green-100 dark:bg-green-900/50 text-green-600 dark:text-green-400',
+    'missing-required': 'bg-yellow-100 dark:bg-yellow-900/50 text-yellow-600 dark:text-yellow-400',
+    boundary:         'bg-yellow-100 dark:bg-yellow-900/50 text-yellow-600 dark:text-yellow-400',
+    'type-error':     'bg-yellow-100 dark:bg-yellow-900/50 text-yellow-600 dark:text-yellow-400',
+    'format-error':   'bg-yellow-100 dark:bg-yellow-900/50 text-yellow-600 dark:text-yellow-400',
+    'business-rule':  'bg-orange-100 dark:bg-orange-900/50 text-orange-600 dark:text-orange-400',
+    'auth-missing':   'bg-red-100 dark:bg-red-900/50 text-red-600 dark:text-red-400',
+    'auth-expired':   'bg-red-100 dark:bg-red-900/50 text-red-600 dark:text-red-400',
+    forbidden:        'bg-red-100 dark:bg-red-900/50 text-red-600 dark:text-red-400',
+    'not-found':      'bg-gray-100 dark:bg-gray-900/50 text-gray-600 dark:text-gray-400',
+    conflict:         'bg-purple-100 dark:bg-purple-900/50 text-purple-600 dark:text-purple-400',
+    'server-error':   'bg-red-200 dark:bg-red-900/70 text-red-700 dark:text-red-300',
+    'param-error':    'bg-yellow-100 dark:bg-yellow-900/50 text-yellow-600 dark:text-yellow-400',
+    'auth-error':     'bg-red-100 dark:bg-red-900/50 text-red-600 dark:text-red-400',
+  }
+  return classes[type] || 'bg-gray-100 dark:bg-gray-900/50 text-gray-600 dark:text-gray-400'
+}
+
+/** 场景类型中文标签 */
+function scenarioTypeLabel(type: string): string {
+  const labels: Record<string, string> = {
+    normal: '正常',
+    'missing-required': '必填缺失',
+    boundary: '边界值',
+    'type-error': '类型错误',
+    'format-error': '格式错误',
+    'business-rule': '业务规则',
+    'auth-missing': '缺认证',
+    'auth-expired': 'Token过期',
+    forbidden: '权限不足',
+    'not-found': '不存在',
+    conflict: '冲突',
+    'server-error': '服务端错误',
+    'param-error': '参数错误',
+    'auth-error': '认证错误',
+  }
+  return labels[type] || type
+}
 
 async function handleCleanup(): Promise<void> {
   await store.cleanupRepo()

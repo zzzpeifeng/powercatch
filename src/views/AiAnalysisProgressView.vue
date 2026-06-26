@@ -71,7 +71,7 @@
         </div>
 
         <!-- AI 分析实时输出 -->
-        <div v-if="store.phase === 'analyzing' || store.agentThinking" class="mb-4 p-3 bg-gray-100 dark:bg-gray-800 rounded-lg">
+        <div v-if="store.phase === 'analyzing' || store.phase === 'code-exploring' || store.phase === 'test-generating' || store.agentThinking" class="mb-4 p-3 bg-gray-100 dark:bg-gray-800 rounded-lg">
           <p class="text-xs text-gray-500 dark:text-gray-400 mb-2">AI 分析过程</p>
           <div
             v-if="store.agentThinking"
@@ -152,7 +152,9 @@ const phaseTitle = computed(() => {
     cloning: '克隆仓库中',
     scanning: '扫描路由中',
     'scan-failed': '扫描失败',
+    'code-exploring': '代码探索中（Phase 1/2）',
     analyzing: 'AI 深度分析中',
+    'test-generating': '生成测试用例中（Phase 2/2）',
     generating: '生成报告中',
     done: '分析完成',
     error: '分析失败',
@@ -166,7 +168,9 @@ const phaseBadgeClass = computed(() => {
     cloning: 'bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400',
     scanning: 'bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400',
     'scan-failed': 'bg-yellow-100 dark:bg-yellow-900/50 text-yellow-600 dark:text-yellow-400',
+    'code-exploring': 'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400',
     analyzing: 'bg-purple-100 dark:bg-purple-900/50 text-purple-600 dark:text-purple-400',
+    'test-generating': 'bg-violet-100 dark:bg-violet-900/50 text-violet-600 dark:text-violet-400',
     generating: 'bg-purple-100 dark:bg-purple-900/50 text-purple-600 dark:text-purple-400',
     done: 'bg-green-100 dark:bg-green-900/50 text-green-600 dark:text-green-400',
     error: 'bg-red-100 dark:bg-red-900/50 text-red-600 dark:text-red-400',
@@ -180,14 +184,28 @@ const progressPercent = computed(() => {
   }
   if (store.phase === 'scanning') {
     const scanPct = store.scanProgress?.percent
-    return 30 + (typeof scanPct === 'number' ? scanPct * 0.2 : 0) // 扫描占 30-50%，防御 percent 为 undefined/NaN
+    return 30 + (typeof scanPct === 'number' ? scanPct * 0.2 : 0) // 扫描占 30-50%
+  }
+  if (store.phase === 'code-exploring') {
+    // Phase 1: 代码探索占 50-70%
+    const toolBonus = store.agentToolCalls.length > 0
+      ? Math.min(store.agentToolCalls.length * 5, 20)
+      : 0
+    return 50 + toolBonus
   }
   if (store.phase === 'analyzing') {
-    // 有工具调用时按比例增长，无工具调用时保持 50% 基线
+    // 旧模式 AI 分析占 50-90%
     const toolBonus = store.agentToolCalls.length > 0
       ? Math.min(store.agentToolCalls.length * 10, 40)
       : 0
-    return 50 + toolBonus // AI 分析占 50-90%
+    return 50 + toolBonus
+  }
+  if (store.phase === 'test-generating') {
+    // Phase 2: 测试用例生成占 70-90%
+    const toolBonus = store.agentToolCalls.length > 0
+      ? Math.min(store.agentToolCalls.length * 5, 20)
+      : 0
+    return 70 + toolBonus
   }
   if (store.phase === 'done') {
     return 100

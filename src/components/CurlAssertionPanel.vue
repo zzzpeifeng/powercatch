@@ -3,6 +3,11 @@
     <!-- 面板 Header -->
     <div class="flex items-center justify-between px-4 py-2 bg-white dark:bg-gray-800 rounded-t-lg border border-gray-200 dark:border-gray-700">
       <h3 class="text-xs font-semibold text-gray-700 dark:text-gray-300">场景 {{ scenarioIndex + 1 }}: {{ scenarioName }}</h3>
+      <div class="flex items-center gap-2">
+        <span v-if="expectedStatusCode" class="text-xs px-2 py-0.5 rounded" :class="statusCodeBadgeClass">
+          预期 {{ expectedStatusCode }}
+        </span>
+      </div>
     </div>
 
     <!-- 左右分栏 -->
@@ -51,6 +56,7 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useToast } from '../composables/useToast'
 
 const props = defineProps<{
@@ -58,9 +64,20 @@ const props = defineProps<{
   scenarioName: string
   curlCommand: string
   pythonAssertion: string
+  expectedStatusCode?: number
+  testData?: Record<string, any>
 }>()
 
 const toast = useToast()
+
+const statusCodeBadgeClass = computed(() => {
+  const code = props.expectedStatusCode
+  if (!code) return ''
+  if (code >= 200 && code < 300) return 'bg-green-100 dark:bg-green-900/50 text-green-600 dark:text-green-400'
+  if (code >= 400 && code < 500) return 'bg-yellow-100 dark:bg-yellow-900/50 text-yellow-600 dark:text-yellow-400'
+  if (code >= 500) return 'bg-red-100 dark:bg-red-900/50 text-red-600 dark:text-red-400'
+  return 'bg-gray-100 dark:bg-gray-900/50 text-gray-600 dark:text-gray-400'
+})
 
 async function copyCurl(): Promise<void> {
   try {

@@ -153,11 +153,19 @@ export async function testConnection(
       max_tokens: 10,
     })
 
-    const content = response.choices[0]?.message?.content || ''
+    const choice = response.choices?.[0]
+    if (!choice) {
+      return { success: false, message: '连接成功但未返回任何结果，请检查模型名称。' }
+    }
+
+    // 兼容推理模型（content 可能为空，内容在 reasoning_content）
+    const content = (choice.message as any).reasoning_content || choice.message.content || ''
     if (content) {
-      return { success: true, message: `连接成功！模型响应: ${content}` }
+      return { success: true, message: `连接成功！模型响应: ${content.slice(0, 100)}` }
     } else {
-      return { success: false, message: '连接成功但模型无响应内容，请检查模型名称。' }
+      // 有 choice 但 content 为空，说明是推理模型且响应被截断（max_tokens=10）
+      // 只要 API 调用成功就认为连接正常
+      return { success: true, message: '连接成功！（推理模型，已确认 API 可达）' }
     }
   } catch (error: any) {
     const message = error?.message || '未知错误'

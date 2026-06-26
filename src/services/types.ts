@@ -673,7 +673,9 @@ export type AnalysisPhase =
   | 'cloning'          // 克隆仓库中
   | 'scanning'         // 阶段1：扫描中
   | 'scan-failed'      // 阶段1：扫描失败
+  | 'code-exploring'   // Phase 1：代码探索中（两阶段 Pipeline）
   | 'analyzing'        // 阶段2：AI 分析中
+  | 'test-generating'  // Phase 2：测试用例生成中（两阶段 Pipeline）
   | 'generating'       // 生成报告中
   | 'done'             // 完成
   | 'error'            // 错误
@@ -709,13 +711,39 @@ export interface CallChainStep {
 }
 
 /**
- * 场景定义（3 个场景）
+ * 场景类型（两阶段 Pipeline 使用）
+ * 保留旧类型 (param-error/auth-error) 作为过渡，Phase 3.2 删除
+ */
+export type ScenarioType =
+  // ===== v2.0 新增类型（12 种）=====
+  | 'normal'           // 正常流程（200）
+  | 'missing-required' // 必填字段缺失（400）
+  | 'boundary'         // 边界值（400）
+  | 'type-error'       // 类型错误（400）
+  | 'format-error'     // 格式错误（400）
+  | 'business-rule'    // 业务规则违反（400/422）
+  | 'auth-missing'     // 缺少认证（401）
+  | 'auth-expired'     // 认证过期（401）
+  | 'forbidden'        // 权限不足（403）
+  | 'not-found'        // 资源不存在（404）
+  | 'conflict'         // 资源冲突（409）
+  | 'server-error'     // 服务端错误（500）
+  // ===== 旧类型（过渡期保留，Phase 3.2 删除）=====
+  | 'param-error'      // @deprecated 请用 missing-required/boundary/type-error
+  | 'auth-error'       // @deprecated 请用 auth-missing/auth-expired
+
+/**
+ * 场景定义
  */
 export interface AnalysisScenario {
-  /** 场景名称（正常流程/参数校验失败/权限校验失败） */
+  /** 场景名称 */
   scenarioName: string
   /** 场景类型 */
-  scenarioType: 'normal' | 'param-error' | 'auth-error'
+  scenarioType: ScenarioType
+  /** 预期 HTTP 状态码（v2.0 新增） */
+  expectedStatusCode?: number
+  /** 测试用入参（v2.0 新增） */
+  testData?: Record<string, any>
   /** 调用链路 */
   callChain: CallChainStep[]
   /** curl 命令 */

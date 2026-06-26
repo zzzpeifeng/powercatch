@@ -42,6 +42,8 @@ async function executeAnalysisAsync(params: {
   authMethod: string
   method: string
   url: string
+  requestBody?: string
+  requestHeaders?: Record<string, string | string[]>
   enableDeepAnalysis: boolean
   apiKey: string
   apiUrl: string
@@ -94,6 +96,8 @@ async function executeAnalysisAsync(params: {
       clonePath: repoInfo.clonePath,
       method: params.method,
       url: params.url,
+      requestBody: params.requestBody,
+      requestHeaders: params.requestHeaders,
     })
 
     pushLog('info', '分析完成！')
@@ -846,6 +850,8 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
         authMethod,
         method,
         url,
+        requestBody,
+        requestHeaders,
         enableDeepAnalysis: enableDeepAnalysis || false,
         apiKey: settings.apiKey,
         apiUrl: settings.apiUrl,

@@ -328,8 +328,6 @@ export function pushProgress(phase: string, message: string, extra?: any): void 
  * @param message 日志消息
  */
 export function pushLog(level: 'info' | 'warn' | 'error' | 'debug', message: string): void {
-  console.log(`[pushLog] 写入日志缓冲区: [${level}] ${message}`)
-
   // 添加到缓冲区（用于 IPC 轮询降级）
   logBuffer.push({
     id: ++logIdCounter,
@@ -337,8 +335,6 @@ export function pushLog(level: 'info' | 'warn' | 'error' | 'debug', message: str
     level,
     message,
   })
-  console.log(`[pushLog] 缓冲区当前条数: ${logBuffer.length}`)
-
   // 限制缓冲区大小
   if (logBuffer.length > 1000) {
     logBuffer.splice(0, logBuffer.length - 1000)

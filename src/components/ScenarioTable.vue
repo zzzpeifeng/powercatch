@@ -94,9 +94,21 @@ function toggleScenario(index: number): void {
 
 function scenarioBadgeClass(type: string): string {
   const classes: Record<string, string> = {
-    normal: 'bg-green-100 dark:bg-green-900/50 text-green-600 dark:text-green-400',
-    'param-error': 'bg-yellow-100 dark:bg-yellow-900/50 text-yellow-600 dark:text-yellow-400',
-    'auth-error': 'bg-red-100 dark:bg-red-900/50 text-red-600 dark:text-red-400',
+    normal:           'bg-green-100 dark:bg-green-900/50 text-green-600 dark:text-green-400',
+    'missing-required': 'bg-yellow-100 dark:bg-yellow-900/50 text-yellow-600 dark:text-yellow-400',
+    boundary:         'bg-yellow-100 dark:bg-yellow-900/50 text-yellow-600 dark:text-yellow-400',
+    'type-error':     'bg-yellow-100 dark:bg-yellow-900/50 text-yellow-600 dark:text-yellow-400',
+    'format-error':   'bg-yellow-100 dark:bg-yellow-900/50 text-yellow-600 dark:text-yellow-400',
+    'business-rule':  'bg-orange-100 dark:bg-orange-900/50 text-orange-600 dark:text-orange-400',
+    'auth-missing':   'bg-red-100 dark:bg-red-900/50 text-red-600 dark:text-red-400',
+    'auth-expired':   'bg-red-100 dark:bg-red-900/50 text-red-600 dark:text-red-400',
+    forbidden:        'bg-red-100 dark:bg-red-900/50 text-red-600 dark:text-red-400',
+    'not-found':      'bg-gray-100 dark:bg-gray-900/50 text-gray-600 dark:text-gray-400',
+    conflict:         'bg-purple-100 dark:bg-purple-900/50 text-purple-600 dark:text-purple-400',
+    'server-error':   'bg-red-200 dark:bg-red-900/70 text-red-700 dark:text-red-300',
+    // 旧类型（过渡期保留）
+    'param-error':    'bg-yellow-100 dark:bg-yellow-900/50 text-yellow-600 dark:text-yellow-400',
+    'auth-error':     'bg-red-100 dark:bg-red-900/50 text-red-600 dark:text-red-400',
   }
   return classes[type] || 'bg-gray-100 dark:bg-gray-900/50 text-gray-600 dark:text-gray-400'
 }

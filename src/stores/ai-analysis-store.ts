@@ -149,7 +149,9 @@ export const useAiAnalysisStore = defineStore('aiAnalysis', () => {
       'cloning': '克隆仓库中',
       'scanning': '扫描路由中',
       'scan-failed': '扫描失败',
+      'code-exploring': '代码探索中',
       'analyzing': 'AI 深度分析中',
+      'test-generating': '生成测试用例中',
       'generating': '生成报告中',
       'done': '完成',
       'error': '错误',
@@ -387,18 +389,20 @@ export const useAiAnalysisStore = defineStore('aiAnalysis', () => {
         console.log('[AiAnalysisStore] onProgress 回调触发:', progress)
         // 更新 phase 状态
         if (progress.phase) {
-          // Phase 映射：将 AI 分析相关的非标准 phase 统一映射到 'analyzing'
-          // 后端 AIAnalyzeService 会发送 'ai-agent'、'ai-tool-call'、'ai-tool-result' 等
-          // 非标准 phase，需要映射为前端识别的 'analyzing'
+          // Phase 映射：将 AI 分析相关的非标准 phase 统一映射到前端识别的 AnalysisPhase
+          // 后端 AIAnalyzeService 会发送 'ai-agent'、'ai-tool-call'、'ai-tool-result'、
+          // 'code-explorer'、'test-generator' 等非标准 phase
           const phaseMapping: Record<string, AnalysisPhase> = {
             'ai-agent': 'analyzing',
             'ai-tool-call': 'analyzing',
             'ai-tool-result': 'analyzing',
+            'code-explorer': 'code-exploring',
+            'test-generator': 'test-generating',
           }
           const mappedPhase = phaseMapping[progress.phase] || progress.phase
 
           // 验证 phase 值是否有效
-          const validPhases: AnalysisPhase[] = ['idle', 'cloning', 'scanning', 'scan-failed', 'analyzing', 'generating', 'done', 'error']
+          const validPhases: AnalysisPhase[] = ['idle', 'cloning', 'scanning', 'scan-failed', 'code-exploring', 'analyzing', 'test-generating', 'generating', 'done', 'error']
           const newPhase = validPhases.includes(mappedPhase as AnalysisPhase) 
             ? (mappedPhase as AnalysisPhase) 
             : phase.value // 如果无效，保持当前 phase
@@ -416,8 +420,14 @@ export const useAiAnalysisStore = defineStore('aiAnalysis', () => {
         })
       }
 
-      sseService.onAgentThinking = (content) => {
-        console.log('[AiAnalysisStore] onAgentThinking 回调触发:', content.substring(0, 50) + '...')
+      sseService.onAgentThinking = (content, phaseName) => {
+        // 两阶段模式下：在 Phase 1 → Phase 2 切换时自动插入分隔标记
+        if (phaseName === 'explorer' && phase.value !== 'code-exploring') {
+          // Phase 1 思考开始，不插入分隔
+        } else if (phaseName !== 'explorer' && phase.value === 'code-exploring') {
+          // Phase 1 → Phase 2 切换
+          agentThinking.value += '\n\n--- 代码探索完成，开始生成测试用例 ---\n\n'
+        }
         agentThinking.value += content
       }
 

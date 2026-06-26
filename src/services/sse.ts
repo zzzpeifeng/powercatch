@@ -93,8 +93,8 @@ export class SSEService {
   /** 进度更新回调 */
   public onProgress?: (progress: { phase: string; message: string; extra?: any }) => void
 
-  /** AI 思考过程回调 */
-  public onAgentThinking?: (content: string) => void
+  /** AI 思考过程回调（phase 用于区分 Code Explorer / Test Generator 阶段） */
+  public onAgentThinking?: (content: string, phase?: string) => void
 
   /** AI 工具调用回调 */
   public onAgentToolCall?: (tool: string, args?: any) => void
@@ -517,7 +517,7 @@ export class SSEService {
 
       case 'agent_thinking':
         if (this.onAgentThinking && message.data) {
-          this.onAgentThinking(message.data.content || '')
+          this.onAgentThinking(message.data.content || '', message.data.phase)
         }
         break
 
