@@ -340,27 +340,42 @@ function decodeResponseBody(buffer: Buffer, headers: Record<string, any>): strin
     console.warn('[Proxy] 响应体解压失败，尝试原始解码:', (e as Error).message)
   }
 
-  // 无压缩或解压失败：尝试 utf-8 解码
-  // 先检测是否为二进制数据（简单启发式：含大量非 UTF-8 字节）
+  // 无压缩或解压失败：尝试 UTF-8 解码
+  // 已知文本类型直接解码，跳过二进制检测（避免误判合法 UTF-8 多字节序列）
+  const contentType = (headers['content-type'] || headers['Content-Type'] || '').split(';')[0].trim()
+  const textContentTypePatterns = [
+    'application/json',
+    'text/',
+    'application/xml',
+    'application/xhtml+xml',
+    'application/javascript',
+    'application/css',
+    'application/x-www-form-urlencoded',
+    'application/graphql',
+  ]
+  const isKnownTextType = textContentTypePatterns.some(p =>
+    contentType === p || (p.endsWith('/') && contentType.startsWith(p.replace(/\/$/, '')))
+  )
+  if (isKnownTextType) {
+    return buffer.toString('utf-8')
+  }
+
+  // 未知类型 → 做二进制检测（启发式）
   const preview = buffer.slice(0, 8000)
   const isLikelyBinary = preview.some((byte, i) => {
-    // 检测 null 字节（二进制文件特征）或无效 UTF-8 序列
     if (byte === 0) return true
-    // 检测大量连续非 ASCII 且非 UTF-8 的字节
     if (byte > 0x7f && i + 1 < preview.length && preview[i + 1] > 0x7f) {
-      // 简单检测：如果不是合法的 UTF-8 序列起始字节，可能是二进制
       if (byte < 0xc0 || byte > 0xf7) return true
     }
     return false
   })
 
   if (isLikelyBinary) {
-    const contentType = (headers['content-type'] || headers['Content-Type'] || 'application/octet-stream').split(';')[0].trim()
-    // 5MB 上限，超出只存元信息
+    const ct = contentType || 'application/octet-stream'
     if (buffer.length <= 5 * 1024 * 1024) {
-      return `[Base64:${contentType}:${buffer.length}:${buffer.toString('base64')}]`
+      return `[Base64:${ct}:${buffer.length}:${buffer.toString('base64')}]`
     }
-    return `[Body too large: ${buffer.length} bytes, Content-Type: ${contentType}]`
+    return `[Body too large: ${buffer.length} bytes, Content-Type: ${ct}]`
   }
 
   return buffer.toString('utf-8')
@@ -368,36 +383,93 @@ function decodeResponseBody(buffer: Buffer, headers: Record<string, any>): strin
 
 /**
  * 根据 content-encoding 解压请求体（客户端发送压缩数据的情况较少见）
+ * 修复：对齐 decodeResponseBody 的逻辑 —— 先尝试解压，再做二进制检测
+ * 支持：有 Content-Encoding 头的压缩 / 无头但实际 gzip 的数据 / 普通文本
  */
 function decodeRequestBody(buffer: Buffer, headers: Record<string, any>): string {
   const encoding = (headers['content-encoding'] || headers['Content-Encoding'] || '').toLowerCase()
-  if (!encoding || encoding === 'identity') {
-    // 检测是否为二进制数据
-    const isLikelyBinary = buffer.some((byte, i) => {
-      if (byte === 0) return true
-      if (byte > 0x7f && i + 1 < buffer.length && buffer[i + 1] > 0x7f) {
-        if (byte < 0xc0 || byte > 0xf7) return true
-      }
-      return false
-    })
-    if (isLikelyBinary) {
-      const contentType = (headers['content-type'] || headers['Content-Type'] || 'application/octet-stream').split(';')[0].trim()
-      if (buffer.length <= 5 * 1024 * 1024) {
-        return `[Base64:${contentType}:${buffer.length}:${buffer.toString('base64')}]`
-      }
-      return `[Body too large: ${buffer.length} bytes, Content-Type: ${contentType}]`
+  const contentType = (headers['content-type'] || headers['Content-Type'] || '').split(';')[0].trim()
+
+  // 调试日志：打印请求体前 50 字节的 hex + 可读字符
+  const previewLen = Math.min(buffer.length, 50)
+  const hexPreview = Array.from(buffer.slice(0, previewLen)).map(b => b.toString(16).padStart(2, '0')).join(' ')
+  const asciiPreview = Array.from(buffer.slice(0, previewLen)).map(b => (b >= 0x20 && b < 0x7f) ? String.fromCharCode(b) : '.').join('')
+  console.log(`[decodeRequestBody] buffer.length=${buffer.length}, encoding="${encoding}", contentType="${contentType}"`)
+  console.log(`[decodeRequestBody] first ${previewLen} bytes hex: ${hexPreview}`)
+  console.log(`[decodeRequestBody] first ${previewLen} bytes ascii: ${asciiPreview}`)
+
+  // 第一步：尝试解压（有 Content-Encoding 头 或 检测到 gzip/deflate 魔术字节）
+  const isGzip = buffer.length >= 2 && buffer[0] === 0x1f && buffer[1] === 0x8b
+  const isDeflate = buffer.length >= 2 && buffer[0] === 0x78 && (buffer[1] === 0x01 || buffer[1] === 0x5e || buffer[1] === 0x9c || buffer[1] === 0xda)
+  console.log(`[decodeRequestBody] isGzip=${isGzip}, isDeflate=${isDeflate}`)
+
+  if (encoding.includes('gzip') || (!encoding && isGzip)) {
+    try {
+      const decompressed = gunzipSync(buffer).toString('utf-8')
+      console.log(`[decodeRequestBody] gzip 解压成功，解码后长度=${decompressed.length}，前100字符: ${decompressed.slice(0, 100)}`)
+      return decompressed
+    } catch (e) {
+      console.warn('[Proxy] 请求体 gzip 解压失败，尝试原始解码:', (e as Error).message)
     }
-    return buffer.toString('utf-8')
   }
-  // 尝试解压（客户端压缩请求体较少见，尽力而为）
-  try {
-    if (encoding.includes('gzip')) return gunzipSync(buffer).toString('utf-8')
-    if (encoding.includes('deflate')) return inflateSync(buffer).toString('utf-8')
-    if (encoding.includes('br')) return brotliDecompressSync(buffer).toString('utf-8')
-  } catch (e) {
-    console.warn('[Proxy] 请求体解压失败:', (e as Error).message)
+  if (encoding.includes('deflate') || (!encoding && isDeflate)) {
+    try {
+      const decompressed = inflateSync(buffer).toString('utf-8')
+      console.log(`[decodeRequestBody] deflate 解压成功，解码后长度=${decompressed.length}`)
+      return decompressed
+    } catch (e) {
+      console.warn('[Proxy] 请求体 deflate 解压失败，尝试原始解码:', (e as Error).message)
+    }
   }
-  return `[Compressed Request Body: ${buffer.length} bytes, encoding: ${encoding}]`
+  if (encoding.includes('br')) {
+    try {
+      const decompressed = brotliDecompressSync(buffer).toString('utf-8')
+      console.log(`[decodeRequestBody] brotli 解压成功，解码后长度=${decompressed.length}`)
+      return decompressed
+    } catch (e) {
+      console.warn('[Proxy] 请求体 brotli 解压失败，尝试原始解码:', (e as Error).message)
+    }
+  }
+
+  // 第二步：已知文本类型直接 UTF-8 解码，跳过二进制检测
+  // 修复：原 isLikelyBinary 逻辑会把合法 UTF-8 多字节序列的后续字节（0x80-0xbf）误判为二进制
+  const textContentTypePatterns = [
+    'application/json',
+    'text/',
+    'application/xml',
+    'application/xhtml+xml',
+    'application/javascript',
+    'application/css',
+    'application/x-www-form-urlencoded',
+    'application/graphql',
+  ]
+  const isKnownTextType = textContentTypePatterns.some(p =>
+    contentType === p || (p.endsWith('/') && contentType.startsWith(p.replace(/\/$/, '')))
+  )
+  if (isKnownTextType) {
+    const result = buffer.toString('utf-8')
+    console.log(`[decodeRequestBody] 已知文本类型"${contentType}"，直接 UTF-8 解码，前100字符: ${result.slice(0, 100)}`)
+    return result
+  }
+
+  // 第三步：未知类型 → 做二进制检测（对齐 decodeResponseBody 逻辑）
+  const isLikelyBinary = buffer.some((byte, i) => {
+    if (byte === 0) return true
+    if (byte > 0x7f && i + 1 < buffer.length && buffer[i + 1] > 0x7f) {
+      if (byte < 0xc0 || byte > 0xf7) return true
+    }
+    return false
+  })
+  console.log(`[decodeRequestBody] isLikelyBinary=${isLikelyBinary}, 最终处理: ${isLikelyBinary ? 'Base64(HEX模式)' : 'UTF-8文本'}`)
+  if (isLikelyBinary) {
+    if (buffer.length <= 5 * 1024 * 1024) {
+      return `[Base64:${contentType || 'application/octet-stream'}:${buffer.length}:${buffer.toString('base64')}]`
+    }
+    return `[Body too large: ${buffer.length} bytes, Content-Type: ${contentType || 'application/octet-stream'}]`
+  }
+  const result = buffer.toString('utf-8')
+  console.log(`[decodeRequestBody] UTF-8解码成功，前100字符: ${result.slice(0, 100)}`)
+  return result
 }
 
 /**

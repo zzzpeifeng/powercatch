@@ -73,9 +73,12 @@
         <!-- AI 分析实时输出 -->
         <div v-if="store.phase === 'analyzing' || store.agentThinking" class="mb-4 p-3 bg-gray-100 dark:bg-gray-800 rounded-lg">
           <p class="text-xs text-gray-500 dark:text-gray-400 mb-2">AI 分析过程</p>
-          <div class="text-sm text-gray-700 dark:text-gray-300 font-mono whitespace-pre-wrap max-h-64 overflow-y-auto">
-            {{ store.agentThinking || '等待 AI 分析...' }}
-          </div>
+          <div
+            v-if="store.agentThinking"
+            class="prose-think max-h-64 overflow-y-auto"
+            v-html="renderedThinking"
+          />
+          <div v-else class="text-xs text-gray-400 dark:text-gray-500">等待 AI 分析...</div>
         </div>
 
         <!-- 工具调用历史 -->
@@ -125,17 +128,6 @@
           </button>
         </div>
       </div>
-
-      <!-- 实时日志 -->
-      <div class="card p-0 overflow-hidden">
-        <AnalysisLogViewer
-          :logs="store.logs"
-          :auto-scroll="store.autoScroll"
-          :connected="store.sseConnected"
-          @clear="store.clearLogs()"
-          @update:auto-scroll="store.autoScroll = $event"
-        />
-      </div>
     </div>
   </div>
 </template>
@@ -144,10 +136,15 @@
 import { computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAiAnalysisStore } from '../stores/ai-analysis-store'
-import AnalysisLogViewer from '../components/AnalysisLogViewer.vue'
+import { renderMarkdown } from '../utils/markdown'
 
 const router = useRouter()
 const store = useAiAnalysisStore()
+
+const renderedThinking = computed(() => {
+  if (!store.agentThinking) return ''
+  return renderMarkdown(store.agentThinking)
+})
 
 const phaseTitle = computed(() => {
   const titles: Record<string, string> = {
@@ -273,5 +270,52 @@ onUnmounted(() => {
   to {
     transform: rotate(360deg);
   }
+}
+
+/* AI 分析过程 Markdown 渲染样式 */
+.prose-think {
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+.prose-think :deep(h1) { font-size: 0.875rem; font-weight: 700; margin: 0.5rem 0 0.25rem; color: var(--color-text); }
+.prose-think :deep(h2) { font-size: 0.8125rem; font-weight: 600; margin: 0.5rem 0 0.25rem; color: var(--color-text); }
+.prose-think :deep(h3) { font-size: 0.75rem; font-weight: 600; margin: 0.375rem 0 0.125rem; color: var(--color-text); }
+.prose-think :deep(p) { margin: 0.25rem 0; }
+.prose-think :deep(ul), .prose-think :deep(ol) { margin: 0.25rem 0; padding-left: 1.25rem; }
+.prose-think :deep(li) { margin: 0.125rem 0; }
+.prose-think :deep(ul li) { list-style-type: disc; }
+.prose-think :deep(ol li) { list-style-type: decimal; }
+.prose-think :deep(code) {
+  background: var(--color-surface);
+  padding: 0.0625rem 0.25rem;
+  border-radius: 0.25rem;
+  font-size: 0.6875rem;
+  color: var(--color-primary);
+}
+.prose-think :deep(pre) {
+  background: var(--color-surface);
+  padding: 0.5rem 0.625rem;
+  border-radius: 0.25rem;
+  overflow-x: auto;
+  margin: 0.375rem 0;
+  border: 1px solid var(--color-border);
+}
+.prose-think :deep(pre code) {
+  background: none;
+  padding: 0;
+  font-size: 0.6875rem;
+  color: var(--color-text);
+  word-break: break-all;
+}
+.prose-think :deep(strong) { color: var(--color-text); font-weight: 600; }
+.prose-think :deep(blockquote) {
+  border-left: 2px solid var(--color-border);
+  padding-left: 0.5rem;
+  margin: 0.375rem 0;
+  color: var(--color-text-secondary);
+  font-style: italic;
 }
 </style>

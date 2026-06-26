@@ -104,7 +104,7 @@
         <!-- 分析报告（Markdown） -->
         <div v-if="store.deepAnalysisResult?.analysisSummary" class="card p-4 mb-4">
           <h3 class="text-sm font-semibold mb-3 text-gray-900 dark:text-gray-100">分析报告</h3>
-          <div class="prose prose-sm dark:prose-invert max-w-none" v-html="renderedAnalysis" />
+          <div class="prose max-w-none" v-html="renderedAnalysis" />
         </div>
       </template>
     </div>
@@ -170,97 +170,123 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-/* 使用全局 .card 类，无需重复定义 */
+/*
+ * 分析报告 Markdown 样式
+ * 字号体系与软件整体一致：正文 text-xs(12px)，标题 text-xs~text-sm(12~14px)
+ * 所有元素 overflow-wrap 防止破板
+ */
 
-/* Markdown 内容样式 - 支持亮/暗模式 */
-.prose h1 { font-size: 1.25rem; font-weight: 700; margin: 1rem 0 0.5rem; color: var(--color-text); }
-.prose h2 { font-size: 1.125rem; font-weight: 600; margin: 0.75rem 0 0.5rem; color: var(--color-text); }
-.prose h3 { font-size: 1rem; font-weight: 600; margin: 0.5rem 0 0.25rem; color: var(--color-text); }
-.prose h4 { font-size: 0.875rem; font-weight: 600; margin: 0.5rem 0 0.25rem; color: var(--color-text); }
-.prose p { margin: 0.5rem 0; color: var(--color-text-secondary); line-height: 1.6; }
-.prose ul, .prose ol { margin: 0.5rem 0; padding-left: 1.5rem; }
-.prose li { margin: 0.25rem 0; color: var(--color-text-secondary); }
-.prose ul li { list-style-type: disc; }
-.prose ol li { list-style-type: decimal; }
-.prose code {
+/* 容器：防破板 */
+.prose {
+  font-size: 0.75rem;          /* 12px = text-xs */
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+/* 标题 */
+.prose :deep(h1) { font-size: 0.875rem; font-weight: 700; margin: 0.75rem 0 0.375rem; color: var(--color-text); }
+.prose :deep(h2) { font-size: 0.8125rem; font-weight: 600; margin: 0.625rem 0 0.375rem; color: var(--color-text); }
+.prose :deep(h3) { font-size: 0.75rem; font-weight: 600; margin: 0.5rem 0 0.25rem; color: var(--color-text); }
+.prose :deep(h4) { font-size: 0.75rem; font-weight: 600; margin: 0.5rem 0 0.25rem; color: var(--color-text); }
+
+/* 段落 */
+.prose :deep(p) { margin: 0.375rem 0; line-height: 1.5; }
+
+/* 列表 */
+.prose :deep(ul), .prose :deep(ol) { margin: 0.375rem 0; padding-left: 1.25rem; }
+.prose :deep(li) { margin: 0.125rem 0; }
+.prose :deep(ul li) { list-style-type: disc; }
+.prose :deep(ol li) { list-style-type: decimal; }
+
+/* 行内代码 */
+.prose :deep(code) {
   background: var(--color-bg);
-  padding: 0.125rem 0.375rem;
+  padding: 0.0625rem 0.25rem;
   border-radius: 0.25rem;
-  font-size: 0.8125rem;
+  font-size: 0.6875rem;        /* 11px */
   color: var(--color-primary);
+  word-break: break-all;
 }
-.prose pre {
+
+/* 代码块 */
+.prose :deep(pre) {
   background: var(--color-bg);
-  padding: 1rem;
-  border-radius: 0.5rem;
+  padding: 0.625rem 0.75rem;
+  border-radius: 0.375rem;
   overflow-x: auto;
-  margin: 1rem 0;
+  margin: 0.5rem 0;
+  border: 1px solid var(--color-border);
 }
-.prose pre code {
+.prose :deep(pre code) {
   background: none;
   padding: 0;
-  font-size: 0.8125rem;
+  font-size: 0.6875rem;
   color: var(--color-text);
+  word-break: break-all;
 }
-.prose blockquote {
-  border-left: 3px solid var(--color-border);
-  padding-left: 1rem;
-  margin: 1rem 0;
+
+/* 引用块 */
+.prose :deep(blockquote) {
+  border-left: 2px solid var(--color-border);
+  padding-left: 0.75rem;
+  margin: 0.5rem 0;
   color: var(--color-text-secondary);
   font-style: italic;
 }
-.prose table {
+
+/* 表格（含防破板容器） */
+.prose :deep(.md-table-wrapper) {
+  overflow-x: auto;
+  margin: 0.5rem 0;
+  border-radius: 0.375rem;
+  border: 1px solid var(--color-border);
+}
+.prose :deep(.md-table) {
   width: 100%;
   border-collapse: collapse;
-  margin: 1rem 0;
+  font-size: 0.75rem;
 }
-.prose th, .prose td {
+.prose :deep(.md-table th),
+.prose :deep(.md-table td) {
   border: 1px solid var(--color-border);
-  padding: 0.5rem;
+  padding: 0.375rem 0.5rem;
   text-align: left;
 }
-.prose th {
+.prose :deep(.md-table th) {
   background: var(--color-bg);
   font-weight: 600;
   color: var(--color-text);
 }
-.prose td {
+.prose :deep(.md-table td) {
   color: var(--color-text-secondary);
 }
-.prose a {
+
+/* 链接 */
+.prose :deep(a) {
   color: var(--color-primary);
-  text-decoration: underline;
+  word-break: break-all;
 }
-.prose a:hover {
+.prose :deep(a:hover) {
   color: var(--color-primary-hover);
 }
-.prose strong {
-  color: var(--color-text);
-  font-weight: 600;
+
+/* 粗体 / 斜体 */
+.prose :deep(strong) { color: var(--color-text); font-weight: 600; }
+.prose :deep(em) { color: var(--color-text-secondary); font-style: italic; }
+
+/* 分隔线 */
+.prose :deep(hr) {
+  border: none;
+  border-top: 1px solid var(--color-border);
+  margin: 0.75rem 0;
 }
-.prose em {
-  color: var(--color-text-secondary);
-  font-style: italic;
-}
-.md-table-wrapper {
-  overflow-x: auto;
-  margin: 1rem 0;
-}
-.md-table {
-  width: 100%;
-  border-collapse: collapse;
-}
-.md-table th, .md-table td {
-  border: 1px solid var(--color-border);
-  padding: 0.5rem;
-  text-align: left;
-}
-.md-table th {
-  background: var(--color-bg);
-  font-weight: 600;
-  color: var(--color-text);
-}
-.md-table td {
-  color: var(--color-text-secondary);
+
+/* 图片 */
+.prose :deep(img) {
+  max-width: 100%;
+  height: auto;
+  border-radius: 0.25rem;
 }
 </style>

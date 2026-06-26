@@ -1,7 +1,7 @@
 <template>
   <div class="h-full overflow-y-auto bg-gray-50 dark:bg-gray-900">
     <!-- 内容区 -->
-    <div class="max-w-5xl mx-auto px-4 py-6">
+    <div class="max-w-5xl mx-auto px-4 py-4">
       <!-- M1: Git 不可用提示 -->
       <template v-if="store.gitAvailable === false && !store.gitChecking">
         <GitNotInstalled
@@ -21,7 +21,7 @@
             >
               {{ requestInfo.method }}
             </span>
-            <span class="text-sm font-medium text-gray-800 dark:text-gray-200">
+            <span class="text-xs font-medium text-gray-800 dark:text-gray-200">
               {{ requestInfo.path }}
             </span>
           </div>
@@ -31,7 +31,7 @@
         </div>
 
         <!-- 仓库配置卡片 -->
-        <div v-if="!store.analyzing && !store.result" class="card p-6 mb-4">
+        <div v-if="!store.analyzing && !store.result" class="card p-4 mb-4">
           <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-4">
             代码仓库配置
           </h3>
@@ -46,7 +46,7 @@
                 <input
                   v-model="store.repoConfig.repoUrl"
                   type="text"
-                  class="input w-full pl-9 pr-8"
+                  class="input input-sm w-full pl-9 pr-8"
                   placeholder="https://github.com/org/repo"
                   @focus="showHistory = true"
                   @blur="hideHistory"
@@ -80,7 +80,7 @@
                     <div
                       v-for="url in filteredHistory"
                       :key="url"
-                      class="px-3 py-2 text-sm cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"
+                      class="px-3 py-1.5 text-xs cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"
                       @mousedown.prevent="selectHistoryUrl(url)"
                     >
                       <svg class="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
@@ -105,49 +105,49 @@
             <label class="label text-xs text-gray-500 dark:text-gray-400 mb-1 block">
               分支
             </label>
-            <div class="flex gap-2">
-              <div class="flex-1 relative">
-                <!-- 分支下拉（优先显示 select，否则显示 input） -->
-                <select
-                  v-if="branches.length > 0"
-                  v-model="store.repoConfig.branch"
-                  class="input w-full pl-8 pr-8 appearance-none bg-white dark:bg-gray-800 dark:text-gray-200"
-                >
-                  <option v-for="branch in branches" :key="branch" :value="branch" class="bg-white dark:bg-gray-800">
-                    {{ branch }}
-                  </option>
-                </select>
-                <input
-                  v-else
-                  v-model="store.repoConfig.branch"
-                  type="text"
-                  class="input w-full pl-8"
-                  placeholder="输入分支名，再点右侧按钮获取"
-                />
-                <!-- 输入框左侧分支图标 -->
-                <div class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
-                  <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" />
-                  </svg>
-                </div>
-                <!-- select 右侧下拉箭头 -->
-                <div v-if="branches.length > 0" class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
-                  <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <div class="relative">
+              <!-- 分支下拉（优先显示 select，否则显示 input） -->
+              <select
+                v-if="branches.length > 0"
+                v-model="store.repoConfig.branch"
+                class="input input-sm w-full pl-8 pr-16 appearance-none bg-white dark:bg-gray-800 dark:text-gray-200"
+              >
+                <option v-for="branch in branches" :key="branch" :value="branch" class="bg-white dark:bg-gray-800">
+                  {{ branch }}
+                </option>
+              </select>
+              <input
+                v-else
+                v-model="store.repoConfig.branch"
+                type="text"
+                class="input input-sm w-full pl-8 pr-16"
+                placeholder="输入分支名，点击右侧刷新"
+              />
+              <!-- 左侧分支图标 -->
+              <div class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" />
+                </svg>
+              </div>
+              <!-- 右侧：下拉箭头 + 刷新按钮 -->
+              <div class="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
+                <div v-if="branches.length > 0" class="text-gray-400 pointer-events-none">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
                   </svg>
                 </div>
+                <button
+                  type="button"
+                  class="p-1 rounded text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                  :disabled="fetchingBranches"
+                  @click="fetchBranches"
+                  title="从仓库获取分支列表"
+                >
+                  <svg class="w-3.5 h-3.5" :class="fetchingBranches ? 'animate-spin' : ''" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182" />
+                  </svg>
+                </button>
               </div>
-              <button
-                class="btn btn-secondary text-xs px-3 flex items-center gap-1"
-                :disabled="fetchingBranches"
-                @click="fetchBranches"
-                title="从仓库获取分支列表"
-              >
-                <svg class="w-4 h-4" :class="fetchingBranches ? 'animate-spin' : ''" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182" />
-                </svg>
-                <span v-if="fetchingBranches" class="text-xs">获取中</span>
-              </button>
             </div>
             <p v-if="branches.length > 0" class="mt-1 text-xs text-gray-400 dark:text-gray-500">
               已获取 {{ branches.length }} 个分支，可输入关键字筛选
@@ -160,31 +160,31 @@
               Access Token
               <span class="text-gray-400 font-normal">（私有仓库需要）</span>
             </label>
-            <div class="flex gap-2">
-              <div class="flex-1 relative">
-                <input
-                  v-model="store.repoConfig.accessToken"
+            <div class="relative">
+              <input
+                v-model="store.repoConfig.accessToken"
                   :type="showToken ? 'text' : 'password'"
-                  class="input flex-1 pl-9"
+                  class="input input-sm w-full pl-9 pr-9"
                   placeholder="ghp_xxxxxxxxxxxx / oauth2 token"
                 />
                 <div class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
-                  <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.967-.247-1.9.145-2.496.934a.75.75 0 01-.243.912c-.725.565-1.775.93-2.943.756-1.333-.193-2.22-1.162-2.22-2.157V8.25a6 6 0 016-6h2.25a3 3 0 013 3z" />
                     <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 13.5h-1.5a1.5 1.5 0 01-1.5-1.5v-1.5a1.5 1.5 0 011.5-1.5h1.5m0 4.5h-1.5a1.5 1.5 0 01-1.5-1.5v-1.5a1.5 1.5 0 011.5-1.5h1.5m0 4.5v-4.5m0 4.5h3.75m-3.75 0H2.25m3 0h1.5m0 0v-4.5" />
                   </svg>
                 </div>
-              </div>
+              <!-- 右侧显示/隐藏按钮 -->
               <button
-                class="btn btn-secondary text-xs px-3 flex items-center gap-1"
+                type="button"
+                class="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
                 @click="showToken = !showToken"
                 :title="showToken ? '隐藏 Token' : '显示 Token'"
               >
-                <svg v-if="!showToken" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                <svg v-if="!showToken" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.639 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.639 0-8.573-3.007-9.963-7.178z" />
                   <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                 </svg>
-                <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                <svg v-else class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M3.98 8.223A10.503 10.503 0 002.25 12c2.25 4.494 6.161 7.5 10.5 7.5 1.768 0 3.44-.487 4.865-1.328M19.5 12c-.75-1.5-2.25-4.5-5.25-6.75M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                   <path stroke-linecap="round" stroke-linejoin="round" d="M3 3l18 18" stroke="currentColor" stroke-width="2" />
                 </svg>
@@ -193,7 +193,7 @@
           </div>
 
           <!-- 认证方式 -->
-          <div class="mb-6">
+          <div class="mb-4">
             <label class="label text-xs text-gray-500 dark:text-gray-400 mb-1 block">
               认证方式
             </label>
@@ -216,7 +216,7 @@
           </div>
 
           <!-- 语言选择（v1.0 只启用 Go） -->
-          <div class="mb-6">
+          <div class="mb-4">
             <label class="label text-xs text-gray-500 dark:text-gray-400 mb-1 block">
               项目语言
             </label>
@@ -237,29 +237,29 @@
           <!-- 磁盘空间警告 -->
           <div
             v-if="diskWarning"
-            class="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg px-4 py-3 mb-4"
+            class="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg px-3 py-2 mb-3"
           >
-            <p class="text-sm text-yellow-600 dark:text-yellow-400">{{ diskWarning }}</p>
+            <p class="text-xs text-yellow-600 dark:text-yellow-400">{{ diskWarning }}</p>
           </div>
 
           <!-- 错误信息 -->
           <div
             v-if="store.error && !store.analyzing"
-            class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg px-4 py-3 mb-4"
+            class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg px-3 py-2 mb-3"
           >
-            <p class="text-sm text-red-600 dark:text-red-400">{{ store.error }}</p>
+            <p class="text-xs text-red-600 dark:text-red-400">{{ store.error }}</p>
           </div>
 
           <!-- 操作按钮 -->
-          <div class="flex justify-end gap-3">
+          <div class="flex justify-end gap-2">
             <button
-              class="btn btn-secondary"
+              class="btn btn-secondary text-xs"
               @click="$router.push('/')"
             >
               返回主页
             </button>
             <button
-              class="btn btn-primary"
+              class="btn btn-primary text-xs"
               :disabled="!canStartAnalysis || analyzing"
               @click="handleStartAnalysis"
             >
@@ -277,10 +277,10 @@
         />
 
         <!-- 分析中状态区 -->
-        <div v-if="store.analyzing" class="card p-6 mb-4">
-          <div class="flex items-center gap-3 mb-4">
+        <div v-if="store.analyzing" class="card p-4 mb-4">
+          <div class="flex items-center gap-3 mb-3">
             <span class="spinner spinner-dark"></span>
-            <span class="text-sm font-medium text-gray-700 dark:text-gray-300">
+            <span class="text-xs font-medium text-gray-700 dark:text-gray-300">
               <!-- 扫描进度 -->
               <template v-if="store.scanProgress">
                 <span v-if="store.scanProgress.phase === 'scan-mapping'">扫描路由映射...</span>
@@ -319,7 +319,7 @@
           <!-- 流式输出文本 -->
           <div
             v-if="store.streamContent"
-            class="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 mb-4 max-h-64 overflow-y-auto border border-gray-200 dark:border-gray-700"
+            class="bg-gray-50 dark:bg-gray-800 rounded-lg p-3 mb-3 max-h-64 overflow-y-auto border border-gray-200 dark:border-gray-700"
           >
             <pre class="text-xs text-gray-700 dark:text-gray-300 whitespace-pre-wrap font-mono">{{ store.streamContent }}</pre>
           </div>
@@ -327,7 +327,7 @@
           <!-- 中断按钮 -->
           <div class="flex justify-end">
             <button
-              class="btn btn-danger text-sm"
+              class="btn btn-danger text-xs"
               @click="store.cancelAnalysis()"
             >
               中断分析
@@ -336,11 +336,11 @@
         </div>
 
         <!-- 结果展示区 -->
-        <div v-if="store.result" class="card p-6">
+        <div v-if="store.result" class="card p-4">
           <!-- Tab Bar -->
-          <div class="tab-bar flex border-b border-gray-200 dark:border-gray-700 mb-4">
+          <div class="tab-bar flex border-b border-gray-200 dark:border-gray-700 mb-3">
             <button
-              class="tab-item px-4 py-2 text-sm font-medium border-b-2 transition-colors"
+              class="tab-item px-3 py-1.5 text-xs font-medium border-b-2 transition-colors"
               :class="activeTab === 'analysis'
                 ? 'text-blue-600 dark:text-blue-400 border-blue-600 dark:border-blue-400'
                 : 'text-gray-500 dark:text-gray-400 border-transparent hover:text-gray-700 dark:hover:text-gray-300'"
@@ -349,7 +349,7 @@
               链路分析
             </button>
             <button
-              class="tab-item px-4 py-2 text-sm font-medium border-b-2 transition-colors"
+              class="tab-item px-3 py-1.5 text-xs font-medium border-b-2 transition-colors"
               :class="activeTab === 'curls'
                 ? 'text-blue-600 dark:text-blue-400 border-blue-600 dark:border-blue-400'
                 : 'text-gray-500 dark:text-gray-400 border-transparent hover:text-gray-700 dark:hover:text-gray-300'"
@@ -368,7 +368,7 @@
           <!-- Tab 1: 链路分析 -->
           <div v-show="activeTab === 'analysis'">
             <div
-              class="prose prose-sm dark:prose-invert max-w-none"
+              class="prose max-w-none"
               v-html="renderedAnalysis"
             ></div>
           </div>
@@ -376,7 +376,7 @@
           <!-- Tab 2: curl 测试用例 -->
           <div v-show="activeTab === 'curls'">
             <!-- 路由信息 -->
-            <div v-if="store.result.routeInfo" class="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+            <div v-if="store.result.routeInfo" class="mb-3 p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
               <p class="text-xs text-blue-600 dark:text-blue-400">
                 <strong>路由信息:</strong> {{ store.result.routeInfo }}
               </p>
@@ -392,30 +392,30 @@
               />
             </div>
             <div v-else class="text-center py-8 text-gray-500 dark:text-gray-400">
-              <p class="text-sm">未生成测试用例，请查看「链路分析」Tab 了解分析详情</p>
+              <p class="text-xs">未生成测试用例，请查看「链路分析」Tab 了解分析详情</p>
             </div>
 
             <!-- 底部操作栏 -->
-            <div class="flex justify-between items-center mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
+            <div class="flex justify-between items-center mt-4 pt-3 border-t border-gray-200 dark:border-gray-700">
               <div class="text-xs text-gray-500 dark:text-gray-400">
                 模型: {{ store.result?.modelName || '未知' }} | 分析时间: {{ formatTime(store.result?.analyzedAt || '') }}
               </div>
-              <div class="flex gap-3">
+              <div class="flex gap-2">
                 <button
-                  class="btn btn-secondary text-sm"
+                  class="btn btn-secondary text-xs"
                   :disabled="store.cleanupStatus === 'cleaning'"
                   @click="handleCleanup"
                 >
                   {{ store.cleanupStatus === 'done' ? '已清理' : store.cleanupStatus === 'cleaning' ? '清理中...' : '清理临时仓库' }}
                 </button>
                 <button
-                  class="btn btn-secondary text-sm"
+                  class="btn btn-secondary text-xs"
                   @click="copyAllScenarios"
                 >
                   📋 复制全部用例
                 </button>
                 <button
-                  class="btn btn-primary text-sm"
+                  class="btn btn-primary text-xs"
                   @click="handleReanalyze"
                 >
                   🔄 重新分析
@@ -731,14 +731,38 @@ watch(() => store.result, (newResult) => {
   to { opacity: 1; transform: translateY(0); }
 }
 
-.prose h1 { font-size: 1.25rem; font-weight: 700; margin: 1rem 0 0.5rem; }
-.prose h2 { font-size: 1.125rem; font-weight: 600; margin: 0.75rem 0 0.5rem; }
-.prose h3 { font-size: 1rem; font-weight: 600; margin: 0.5rem 0 0.25rem; }
-.prose li { margin-left: 1.5rem; list-style-type: disc; }
-.prose code {
-  background: var(--color-surface);
-  padding: 0.125rem 0.375rem;
+.prose {
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+.prose :deep(h1) { font-size: 0.875rem; font-weight: 700; margin: 0.75rem 0 0.375rem; color: var(--color-text); }
+.prose :deep(h2) { font-size: 0.8125rem; font-weight: 600; margin: 0.625rem 0 0.375rem; color: var(--color-text); }
+.prose :deep(h3) { font-size: 0.75rem; font-weight: 600; margin: 0.5rem 0 0.25rem; color: var(--color-text); }
+.prose :deep(li) { margin: 0.125rem 0 0.125rem 1.25rem; list-style-type: disc; }
+.prose :deep(code) {
+  background: var(--color-bg);
+  padding: 0.0625rem 0.25rem;
   border-radius: 0.25rem;
-  font-size: 0.8125rem;
+  font-size: 0.6875rem;
+  color: var(--color-primary);
+  word-break: break-all;
+}
+.prose :deep(pre) {
+  background: var(--color-bg);
+  padding: 0.625rem 0.75rem;
+  border-radius: 0.375rem;
+  overflow-x: auto;
+  margin: 0.5rem 0;
+  border: 1px solid var(--color-border);
+}
+.prose :deep(pre code) {
+  background: none;
+  padding: 0;
+  font-size: 0.6875rem;
+  color: var(--color-text);
+  word-break: break-all;
 }
 </style>
