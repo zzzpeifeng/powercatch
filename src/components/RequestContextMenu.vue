@@ -49,6 +49,20 @@
 
         <div class="menu-divider"></div>
 
+        <!-- 重发请求 -->
+        <div class="menu-item" @click="handleReplay">
+          <span class="menu-icon">🔄</span>
+          <span class="menu-label">重发请求</span>
+        </div>
+
+        <!-- 编辑后重发 -->
+        <div class="menu-item" @click="handleEditAndReplay">
+          <span class="menu-icon">✏️</span>
+          <span class="menu-label">编辑后重发</span>
+        </div>
+
+        <div class="menu-divider"></div>
+
         <!-- 复制 URL -->
         <div class="menu-item" @click="handleCopyUrl">
           <span class="menu-icon">📋</span>
@@ -92,6 +106,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'close'): void
   (e: 'toast', message: string, type: string): void
+  (e: 'replay', request: CaptureRequest): void
+  (e: 'edit-and-replay', request: CaptureRequest): void
 }>()
 
 const breakpointStore = useBreakpointStore()
@@ -105,7 +121,7 @@ const showSubmenu = ref(false)
 // 菜单样式（处理边界检测）
 const menuStyle = computed(() => {
   const menuWidth = 220
-  const menuHeight = 200
+  const menuHeight = 300
   const padding = 10
 
   let x = props.x
@@ -166,7 +182,21 @@ async function handleAddBreakpoint(stage: 'request' | 'response' | 'both') {
     handleClose()
   }
 
-  // 复制 URL
+  // 重发请求
+async function handleReplay() {
+  if (!props.request) return
+  emit('replay', props.request)
+  handleClose()
+}
+
+// 编辑后重发
+async function handleEditAndReplay() {
+  if (!props.request) return
+  emit('edit-and-replay', props.request)
+  handleClose()
+}
+
+// 复制 URL
 async function handleCopyUrl() {
   if (!props.request) return
 

@@ -623,6 +623,9 @@ export const IPC_CHANNELS = {
   SESSION_LOAD_REQUESTS: 'session:load-requests',
   SESSION_DELETE: 'session:delete',
   SESSION_RENAME: 'session:rename',
+
+  // 请求重放
+  REQUEST_REPLAY: 'request:replay',
 } as const
 
 /** IPC 通道名称类型 */
@@ -956,6 +959,34 @@ export interface SSEAgentToolCall {
 export interface SSEAgentToolResult {
   tool: string
   result: any
+}
+
+/** 请求重放参数 */
+export interface ReplayRequest {
+  /** HTTP 方法 */
+  method: HttpMethod
+  /** 完整 URL */
+  url: string
+  /** 请求头 */
+  requestHeaders: HttpHeaders
+  /** 请求体 */
+  requestBody: string
+}
+
+/** 请求重放结果 */
+export interface ReplayResult {
+  /** 是否成功 */
+  success: boolean
+  /** HTTP 状态码 */
+  statusCode?: number
+  /** 响应头 */
+  responseHeaders?: HttpHeaders
+  /** 响应体 */
+  responseBody?: string
+  /** 耗时（ms） */
+  duration?: number
+  /** 错误信息 */
+  error?: string
 }
 
 /** 状态码分组（含 pending：请求已发出但响应未到达） */

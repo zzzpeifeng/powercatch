@@ -191,6 +191,7 @@ const electronAPI = {
     persist: (request: any) => ipcRenderer.invoke(IPC_CHANNELS.REQUEST_PERSIST, request),
     getAll: (limit?: number, offset?: number) =>
       ipcRenderer.invoke(IPC_CHANNELS.REQUEST_GET_ALL, { limit, offset }),
+    replay: (request: any) => ipcRenderer.invoke(IPC_CHANNELS.REQUEST_REPLAY, request),
   },
 
   // 设置

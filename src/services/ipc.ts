@@ -27,6 +27,8 @@ import type {
   AnalysisLogEntry,
   AIDeepAnalysisResult,
   CaptureSession,
+  ReplayRequest,
+  ReplayResult,
 } from './types'
 
 /** Electron API 类型（由 preload.ts 暴露） */
@@ -119,6 +121,7 @@ interface ElectronAPI {
   request: {
     persist: (request: CaptureRequest) => Promise<{ success: boolean; id?: number; error?: string }>
     getAll: (limit?: number, offset?: number) => Promise<{ success: boolean; requests?: any[]; error?: string }>
+    replay: (request: ReplayRequest) => Promise<ReplayResult>
   }
   settings: {
     get: (key: string) => Promise<string | null>
@@ -510,6 +513,29 @@ export const ipc = {
       const plainA = JSON.parse(JSON.stringify(requestA))
       const plainB = JSON.parse(JSON.stringify(requestB))
       return api.export.file(format, plainResult, plainA, plainB)
+    },
+  },
+
+  // ===== 请求数据 =====
+  request: {
+    persist: async (request: CaptureRequest): Promise<{ success: boolean; id?: number; error?: string }> => {
+      const api = getElectronAPI()
+      if (!api) return { success: false, error: 'Not in Electron environment' }
+      return api.request.persist(request)
+    },
+
+    getAll: async (limit?: number, offset?: number): Promise<{ success: boolean; requests?: any[]; error?: string }> => {
+      const api = getElectronAPI()
+      if (!api) return { success: false, error: 'Not in Electron environment' }
+      return api.request.getAll(limit, offset)
+    },
+
+    replay: async (request: ReplayRequest): Promise<ReplayResult> => {
+      const api = getElectronAPI()
+      if (!api) return { success: false, error: 'Not in Electron environment' }
+      // 防止 request 对象是 Vue reactive Proxy，先深拷贝成普通对象
+      const plainRequest = JSON.parse(JSON.stringify(request))
+      return api.request.replay(plainRequest)
     },
   },
 

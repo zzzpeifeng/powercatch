@@ -133,6 +133,14 @@
       :request="contextMenu.request"
       @close="contextMenu.visible = false"
       @toast="handleToast"
+      @replay="handleReplay"
+      @edit-and-replay="handleEditAndReplay"
+    />
+    <ReplayDialog
+      :visible="replayDialog.visible"
+      :request="replayDialog.request"
+      @close="replayDialog.visible = false"
+      @toast="handleToast"
     />
   </div>
 </template>
@@ -147,7 +155,9 @@ import { formatHostWithProtocol } from '../utils/url-formatter'
 import FilterPanel from './FilterPanel.vue'
 import ActiveFilterTags from './ActiveFilterTags.vue'
 import RequestContextMenu from './RequestContextMenu.vue'
+import ReplayDialog from './ReplayDialog.vue'
 import { useToast } from '../composables/useToast'
+import { ipc } from '../services/ipc'
 
 const store = useRequestStore()
 const {
@@ -158,6 +168,7 @@ const {
 const scrollerRef = ref<InstanceType<typeof RecycleScroller> | null>(null)
 const userScrolled = ref(false)
 const contextMenu = ref({ visible: false, x: 0, y: 0, request: null as CaptureRequest | null })
+const replayDialog = ref({ visible: false, request: null as CaptureRequest | null })
 const toast = useToast()
 
 function onScroll(): void {
@@ -186,6 +197,32 @@ function handleToast(message: string, type: string): void {
   }
 }
 
+async function handleReplay(request: CaptureRequest): Promise<void> {
+  try {
+    const result = await ipc.request.replay({
+      method: request.method,
+      url: request.url,
+      requestHeaders: request.requestHeaders,
+      requestBody: request.requestBody,
+    })
+
+    if (result.success) {
+      toast.success(`重发成功: ${result.statusCode} (${result.duration}ms)`)
+    } else {
+      toast.error(`重发失败: ${result.error}`)
+    }
+  } catch (error: any) {
+    toast.error(`重发失败: ${error.message}`)
+  }
+}
+
+function handleEditAndReplay(request: CaptureRequest): void {
+  replayDialog.value = {
+    visible: true,
+    request,
+  }
+}
+
 watch(
   () => store.flatTreeRows,
   () => {
@@ -206,15 +243,6 @@ defineEmits<{
   (e: 'select', request: CaptureRequest): void
   (e: 'toggle-check', request: CaptureRequest): void
 }>()
-
-// 诊断：watch displayRows 变化
-watch(
-  () => store.displayRows,
-  (newRows, oldRows) => {
-    console.log('[RequestList] displayRows 变化：', oldRows?.length, '→', newRows?.length)
-  },
-  { deep: true }
-)
 
 function methodClass(method: string): string {
   const classes: Record<string, string> = {

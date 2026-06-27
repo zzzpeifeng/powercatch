@@ -2,7 +2,9 @@
  * IPC 通信层 - 注册所有 IPC 通道处理
  */
 import { ipcMain, BrowserWindow, shell, dialog } from 'electron'
-import { IPC_CHANNELS, type BreakpointRule, type BreakpointResumePayload, type MapLocalRule, type MapRemoteRule, type AutoResponderRule } from '../src/services/types'
+import * as http from 'http'
+import * as https from 'https'
+import { IPC_CHANNELS, type BreakpointRule, type BreakpointResumePayload, type MapLocalRule, type MapRemoteRule, type AutoResponderRule, type ReplayRequest, type ReplayResult } from '../src/services/types'
 import * as sqlite from './db/sqlite'
 import { startProxy, stopProxy, getProxyStatus, getLocalIP, setDomainFilters, setDeviceAliases, setBreakpointRules as setProxyBreakpointRules, setMapLocalRules as setProxyMapLocalRules, setMapRemoteRules as setProxyMapRemoteRules, setAutoResponderRules, abortAllPendingInterceptions, resolveBreakpointResume, rejectBreakpointResume } from './proxy/mitm-server'
 import { generateCACert, isCAGenerated, getCertFilePath } from './proxy/ca-cert'
@@ -200,6 +202,82 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       return { success: true, requests }
     } catch (error: any) {
       return { success: false, error: error.message }
+    }
+  })
+
+  // ===== 请求重放 =====
+  ipcMain.handle(IPC_CHANNELS.REQUEST_REPLAY, async (_event, request: ReplayRequest): Promise<ReplayResult> => {
+    const startTime = Date.now()
+
+    try {
+      const url = new URL(request.url)
+      const isHttps = url.protocol === 'https:'
+      const httpModule = isHttps ? https : http
+
+      // 构建请求选项
+      const options: http.RequestOptions = {
+        hostname: url.hostname,
+        port: url.port || (isHttps ? 443 : 80),
+        path: url.pathname + url.search,
+        method: request.method,
+        headers: request.requestHeaders as Record<string, string>,
+        timeout: 30000,
+        // 忽略证书错误（因为是抓包工具）
+        rejectUnauthorized: false,
+      }
+
+      return new Promise<ReplayResult>((resolve) => {
+        const req = httpModule.request(options, (res) => {
+          const chunks: Buffer[] = []
+
+          res.on('data', (chunk: Buffer) => {
+            chunks.push(chunk)
+          })
+
+          res.on('end', () => {
+            const duration = Date.now() - startTime
+            const body = Buffer.concat(chunks).toString('utf-8')
+
+            resolve({
+              success: true,
+              statusCode: res.statusCode,
+              responseHeaders: res.headers as any,
+              responseBody: body,
+              duration,
+            })
+          })
+        })
+
+        req.on('error', (error) => {
+          resolve({
+            success: false,
+            duration: Date.now() - startTime,
+            error: error.message,
+          })
+        })
+
+        req.on('timeout', () => {
+          req.destroy()
+          resolve({
+            success: false,
+            duration: Date.now() - startTime,
+            error: '请求超时（30秒）',
+          })
+        })
+
+        // 发送请求体
+        if (request.requestBody && ['POST', 'PUT', 'PATCH'].includes(request.method)) {
+          req.write(request.requestBody)
+        }
+
+        req.end()
+      })
+    } catch (error: any) {
+      return {
+        success: false,
+        duration: Date.now() - startTime,
+        error: error.message,
+      }
     }
   })
 
