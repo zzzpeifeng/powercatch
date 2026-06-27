@@ -304,6 +304,15 @@ const electronAPI = {
     syncRules: (rules: any[]) => ipcRenderer.invoke(IPC_CHANNELS.AUTO_RESPONDER_SYNC_RULES, rules),
   },
 
+  // Rewrite Rules 功能
+  rewriteRules: {
+    addRule: (rule: any) => ipcRenderer.invoke(IPC_CHANNELS.REWRITE_RULES_ADD_RULE, rule),
+    removeRule: (ruleId: string) => ipcRenderer.invoke(IPC_CHANNELS.REWRITE_RULES_REMOVE_RULE, ruleId),
+    updateRule: (ruleId: string, updates: any) => ipcRenderer.invoke(IPC_CHANNELS.REWRITE_RULES_UPDATE_RULE, { ruleId, updates }),
+    getRules: () => ipcRenderer.invoke(IPC_CHANNELS.REWRITE_RULES_GET_RULES),
+    syncRules: (rules: any[]) => ipcRenderer.invoke(IPC_CHANNELS.REWRITE_RULES_SYNC_RULES, rules),
+  },
+
   // 会话管理
   session: {
     save: (session: any) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_SAVE, session),

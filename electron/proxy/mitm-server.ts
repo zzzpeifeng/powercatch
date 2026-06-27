@@ -18,6 +18,7 @@ import {
   type MapLocalRule,
   type MapRemoteRule,
   type AutoResponderRule,
+  type RewriteRule,
 } from '../../src/services/types'
 import { networkInterfaces } from 'os'
 import { SSLErrorClassifier, SSLErrorFormatter, type SSLErrorDetail } from '../services/ssl-error-handler'
@@ -27,6 +28,7 @@ import { findMatchingRule } from '../../src/utils/breakpoint-matcher'
 import { matchMapLocal } from '../../src/utils/map-local-matcher'
 import { matchMapRemote } from '../../src/utils/map-remote-matcher'
 import { matchAutoResponder } from '../../src/utils/auto-responder-matcher'
+import { matchRewriteRules } from '../../src/utils/rewrite-matcher'
 import { readFileSync } from 'fs'
 import { extname } from 'path'
 
@@ -49,6 +51,9 @@ let mapRemoteRules: MapRemoteRule[] = []
 
 // Auto Responder 相关状态
 let autoResponderRules: AutoResponderRule[] = []
+
+// Rewrite Rules 相关状态
+let rewriteRules: RewriteRule[] = []
 const pendingInterceptions = new Map<string, {
   resolve: (modified: InterceptSession) => void
   reject: (reason: string) => void
@@ -168,6 +173,13 @@ export function setMapRemoteRules(rules: MapRemoteRule[]): void {
  */
 export function setAutoResponderRules(rules: AutoResponderRule[]): void {
   autoResponderRules = rules.filter(r => r.enabled)
+}
+
+/**
+ * 设置 Rewrite Rules 规则
+ */
+export function setRewriteRules(rules: RewriteRule[]): void {
+  rewriteRules = rules.filter(r => r.enabled)
 }
 
 /**
@@ -573,8 +585,9 @@ function readLocalFile(localPath: string, customMime: string): { content: string
  * @param mapLocalRuleId 可选，Map Local 规则 ID
  * @param mapRemoteRuleId 可选，Map Remote 规则 ID
  * @param autoResponderRuleId 可选，Auto Responder 规则 ID
+ * @param rewriteRuleIds 可选，Rewrite Rules 规则 ID 数组
  */
-function pushRequestArrived(method: string, url: string, path: string, host: string, clientIp: string, mapLocalRuleId?: string, mapRemoteRuleId?: string, autoResponderRuleId?: string): string {
+function pushRequestArrived(method: string, url: string, path: string, host: string, clientIp: string, mapLocalRuleId?: string, mapRemoteRuleId?: string, autoResponderRuleId?: string, rewriteRuleIds?: string[]): string {
   const id = generateRequestId()
   const now = Date.now()
   const partial: CaptureRequest = {
@@ -598,6 +611,7 @@ function pushRequestArrived(method: string, url: string, path: string, host: str
     mapLocalRuleId,
     mapRemoteRuleId,
     autoResponderRuleId,
+    rewriteRuleIds,
     _arrivedAt: now,
   }
   pushToRenderer(partial, false)
@@ -786,7 +800,7 @@ export async function startProxy(port: number, win: BrowserWindow): Promise<bool
         }
       }
 
-      // ===== Map Remote 检查（Auto Responder 之后、断点之前） =====
+      // ===== Map Remote 检查（Auto Responder 之后、Rewrite Rules 之前） =====
       const mapRemoteMatch = matchMapRemote(url, method, mapRemoteRules)
       if (mapRemoteMatch) {
         const { target } = mapRemoteMatch
@@ -823,6 +837,82 @@ export async function startProxy(port: number, win: BrowserWindow): Promise<bool
         // 继续正常流程（调用 callback()，让 proxy 继续处理请求转发）
         // onRequestEnd 中的 pushRequestArrived() 会处理推送，传入 ctx._mapRemoteRuleId
         return callback()
+      }
+
+      // ===== Rewrite Rules 检查（Map Remote 之后、Breakpoint 之前） =====
+      const rewriteMatches = matchRewriteRules(url, method, rewriteRules)
+      if (rewriteMatches.length > 0) {
+        const rewriteRuleIds: string[] = []
+
+        for (const rule of rewriteMatches) {
+          const { rewrite } = rule
+
+          // URL 重写
+          if (rewrite.url) {
+            try {
+              const currentPath = ctx.proxyToServerRequestOptions.path || '/'
+              const newPath = currentPath.replace(
+                new RegExp(rewrite.url.pattern), rewrite.url.replacement
+              )
+              ctx.proxyToServerRequestOptions.path = newPath
+            } catch (e) {
+              console.error('[Rewrite Rules] URL rewrite error:', e)
+            }
+          }
+
+          // 请求头修改（使用 proxyToServerRequestOptions.headers）
+          if (rewrite.requestHeaders) {
+            const { add, remove, modify } = rewrite.requestHeaders
+            // 确保 headers 对象存在
+            if (!ctx.proxyToServerRequestOptions.headers) {
+              ctx.proxyToServerRequestOptions.headers = {}
+            }
+            // 添加请求头
+            for (const [key, value] of Object.entries(add || {})) {
+              ctx.proxyToServerRequestOptions.headers[key.toLowerCase()] = value
+            }
+            // 删除请求头
+            for (const key of remove || []) {
+              delete ctx.proxyToServerRequestOptions.headers[key.toLowerCase()]
+            }
+            // 修改请求头
+            for (const [key, value] of Object.entries(modify || {})) {
+              ctx.proxyToServerRequestOptions.headers[key.toLowerCase()] = value
+            }
+          }
+
+          // 请求体修改（在 onRequestEnd 中处理）
+          if (rewrite.requestBody) {
+            ctx._rewriteRequestBody = rewrite.requestBody
+          }
+
+          // 响应头修改（在 onResponse 中处理）
+          if (rewrite.responseHeaders) {
+            if (!ctx._rewriteResponseHeaders) {
+              ctx._rewriteResponseHeaders = []
+            }
+            ctx._rewriteResponseHeaders.push(rewrite.responseHeaders)
+          }
+
+          // 响应体修改（在 onResponse 中处理）
+          if (rewrite.responseBody) {
+            if (!ctx._rewriteResponseBody) {
+              ctx._rewriteResponseBody = []
+            }
+            ctx._rewriteResponseBody.push(rewrite.responseBody)
+          }
+
+          // 状态码覆盖（在 onResponse 中处理）
+          if (rewrite.statusCode) {
+            ctx._rewriteStatusCode = rewrite.statusCode
+          }
+
+          rewriteRuleIds.push(rule.id)
+        }
+
+        // 记录命中的规则 ID
+        ctx._rewriteRuleIds = rewriteRuleIds
+        console.log(`[Rewrite Rules] 🎯 命中 ${rewriteMatches.length} 条规则`)
       }
 
       // 检查是否命中断点规则
@@ -953,6 +1043,21 @@ export async function startProxy(port: number, win: BrowserWindow): Promise<bool
           ctx._requestHeaders = reqHeaders
           ctx._requestBody = decodeRequestBody(rawRequestBuffer, reqHeaders)
         }
+
+        // 应用 Rewrite Rules 请求体修改
+        if (ctx._rewriteRequestBody) {
+          const { pattern, replacement, fullReplace } = ctx._rewriteRequestBody
+          if (fullReplace !== undefined) {
+            ctx._requestBody = fullReplace
+          } else if (pattern && replacement !== undefined) {
+            try {
+              ctx._requestBody = (ctx._requestBody || '').replace(new RegExp(pattern, 'g'), replacement)
+            } catch (e) {
+              console.error('[Rewrite Rules] Request body replace error:', e)
+            }
+          }
+        }
+
         // 请求已到达代理，立即推送到前端（状态码 null，等响应回来再更新）
         ctx._requestId = pushRequestArrived(
           ctx._method || 'GET',
@@ -962,6 +1067,8 @@ export async function startProxy(port: number, win: BrowserWindow): Promise<bool
           ctx._clientIp || 'unknown',
           undefined,              // mapLocalRuleId（正常流程无 Map Local 命中）
           ctx._mapRemoteRuleId,   // mapRemoteRuleId（可能为 undefined）
+          undefined,              // autoResponderRuleId
+          ctx._rewriteRuleIds,    // rewriteRuleIds（可能为 undefined）
         )
         return callback()
       })
@@ -1081,10 +1188,55 @@ export async function startProxy(port: number, win: BrowserWindow): Promise<bool
 
       ctx.onResponseEnd((ctx: any, callback: any) => {
         const duration = ctx._startTime ? Date.now() - ctx._startTime : 0
-        const statusCode = ctx.serverToProxyResponse?.statusCode || null
+        let statusCode = ctx.serverToProxyResponse?.statusCode || null
         const rawResponseBody = Buffer.concat(responseChunks)
-        const responseHeaders = ctx.serverToProxyResponse?.headers || {}
-        const responseBody = decodeResponseBody(rawResponseBody, responseHeaders)
+        let responseHeaders = ctx.serverToProxyResponse?.headers || {}
+        let responseBody = decodeResponseBody(rawResponseBody, responseHeaders)
+
+        // 应用 Rewrite Rules 响应修改
+        // 状态码覆盖
+        if (ctx._rewriteStatusCode) {
+          statusCode = ctx._rewriteStatusCode
+        }
+
+        // 响应头修改
+        if (ctx._rewriteResponseHeaders && ctx._rewriteResponseHeaders.length > 0) {
+          const headers = { ...responseHeaders }
+          for (const rewrite of ctx._rewriteResponseHeaders) {
+            const { add, remove, modify } = rewrite
+            // 添加响应头
+            for (const [key, value] of Object.entries(add || {})) {
+              headers[key.toLowerCase()] = value
+            }
+            // 删除响应头
+            for (const key of remove || []) {
+              delete headers[key.toLowerCase()]
+            }
+            // 修改响应头
+            for (const [key, value] of Object.entries(modify || {})) {
+              headers[key.toLowerCase()] = value
+            }
+          }
+          responseHeaders = headers
+        }
+
+        // 响应体修改
+        if (ctx._rewriteResponseBody && ctx._rewriteResponseBody.length > 0) {
+          let body = responseBody
+          for (const rewrite of ctx._rewriteResponseBody) {
+            const { pattern, replacement, fullReplace } = rewrite
+            if (fullReplace !== undefined) {
+              body = fullReplace
+            } else if (pattern && replacement !== undefined) {
+              try {
+                body = body.replace(new RegExp(pattern, 'g'), replacement)
+              } catch (e) {
+                console.error('[Rewrite Rules] Response body replace error:', e)
+              }
+            }
+          }
+          responseBody = body
+        }
 
         // 响应已到达，更新已有请求（而非推送新请求）
         if (ctx._requestId) {

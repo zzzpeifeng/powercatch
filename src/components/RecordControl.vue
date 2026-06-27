@@ -47,7 +47,7 @@
     <!-- 右侧：下拉菜单 + 操作按钮 -->
     <div class="flex items-center gap-2">
       <!-- 工具下拉菜单 -->
-      <DropdownMenu ref="toolsMenuRef" label="工具" :badge-count="breakpointCount + mapLocalCount + mapRemoteCount + autoResponderCount">
+      <DropdownMenu ref="toolsMenuRef" label="工具" :badge-count="breakpointCount + mapLocalCount + mapRemoteCount + autoResponderCount + rewriteRulesCount">
         <template #icon>
           <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z" />
@@ -111,6 +111,22 @@
             class="min-w-[16px] h-[16px] flex items-center justify-center px-1 text-[9px] font-bold rounded-full bg-orange-500 text-white"
           >
             {{ autoResponderCount }}
+          </span>
+        </button>
+        <button
+          class="dropdown-item"
+          @click="$emit('toggle-rewrite-rules'); toolsMenuRef?.close()"
+        >
+          <svg class="w-4 h-4 text-teal-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
+            <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
+          </svg>
+          <span class="flex-1">Rewrite Rules</span>
+          <span
+            v-if="rewriteRulesCount > 0"
+            class="min-w-[16px] h-[16px] flex items-center justify-center px-1 text-[9px] font-bold rounded-full bg-teal-500 text-white"
+          >
+            {{ rewriteRulesCount }}
           </span>
         </button>
         <button
@@ -205,6 +221,8 @@ defineProps<{
   showMapRemoteRules: boolean
   autoResponderCount: number
   showAutoResponderRules: boolean
+  rewriteRulesCount: number
+  showRewriteRules: boolean
 }>()
 
 defineEmits<{
@@ -217,6 +235,7 @@ defineEmits<{
   (e: 'toggle-map-local'): void
   (e: 'toggle-map-remote'): void
   (e: 'toggle-auto-responder'): void
+  (e: 'toggle-rewrite-rules'): void
   (e: 'open-diff'): void
   (e: 'toggle-session-manager'): void
 }>()

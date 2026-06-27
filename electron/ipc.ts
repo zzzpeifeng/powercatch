@@ -4,9 +4,9 @@
 import { ipcMain, BrowserWindow, shell, dialog } from 'electron'
 import * as http from 'http'
 import * as https from 'https'
-import { IPC_CHANNELS, type BreakpointRule, type BreakpointResumePayload, type MapLocalRule, type MapRemoteRule, type AutoResponderRule, type ReplayRequest, type ReplayResult } from '../src/services/types'
+import { IPC_CHANNELS, type BreakpointRule, type BreakpointResumePayload, type MapLocalRule, type MapRemoteRule, type AutoResponderRule, type RewriteRule, type ReplayRequest, type ReplayResult } from '../src/services/types'
 import * as sqlite from './db/sqlite'
-import { startProxy, stopProxy, getProxyStatus, getLocalIP, setDomainFilters, setDeviceAliases, setBreakpointRules as setProxyBreakpointRules, setMapLocalRules as setProxyMapLocalRules, setMapRemoteRules as setProxyMapRemoteRules, setAutoResponderRules, abortAllPendingInterceptions, resolveBreakpointResume, rejectBreakpointResume } from './proxy/mitm-server'
+import { startProxy, stopProxy, getProxyStatus, getLocalIP, setDomainFilters, setDeviceAliases, setBreakpointRules as setProxyBreakpointRules, setMapLocalRules as setProxyMapLocalRules, setMapRemoteRules as setProxyMapRemoteRules, setAutoResponderRules, setRewriteRules as setProxyRewriteRules, abortAllPendingInterceptions, resolveBreakpointResume, rejectBreakpointResume } from './proxy/mitm-server'
 import { generateCACert, isCAGenerated, getCertFilePath } from './proxy/ca-cert'
 import { setSystemProxy, clearSystemProxy, getSystemProxyStatus } from './proxy/system-proxy'
 import { executeCompare, testConnection, isCompareInProgress } from './services/ai-service'
@@ -980,6 +980,79 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     }
   })
 
+  // ===== Rewrite Rules 功能 =====
+
+  ipcMain.handle(IPC_CHANNELS.REWRITE_RULES_GET_RULES, () => {
+    try {
+      const settings = sqlite.getAllSettings()
+      return settings.rewriteRules || []
+    } catch {
+      return []
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.REWRITE_RULES_ADD_RULE, async (_event, rule: Omit<RewriteRule, 'id' | 'createdAt'>) => {
+    try {
+      const settings = sqlite.getAllSettings()
+      const rules = settings.rewriteRules || []
+
+      const newRule: RewriteRule = {
+        ...rule,
+        id: `rewrite_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+        createdAt: new Date().toISOString(),
+      }
+
+      rules.push(newRule)
+      sqlite.saveAllSettings({ rewriteRules: rules })
+      setProxyRewriteRules(rules.filter(r => r.enabled))
+
+      return { success: true, rule: newRule }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.REWRITE_RULES_UPDATE_RULE, async (_event, { ruleId, updates }: { ruleId: string; updates: Partial<RewriteRule> }) => {
+    try {
+      const settings = sqlite.getAllSettings()
+      const rules = settings.rewriteRules || []
+      const index = rules.findIndex(r => r.id === ruleId)
+
+      if (index === -1) {
+        return { success: false, error: '规则不存在' }
+      }
+
+      rules[index] = { ...rules[index], ...updates }
+      sqlite.saveAllSettings({ rewriteRules: rules })
+      setProxyRewriteRules(rules.filter(r => r.enabled))
+
+      return { success: true }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.REWRITE_RULES_REMOVE_RULE, async (_event, ruleId: string) => {
+    try {
+      const settings = sqlite.getAllSettings()
+      const rules = (settings.rewriteRules || []).filter(r => r.id !== ruleId)
+      sqlite.saveAllSettings({ rewriteRules: rules })
+      setProxyRewriteRules(rules.filter(r => r.enabled))
+      return { success: true }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.REWRITE_RULES_SYNC_RULES, async (_event, rules: RewriteRule[]) => {
+    try {
+      setProxyRewriteRules(rules)
+      return { success: true }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
   // ===== AI 混合模式（使用 sse-manager.ts）=====
 
   /**
@@ -1118,5 +1191,13 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     setAutoResponderRules(autoResponderRules.filter(r => r.enabled))
   } catch (error) {
     console.error('[IPC] Failed to load auto responder rules:', error)
+  }
+
+  // 初始化时加载 Rewrite Rules 规则到 proxy
+  try {
+    const rewriteRules = initialSettings.rewriteRules || []
+    setProxyRewriteRules(rewriteRules.filter(r => r.enabled))
+  } catch (error) {
+    console.error('[IPC] Failed to load rewrite rules:', error)
   }
 }

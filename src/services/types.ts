@@ -53,6 +53,8 @@ export interface CaptureRequest {
   mapRemoteRuleId?: string
   /** 命中的 Auto Responder 规则 ID */
   autoResponderRuleId?: string
+  /** 命中的 Rewrite Rules 规则 ID（可能多个） */
+  rewriteRuleIds?: string[]
 }
 
 /** 响应更新数据（通过独立 channel 推送，仅包含响应相关字段） */
@@ -125,6 +127,8 @@ export interface AppSettings {
   mapRemoteRules?: MapRemoteRule[]
   /** Auto Responder 规则 */
   autoResponderRules?: AutoResponderRule[]
+  /** Rewrite Rules 规则 */
+  rewriteRules?: RewriteRule[]
   /** AI 代码分析配置 */
   aiCodeAnalysisConfig?: {
     repoUrl?: string
@@ -375,6 +379,73 @@ export interface MapRemoteRule {
   createdAt: string
 }
 
+/** Rewrite Rules 规则 */
+export interface RewriteRule {
+  /** 规则 ID */
+  id: string
+  /** 是否启用 */
+  enabled: boolean
+  /** 规则名称（用户自定义） */
+  name: string
+  /** 匹配模式 */
+  match: {
+    /** URL 通配符，如 *api.shopline.com/users* */
+    urlPattern: string
+    /** HTTP 方法过滤（空 = 所有方法） */
+    methods: HttpMethod[]
+  }
+  /** 重写配置 */
+  rewrite: {
+    /** URL 重写（可选） */
+    url?: {
+      /** 路径替换模式（正则表达式） */
+      pattern: string
+      /** 替换为 */
+      replacement: string
+    }
+    /** 请求头修改（可选） */
+    requestHeaders?: {
+      /** 添加的请求头 */
+      add: Record<string, string>
+      /** 删除的请求头 */
+      remove: string[]
+      /** 修改的请求头（覆盖） */
+      modify: Record<string, string>
+    }
+    /** 响应头修改（可选） */
+    responseHeaders?: {
+      /** 添加的响应头 */
+      add: Record<string, string>
+      /** 删除的响应头 */
+      remove: string[]
+      /** 修改的响应头（覆盖） */
+      modify: Record<string, string>
+    }
+    /** 请求体修改（可选） */
+    requestBody?: {
+      /** 替换模式（字符串匹配） */
+      pattern?: string
+      /** 替换为 */
+      replacement?: string
+      /** 完整替换（忽略 pattern） */
+      fullReplace?: string
+    }
+    /** 响应体修改（可选） */
+    responseBody?: {
+      /** 替换模式（字符串匹配） */
+      pattern?: string
+      /** 替换为 */
+      replacement?: string
+      /** 完整替换（忽略 pattern） */
+      fullReplace?: string
+    }
+    /** 状态码覆盖（可选） */
+    statusCode?: number
+  }
+  /** 创建时间 */
+  createdAt: string
+}
+
 /** Auto Responder 规则 */
 export interface AutoResponderRule {
   /** 规则 ID */
@@ -616,6 +687,13 @@ export const IPC_CHANNELS = {
   AUTO_RESPONDER_REMOVE_RULE: 'auto-responder:remove-rule',
   AUTO_RESPONDER_UPDATE_RULE: 'auto-responder:update-rule',
   AUTO_RESPONDER_SYNC_RULES: 'auto-responder:sync-rules',
+
+  // Rewrite Rules 功能
+  REWRITE_RULES_GET_RULES: 'rewrite-rules:get-rules',
+  REWRITE_RULES_ADD_RULE: 'rewrite-rules:add-rule',
+  REWRITE_RULES_REMOVE_RULE: 'rewrite-rules:remove-rule',
+  REWRITE_RULES_UPDATE_RULE: 'rewrite-rules:update-rule',
+  REWRITE_RULES_SYNC_RULES: 'rewrite-rules:sync-rules',
 
   // 会话管理
   SESSION_SAVE: 'session:save',

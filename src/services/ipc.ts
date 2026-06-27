@@ -19,6 +19,7 @@ import type {
   MapLocalRule,
   MapRemoteRule,
   AutoResponderRule,
+  RewriteRule,
   CodeAnalysisRequest,
   CodeAnalysisResult,
   CloneProgress,
@@ -196,6 +197,13 @@ interface ElectronAPI {
     updateRule: (ruleId: string, updates: Partial<AutoResponderRule>) => Promise<{ success: boolean; error?: string }>
     getRules: () => Promise<AutoResponderRule[]>
     syncRules: (rules: AutoResponderRule[]) => Promise<{ success: boolean; error?: string }>
+  }
+  rewriteRules: {
+    addRule: (rule: Omit<RewriteRule, 'id' | 'createdAt'>) => Promise<{ success: boolean; rule?: RewriteRule; error?: string }>
+    removeRule: (ruleId: string) => Promise<{ success: boolean; error?: string }>
+    updateRule: (ruleId: string, updates: Partial<RewriteRule>) => Promise<{ success: boolean; error?: string }>
+    getRules: () => Promise<RewriteRule[]>
+    syncRules: (rules: RewriteRule[]) => Promise<{ success: boolean; error?: string }>
   }
   session: {
     save: (session: Omit<CaptureSession, 'id' | 'createdAt'>) => Promise<{ success: boolean; id?: number; error?: string }>
@@ -877,6 +885,39 @@ export const ipc = {
       const api = getElectronAPI()
       if (!api) return { success: false, error: 'Not in Electron environment' }
       return api.autoResponder.syncRules(rules)
+    },
+  },
+
+  // ===== Rewrite Rules 功能 =====
+  rewriteRules: {
+    addRule: async (rule: Omit<RewriteRule, 'id' | 'createdAt'>): Promise<{ success: boolean; rule?: RewriteRule; error?: string }> => {
+      const api = getElectronAPI()
+      if (!api) return { success: false, error: 'Not in Electron environment' }
+      return api.rewriteRules.addRule(rule)
+    },
+
+    removeRule: async (ruleId: string): Promise<{ success: boolean; error?: string }> => {
+      const api = getElectronAPI()
+      if (!api) return { success: false, error: 'Not in Electron environment' }
+      return api.rewriteRules.removeRule(ruleId)
+    },
+
+    updateRule: async (ruleId: string, updates: Partial<RewriteRule>): Promise<{ success: boolean; error?: string }> => {
+      const api = getElectronAPI()
+      if (!api) return { success: false, error: 'Not in Electron environment' }
+      return api.rewriteRules.updateRule(ruleId, updates)
+    },
+
+    getRules: async (): Promise<RewriteRule[]> => {
+      const api = getElectronAPI()
+      if (!api) return []
+      return api.rewriteRules.getRules()
+    },
+
+    syncRules: async (rules: RewriteRule[]): Promise<{ success: boolean; error?: string }> => {
+      const api = getElectronAPI()
+      if (!api) return { success: false, error: 'Not in Electron environment' }
+      return api.rewriteRules.syncRules(rules)
     },
   },
 
