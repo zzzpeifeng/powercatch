@@ -77,6 +77,42 @@
 
         <div class="menu-divider"></div>
 
+        <!-- 导出为 -->
+        <div
+          class="menu-item has-submenu"
+          @mouseenter="showExportSubmenu = true"
+          @mouseleave="showExportSubmenu = false"
+        >
+          <span class="menu-icon">📤</span>
+          <span class="menu-label">导出为</span>
+          <span class="menu-arrow">▶</span>
+
+          <!-- 导出子菜单 -->
+          <div
+            v-if="showExportSubmenu"
+            class="submenu"
+            :style="submenuStyle"
+          >
+            <div class="menu-item" @click="handleExportCurl">
+              <span class="menu-label">cURL 命令</span>
+            </div>
+            <div class="menu-item" @click="handleExportPostman">
+              <span class="menu-label">Postman Collection</span>
+            </div>
+            <div class="menu-item" @click="handleExportJmeter">
+              <span class="menu-label">JMeter 脚本</span>
+            </div>
+            <div class="menu-item" @click="handleExportFetch">
+              <span class="menu-label">fetch (JavaScript)</span>
+            </div>
+            <div class="menu-item" @click="handleExportPython">
+              <span class="menu-label">Python requests</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="menu-divider"></div>
+
         <!-- 删除此请求 -->
         <div class="menu-item danger" @click="handleDelete">
           <span class="menu-icon">🗑️</span>
@@ -94,6 +130,12 @@ import { useBreakpointStore } from '../stores/breakpoint-store'
 import { useRequestStore } from '../stores/request-store'
 import { useAiAnalysisStore } from '../stores/ai-analysis-store'
 import { generateCurl } from '../utils/curl-generator'
+import {
+  exportPostmanCollection,
+  exportJmeterScript,
+  exportFetchCode,
+  exportPythonRequests,
+} from '../services/export-service'
 import type { CaptureRequest } from '../services/types'
 
 const props = defineProps<{
@@ -117,6 +159,7 @@ const aiAnalysisStore = useAiAnalysisStore()
 
 // 子菜单状态
 const showSubmenu = ref(false)
+const showExportSubmenu = ref(false)
 
 // 菜单样式（处理边界检测）
 const menuStyle = computed(() => {
@@ -237,6 +280,59 @@ async function handleCopyCurl() {
     emit('toast', 'cURL 命令已复制', 'success')
   }
 
+  handleClose()
+}
+
+// 导出为 cURL 文件
+async function handleExportCurl() {
+  if (!props.request) return
+  const curl = generateCurl(props.request)
+  try {
+    await navigator.clipboard.writeText(curl)
+    emit('toast', 'cURL 命令已复制到剪贴板', 'success')
+  } catch {
+    emit('toast', '导出失败', 'error')
+  }
+  handleClose()
+}
+
+// 导出为 Postman Collection
+function handleExportPostman() {
+  if (!props.request) return
+  exportPostmanCollection([props.request])
+  emit('toast', 'Postman Collection 已下载', 'success')
+  handleClose()
+}
+
+// 导出为 JMeter 脚本
+function handleExportJmeter() {
+  if (!props.request) return
+  exportJmeterScript([props.request])
+  emit('toast', 'JMeter 脚本已下载', 'success')
+  handleClose()
+}
+
+// 导出为 fetch 代码
+async function handleExportFetch() {
+  if (!props.request) return
+  const success = await exportFetchCode(props.request)
+  if (success) {
+    emit('toast', 'fetch 代码已复制到剪贴板', 'success')
+  } else {
+    emit('toast', '导出失败', 'error')
+  }
+  handleClose()
+}
+
+// 导出为 Python requests 代码
+async function handleExportPython() {
+  if (!props.request) return
+  const success = await exportPythonRequests(props.request)
+  if (success) {
+    emit('toast', 'Python requests 代码已复制到剪贴板', 'success')
+  } else {
+    emit('toast', '导出失败', 'error')
+  }
   handleClose()
 }
 
