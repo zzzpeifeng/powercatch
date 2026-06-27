@@ -96,6 +96,22 @@
       </div>
     </div>
 
+    <!-- GraphQL 操作类型 -->
+    <div class="mb-2">
+      <div class="text-[10px] font-medium text-gray-500 dark:text-gray-400 mb-1">GraphQL 操作</div>
+      <div class="flex flex-wrap gap-1">
+        <button
+          v-for="op in graphQLOperations"
+          :key="op.value"
+          class="px-2 py-0.5 text-[11px] rounded-full border transition-colors"
+          :class="isActive('graphQLOperations', op.value)
+            ? 'bg-indigo-100 dark:bg-indigo-900 border-indigo-300 dark:border-indigo-600 text-indigo-700 dark:text-indigo-300'
+            : 'bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-500'"
+          @click="store.toggleFilter('graphQLOperations', op.value)"
+        >{{ op.label }}</button>
+      </div>
+    </div>
+
     <!-- 底部统计 + 清除 -->
     <div class="flex items-center justify-between pt-1.5 border-t border-gray-100 dark:border-gray-700">
       <span class="text-[10px] text-gray-400 dark:text-gray-500">
@@ -119,6 +135,7 @@
 import { useRequestStore } from '../stores/request-store'
 import type {
   FilterState, StatusCodeGroup, ContentTypeGroup, DurationRange, SizeRange,
+  GraphQLFilterOperation,
 } from '../services/types'
 
 const store = useRequestStore()
@@ -161,6 +178,15 @@ const sizeRanges: { value: SizeRange; label: string }[] = [
   { value: 'small', label: '1-10KB' },
   { value: 'medium', label: '10-100KB' },
   { value: 'large', label: '>100KB' },
+]
+
+/** GraphQL 操作类型选项 */
+const graphQLOperations: { value: GraphQLFilterOperation; label: string }[] = [
+  { value: 'query', label: 'Query' },
+  { value: 'mutation', label: 'Mutation' },
+  { value: 'subscription', label: 'Subscription' },
+  { value: 'graphql', label: 'GraphQL (通用)' },
+  { value: 'non-graphql', label: '非 GraphQL' },
 ]
 
 /** 判断某个维度的某个值是否已选中 */

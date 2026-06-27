@@ -96,6 +96,14 @@
           <div class="flex items-center gap-1.5">
             <span class="text-xs font-medium" :class="methodClass(item.request!.method)">{{ item.request!.method }}</span>
             <span class="text-xs text-gray-700 dark:text-gray-300 truncate">{{ item.request!.path }}</span>
+            <!-- GraphQL operation name 标签 -->
+            <span
+              v-if="item.request!.isGraphQL && item.request!.graphQLOperationName"
+              class="text-[10px] px-1.5 py-0.5 rounded-full shrink-0"
+              :class="graphQLOperationClass(item.request!.graphQLOperationType)"
+            >
+              {{ item.request!.graphQLOperationName }}
+            </span>
           </div>
           <div class="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
             <span class="text-gray-500 dark:text-gray-400 shrink-0 font-mono tabular-nums">{{ formatTime(item.request!.capturedAt) }}</span>
@@ -253,6 +261,15 @@ function methodClass(method: string): string {
     PATCH: 'method-patch',
   }
   return classes[method] || 'badge bg-gray-100 text-gray-700'
+}
+
+function graphQLOperationClass(type?: string): string {
+  const classes: Record<string, string> = {
+    query: 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300',
+    mutation: 'bg-orange-100 dark:bg-orange-900 text-orange-700 dark:text-orange-300',
+    subscription: 'bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300',
+  }
+  return classes[type || ''] || 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
 }
 
 function statusClass(code: number | null): string {

@@ -55,6 +55,12 @@ export interface CaptureRequest {
   autoResponderRuleId?: string
   /** 命中的 Rewrite Rules 规则 ID（可能多个） */
   rewriteRuleIds?: string[]
+  /** 是否为 GraphQL 请求 */
+  isGraphQL?: boolean
+  /** GraphQL operation name */
+  graphQLOperationName?: string
+  /** GraphQL operation type */
+  graphQLOperationType?: 'query' | 'mutation' | 'subscription'
 }
 
 /** 响应更新数据（通过独立 channel 推送，仅包含响应相关字段） */
@@ -813,7 +819,12 @@ export interface FilterState {
   sizeRanges: SizeRange[]
   /** 设备 IP 列表（空数组 = 不过滤） */
   clientIps: string[]
+  /** GraphQL 请求类型（空数组 = 不过滤） */
+  graphQLOperations: GraphQLFilterOperation[]
 }
+
+/** GraphQL 过滤操作类型 */
+export type GraphQLFilterOperation = 'query' | 'mutation' | 'subscription' | 'graphql' | 'non-graphql'
 
 // ===== AI 混合模式类型定义（新增）=====
 

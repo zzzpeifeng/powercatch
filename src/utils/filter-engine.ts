@@ -5,6 +5,7 @@
 import type {
   CaptureRequest, FilterState,
   StatusCodeGroup, ContentTypeGroup, DurationRange, SizeRange,
+  GraphQLFilterOperation,
 } from '../services/types'
 
 // ===== 辅助函数 =====
@@ -47,6 +48,9 @@ function getDurationRange(duration: number | null): DurationRange {
   return 'very_slow'
 }
 
+// 模块级 TextEncoder 缓存，避免每次过滤都 new
+const textEncoder = new TextEncoder()
+
 /**
  * 将请求体大小映射到范围
  * 使用 TextEncoder 计算字节数（而非字符串长度，避免中文/二进制精度问题）
@@ -54,7 +58,7 @@ function getDurationRange(duration: number | null): DurationRange {
 function getSizeRange(requestBody: string): SizeRange {
   if (!requestBody || requestBody.length === 0) return 'empty'
   // TextEncoder 计算 UTF-8 字节数，比 .length 更准确
-  const bytes = new TextEncoder().encode(requestBody).length
+  const bytes = textEncoder.encode(requestBody).length
   if (bytes < 1024) return 'tiny'
   if (bytes < 10240) return 'small'
   if (bytes < 102400) return 'medium'
@@ -102,5 +106,26 @@ export function matchFilters(req: CaptureRequest, filter: FilterState): boolean 
     return false
   }
 
+  // GraphQL 过滤
+  if (filter.graphQLOperations.length > 0) {
+    const graphqlOp = getGraphQLOperation(req)
+    if (!filter.graphQLOperations.includes(graphqlOp)) return false
+  }
+
   return true
+}
+
+/**
+ * 获取请求的 GraphQL 操作类型
+ * 返回 'query' | 'mutation' | 'subscription' | 'graphql' | 'non-graphql'
+ */
+function getGraphQLOperation(req: CaptureRequest): GraphQLFilterOperation {
+  // 如果不是 GraphQL 请求，返回 'non-graphql'
+  if (!req.isGraphQL) return 'non-graphql'
+
+  // 如果有具体的 operation type，返回对应的类型
+  if (req.graphQLOperationType) return req.graphQLOperationType
+
+  // 如果是 GraphQL 请求但没有具体类型，返回通用 'graphql'
+  return 'graphql'
 }

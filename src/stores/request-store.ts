@@ -10,11 +10,12 @@
  */
 import { defineStore } from 'pinia'
 import { ref, computed, reactive } from 'vue'
-import type { CaptureRequest, RequestUpdate, CompareResult, LoadingStates, ProxyStatus, DomainSortMode, DomainNode, FlatTreeNode, FilterState } from '../services/types'
+import type { CaptureRequest, RequestUpdate, CompareResult, LoadingStates, ProxyStatus, DomainSortMode, DomainNode, FlatTreeNode, FilterState, CaptureSession } from '../services/types'
 import { ipc } from '../services/ipc'
-import { generateMatchKey, groupByMatchKey } from '../utils/request-matcher'
+import { generateMatchKey } from '../utils/request-matcher'
 import { buildDomainTree, flattenTree, matchSearch } from '../utils/tree-builder'
 import { matchFilters } from '../utils/filter-engine'
+import { isGraphQLRequest, parseOperationName, parseOperationType } from '../utils/graphql-detector'
 
 /** 最小批量刷新间隔（ms） */
 const FLUSH_INTERVAL_MIN = 50
@@ -106,10 +107,19 @@ export const useRequestStore = defineStore('request', () => {
     durationRanges: [],
     sizeRanges: [],
     clientIps: [],
+    graphQLOperations: [],
   })
 
   /** 过滤面板展开状态（不持久化） */
   const isFilterPanelOpen = ref<boolean>(false)
+
+  // ===== 会话管理 State =====
+
+  /** 已保存的会话列表 */
+  const sessions = ref<CaptureSession[]>([])
+
+  /** 当前加载的会话 ID（null 表示实时模式） */
+  const currentSessionId = ref<number | null>(null)
 
   /** 内存最大条数 */
   const MAX_MEMORY_REQUESTS = 5000
@@ -246,7 +256,8 @@ export const useRequestStore = defineStore('request', () => {
            f.contentTypes.length > 0 ||
            f.durationRanges.length > 0 ||
            f.sizeRanges.length > 0 ||
-           f.clientIps.length > 0
+           f.clientIps.length > 0 ||
+           f.graphQLOperations.length > 0
   })
 
   /** 激活条件数（按维度计数，非按 chip 计数） */
@@ -259,6 +270,7 @@ export const useRequestStore = defineStore('request', () => {
     if (f.durationRanges.length > 0) count++
     if (f.sizeRanges.length > 0) count++
     if (f.clientIps.length > 0) count++
+    if (f.graphQLOperations.length > 0) count++
     return count
   })
 
@@ -297,7 +309,6 @@ export const useRequestStore = defineStore('request', () => {
    * 数据流：requests → 域名过滤 → 高级过滤 → 反转
    */
   const filteredRequests = computed<CaptureRequest[]>(() => {
-    console.log('[Store] filteredRequests 重新计算！requests.length:', requests.value.length, 'domainFilters:', domainFilters.value.length, 'hasActiveFilters:', hasActiveFilters.value)
     const source = requests.value
 
     // Step 1: 域名过滤（过滤掉无效值）
@@ -330,34 +341,14 @@ export const useRequestStore = defineStore('request', () => {
     }
 
     // Step 3: 反转（最新在前）
-    console.log('[Store] filteredRequests 返回：', result.length, '条 / 原始:', source.length)
     return result.slice().reverse()
   })
 
   /**
-   * 高级过滤后的请求数（不反转，供面板底部统计使用）
+   * 高级过滤后的请求数（复用 filteredRequests，不再重复扫描）
    */
   const advancedFilteredCount = computed(() => {
-    const source = requests.value
-    if (domainFilters.value.length === 0) {
-      return hasActiveFilters.value
-        ? source.filter(req => matchFilters(req, filterState.value)).length
-        : source.length
-    }
-    const domainFiltered = source.filter((req) => {
-      return domainFilters.value.some((filter) => {
-        if (filter.includes('*')) {
-          const pattern = filter
-            .replace(/[.+?^${}()|[\]\\]/g, '\\$&')
-            .replace(/\*/g, '.*')
-          return new RegExp(`^${pattern}$`, 'i').test(req.host)
-        }
-        return req.host === filter
-      })
-    })
-    return hasActiveFilters.value
-      ? domainFiltered.filter(req => matchFilters(req, filterState.value)).length
-      : domainFiltered.length
+    return filteredRequests.value.length
   })
 
   /** 已捕获总数 */
@@ -372,36 +363,23 @@ export const useRequestStore = defineStore('request', () => {
   /** 是否可以对比（必须勾选 2 个） */
   const canCompare = computed(() => checkedRequests.value.length === 2)
 
-  /** 分组视图数据 */
-  const groupedRequests = computed(() => {
-    return groupByMatchKey(filteredRequests.value)
-  })
-
   /** 按域名分组的树结构 */
   const groupedTreeRequests = computed<DomainNode[]>(() => {
-    console.log('[Store] groupedTreeRequests 重新计算！filteredRequests.length:', filteredRequests.value.length, 'domainSortMode:', domainSortMode.value)
-    const result = buildDomainTree(filteredRequests.value, domainSortMode.value)
-    console.log('[Store] groupedTreeRequests 结果：', result.length, '个域名')
-    return result
+    return buildDomainTree(filteredRequests.value, domainSortMode.value)
   })
 
   /** 展平的树行（group 模式，含搜索过滤+折叠） */
   const flatTreeRows = computed<FlatTreeNode[]>(() => {
-    console.log('[Store] flatTreeRows 重新计算！groupedTreeRequests.length:', groupedTreeRequests.value.length, 'collapsedDomains:', collapsedDomains.value.size)
-    const rows = flattenTree(groupedTreeRequests.value, collapsedDomains.value, searchQuery.value)
-    console.log('[Store] flatTreeRows 结果：', rows.length, '行')
-    return rows
+    return flattenTree(groupedTreeRequests.value, collapsedDomains.value, searchQuery.value)
   })
 
   /** 统一显示行（list 模式包装为 FlatTreeNode，group 模式用 flatTreeRows） */
   const displayRows = computed<FlatTreeNode[]>(() => {
-    console.log('[Store] displayRows 重新计算！viewMode:', viewMode.value, 'filteredRequests.length:', filteredRequests.value.length, 'flatTreeRows.length:', flatTreeRows.value.length)
     if (viewMode.value === 'list') {
       const query = searchQuery.value.trim().toLowerCase()
       const source = query
         ? filteredRequests.value.filter(req => matchSearch(req, query))
         : filteredRequests.value
-      console.log('[Store] displayRows list 模式，返回', source.length, '行')
       return source.map(req => ({
         type: 'request' as const,
         key: req.id,
@@ -409,7 +387,6 @@ export const useRequestStore = defineStore('request', () => {
         request: req,
       }))
     }
-    console.log('[Store] displayRows group 模式，返回', flatTreeRows.value.length, '行')
     return flatTreeRows.value
   })
 
@@ -436,7 +413,6 @@ export const useRequestStore = defineStore('request', () => {
         target.responseHeaders = request.responseHeaders
         target.responseBody = request.responseBody
       }
-      console.log('[Store] 更新请求响应:', id, request.statusCode)
       return
     }
     // 还未 flush 到内存（在 pendingRequests 里）：就地更新缓冲
@@ -462,6 +438,14 @@ export const useRequestStore = defineStore('request', () => {
     request.deviceName = deviceAliases.value[request.clientIp] || request.clientIp
     request.selected = false
     request.checked = false
+
+    // GraphQL 检测
+    if (isGraphQLRequest(request)) {
+      request.isGraphQL = true
+      request.graphQLOperationName = parseOperationName(request) ?? undefined
+      request.graphQLOperationType = parseOperationType(request) ?? undefined
+    }
+
     pendingRequests.push(request)
   }
 
@@ -811,6 +795,7 @@ export const useRequestStore = defineStore('request', () => {
       durationRanges: [],
       sizeRanges: [],
       clientIps: [],
+      graphQLOperations: [],
     }
   }
 
@@ -823,6 +808,144 @@ export const useRequestStore = defineStore('request', () => {
       ...filterState.value,
       [category]: [],
     }
+  }
+
+  // ===== 会话管理 Actions =====
+
+  /**
+   * 保存当前录制中的数据为一个命名会话
+   * @param name 会话名称
+   */
+  async function saveCurrentSession(name: string): Promise<void> {
+    if (requests.value.length === 0) {
+      throw new Error('当前没有请求数据，无法保存会话')
+    }
+
+    const firstReq = requests.value[0]
+    const lastReq = requests.value[requests.value.length - 1]
+
+    const session: Omit<CaptureSession, 'id' | 'createdAt'> = {
+      name,
+      startTime: firstReq.capturedAt,
+      endTime: lastReq.capturedAt,
+      requestCount: requests.value.length,
+      filtersJson: JSON.stringify(filterState.value),
+      viewMode: viewMode.value,
+      domainFiltersJson: JSON.stringify(domainFilters.value),
+    }
+
+    const result = await ipc.session.save(session)
+    if (!result.success) {
+      throw new Error(result.error || '保存会话失败')
+    }
+
+    // 刷新会话列表
+    await loadSessions()
+  }
+
+  /**
+   * 从数据库加载指定会话的请求数据并恢复 UI 状态
+   * @param sessionId 会话 ID
+   */
+  async function loadSession(sessionId: number): Promise<void> {
+    const result = await ipc.session.loadRequests(sessionId)
+    if (!result.success || !result.requests) {
+      throw new Error(result.error || '加载会话失败')
+    }
+
+    // 停止 flush 定时器，清除旧数据
+    stopFlushTimer()
+    clearRequests()
+
+    // 加载请求到内存（DB 请求已经是 CaptureRequest 格式）
+    const loadedRequests = result.requests
+    requests.value = loadedRequests
+    rebuildIndexMap()
+
+    // 设置当前会话 ID
+    currentSessionId.value = sessionId
+
+    // 恢复会话的 UI 状态
+    const session = sessions.value.find((s) => s.id === sessionId)
+    if (session) {
+      // 恢复视图模式
+      viewMode.value = session.viewMode || 'group'
+
+      // 恢复过滤条件
+      if (session.filtersJson) {
+        try {
+          filterState.value = JSON.parse(session.filtersJson)
+        } catch {}
+      }
+
+      // 恢复域名过滤
+      if (session.domainFiltersJson) {
+        try {
+          domainFilters.value = JSON.parse(session.domainFiltersJson)
+        } catch {}
+      }
+    }
+
+    // 重启 flush 定时器
+    startFlushTimer()
+  }
+
+  /**
+   * 加载会话列表
+   */
+  async function loadSessions(): Promise<void> {
+    const result = await ipc.session.list()
+    if (result.success && result.sessions) {
+      sessions.value = result.sessions
+    }
+  }
+
+  /**
+   * 删除会话
+   * @param sessionId 会话 ID
+   */
+  async function deleteSession(sessionId: number): Promise<void> {
+    const result = await ipc.session.delete(sessionId)
+    if (!result.success) {
+      throw new Error(result.error || '删除会话失败')
+    }
+    // 如果删除的是当前加载的会话，清除当前会话 ID
+    if (currentSessionId.value === sessionId) {
+      currentSessionId.value = null
+    }
+    await loadSessions()
+  }
+
+  /**
+   * 重命名会话
+   * @param sessionId 会话 ID
+   * @param newName 新名称
+   */
+  async function renameSession(sessionId: number, newName: string): Promise<void> {
+    const result = await ipc.session.rename(sessionId, newName)
+    if (!result.success) {
+      throw new Error(result.error || '重命名会话失败')
+    }
+    await loadSessions()
+  }
+
+  /**
+   * 切换回实时模式（清空加载的会话数据）
+   */
+  function exitSession(): void {
+    currentSessionId.value = null
+    clearRequests()
+    filterState.value = {
+      methods: [],
+      statusGroups: [],
+      contentTypes: [],
+      durationRanges: [],
+      sizeRanges: [],
+      clientIps: [],
+      graphQLOperations: [],
+    }
+    domainFilters.value = []
+    viewMode.value = 'group'
   }
 
   return {
@@ -846,13 +969,14 @@ export const useRequestStore = defineStore('request', () => {
     // ===== 新增 State =====
     filterState,
     isFilterPanelOpen,
+    sessions,
+    currentSessionId,
     // ===== 既有 Computed =====
     filteredRequests,
     totalCount,
     filteredCount,
     checkedCount,
     canCompare,
-    groupedRequests,
     groupedTreeRequests,
     flatTreeRows,
     displayRows,
@@ -897,5 +1021,12 @@ export const useRequestStore = defineStore('request', () => {
     toggleFilterPanel,
     clearAllFilters,
     removeFilterGroup,
+    // ===== 会话管理 Actions =====
+    saveCurrentSession,
+    loadSession,
+    loadSessions,
+    deleteSession,
+    renameSession,
+    exitSession,
   }
 })

@@ -64,12 +64,22 @@
       <span>IP: {{ store.filterState.clientIps.join(', ') }}</span>
       <span class="text-green-400 dark:text-green-500 group-hover:text-green-600 dark:group-hover:text-green-300 ml-0.5">&times;</span>
     </button>
+
+    <!-- GraphQL 操作类型标签 -->
+    <button
+      v-if="store.filterState.graphQLOperations.length > 0"
+      class="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] rounded-full bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-700 shrink-0 group"
+      @click="store.removeFilterGroup('graphQLOperations')"
+    >
+      <span>GraphQL: {{ formatGraphQLLabels() }}</span>
+      <span class="text-indigo-400 dark:text-indigo-500 group-hover:text-indigo-600 dark:group-hover:text-indigo-300 ml-0.5">&times;</span>
+    </button>
   </div>
 </template>
 
 <script setup lang="ts">
 import { useRequestStore } from '../stores/request-store'
-import type { DurationRange, SizeRange } from '../services/types'
+import type { DurationRange, SizeRange, GraphQLFilterOperation } from '../services/types'
 
 const store = useRequestStore()
 
@@ -89,11 +99,23 @@ const sizeLabels: Record<SizeRange, string> = {
   large: '>100KB',
 }
 
+const graphQLLabels: Record<GraphQLFilterOperation, string> = {
+  query: 'Query',
+  mutation: 'Mutation',
+  subscription: 'Subscription',
+  graphql: 'GraphQL (通用)',
+  'non-graphql': '非 GraphQL',
+}
+
 function formatDurationLabels(): string {
   return store.filterState.durationRanges.map(d => durationLabels[d] || d).join(', ')
 }
 
 function formatSizeLabels(): string {
   return store.filterState.sizeRanges.map(s => sizeLabels[s] || s).join(', ')
+}
+
+function formatGraphQLLabels(): string {
+  return store.filterState.graphQLOperations.map(op => graphQLLabels[op] || op).join(', ')
 }
 </script>
