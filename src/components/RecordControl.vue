@@ -47,7 +47,7 @@
     <!-- 右侧：下拉菜单 + 操作按钮 -->
     <div class="flex items-center gap-2">
       <!-- 工具下拉菜单 -->
-      <DropdownMenu ref="toolsMenuRef" label="工具" :badge-count="breakpointCount + mapLocalCount + mapRemoteCount">
+      <DropdownMenu ref="toolsMenuRef" label="工具" :badge-count="breakpointCount + mapLocalCount + mapRemoteCount + autoResponderCount">
         <template #icon>
           <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z" />
@@ -100,6 +100,21 @@
         </button>
         <button
           class="dropdown-item"
+          @click="$emit('toggle-auto-responder'); toolsMenuRef?.close()"
+        >
+          <svg class="w-4 h-4 text-orange-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" />
+          </svg>
+          <span class="flex-1">Auto Responder</span>
+          <span
+            v-if="autoResponderCount > 0"
+            class="min-w-[16px] h-[16px] flex items-center justify-center px-1 text-[9px] font-bold rounded-full bg-orange-500 text-white"
+          >
+            {{ autoResponderCount }}
+          </span>
+        </button>
+        <button
+          class="dropdown-item"
           :disabled="checkedCount !== 2"
           @click="$emit('open-diff'); toolsMenuRef?.close()"
         >
@@ -108,6 +123,18 @@
           </svg>
           <span class="flex-1">Diff 视图</span>
           <span class="text-[10px] text-gray-400">{{ checkedCount }}/2</span>
+        </button>
+        <div class="h-px bg-gray-200 dark:bg-gray-600 my-1"></div>
+        <button
+          class="dropdown-item"
+          @click="$emit('toggle-session-manager'); toolsMenuRef?.close()"
+        >
+          <svg class="w-4 h-4 text-green-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z" />
+            <polyline points="17 21 17 13 7 13 7 21" />
+            <polyline points="7 3 7 8 15 8" />
+          </svg>
+          <span class="flex-1">会话管理</span>
         </button>
       </DropdownMenu>
 
@@ -176,6 +203,8 @@ defineProps<{
   showMapLocalRules: boolean
   mapRemoteCount: number
   showMapRemoteRules: boolean
+  autoResponderCount: number
+  showAutoResponderRules: boolean
 }>()
 
 defineEmits<{
@@ -187,7 +216,9 @@ defineEmits<{
   (e: 'toggle-breakpoint'): void
   (e: 'toggle-map-local'): void
   (e: 'toggle-map-remote'): void
+  (e: 'toggle-auto-responder'): void
   (e: 'open-diff'): void
+  (e: 'toggle-session-manager'): void
 }>()
 
 const toolsMenuRef = ref<InstanceType<typeof DropdownMenu> | null>(null)

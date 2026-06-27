@@ -54,6 +54,37 @@ export function runMigrations(db: Database.Database): void {
     )
   `)
 
+  // 创建 sessions 表（会话元数据，引用 requests 表的时间范围）
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS sessions (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      name            TEXT NOT NULL,
+      start_time      DATETIME NOT NULL,
+      end_time        DATETIME NOT NULL,
+      request_count   INTEGER NOT NULL DEFAULT 0,
+      filters_json    TEXT,
+      view_mode       TEXT DEFAULT 'group',
+      domain_filters_json TEXT,
+      created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `)
+
+  // 创建 autoResponderRules 表
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS autoResponderRules (
+      id TEXT PRIMARY KEY,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      name TEXT NOT NULL,
+      url_pattern TEXT NOT NULL,
+      methods_json TEXT NOT NULL DEFAULT '[]',
+      status_code INTEGER NOT NULL DEFAULT 200,
+      headers_json TEXT NOT NULL DEFAULT '{}',
+      body TEXT NOT NULL DEFAULT '',
+      delay INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `)
+
   // 创建索引以优化查询性能
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_requests_host ON requests(host)

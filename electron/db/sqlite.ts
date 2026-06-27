@@ -6,7 +6,7 @@ import Database from 'better-sqlite3'
 import { app } from 'electron'
 import { join } from 'path'
 import { runMigrations } from './migrations'
-import type { DbRequest, CaptureRequest, ComparisonRecord, AppSettings } from '../../src/services/types'
+import type { DbRequest, CaptureRequest, ComparisonRecord, AppSettings, CaptureSession, AutoResponderRule } from '../../src/services/types'
 import { DEFAULT_PROMPT_V1 } from '../../src/services/types'
 
 let db: Database.Database | null = null
@@ -79,7 +79,7 @@ export function persistRequest(request: CaptureRequest): number {
 }
 
 /**
- * 批量持久化多个请求
+ * 批量持久化多个请求（复用 prepare 语句，事务内批量执行）
  * @param requests 请求列表
  * @returns 插入的记录 ID 列表
  */
@@ -87,9 +87,32 @@ export function persistRequests(requests: CaptureRequest[]): number[] {
   const db = getDatabase()
   const ids: number[] = []
 
+  const stmt = db.prepare(`
+    INSERT INTO requests (method, url, path, host, status_code, duration,
+      request_headers, request_body, response_headers, response_body,
+      client_ip, device_name, captured_at, is_recorded)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `)
+
   const transaction = db.transaction(() => {
     for (const request of requests) {
-      ids.push(persistRequest(request))
+      const result = stmt.run(
+        request.method,
+        request.url,
+        request.path,
+        request.host,
+        request.statusCode,
+        request.duration,
+        JSON.stringify(request.requestHeaders),
+        request.requestBody,
+        JSON.stringify(request.responseHeaders),
+        request.responseBody,
+        request.clientIp,
+        request.deviceName,
+        request.capturedAt,
+        request.isRecorded ? 1 : 0
+      )
+      ids.push(result.lastInsertRowid as number)
     }
   })
 
@@ -264,4 +287,258 @@ export function clearAllRequests(): void {
 export function clearAllComparisons(): void {
   const db = getDatabase()
   db.exec('DELETE FROM comparisons')
+}
+
+// ===== 会话管理 =====
+
+/**
+ * 保存当前会话元数据
+ * @param session 会话数据（不含 id 和 createdAt）
+ * @returns 插入的记录 ID
+ */
+export function saveSession(session: Omit<CaptureSession, 'id' | 'createdAt'>): number {
+  const db = getDatabase()
+  const stmt = db.prepare(`
+    INSERT INTO sessions (name, start_time, end_time, request_count, filters_json, view_mode, domain_filters_json)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `)
+  const result = stmt.run(
+    session.name,
+    session.startTime,
+    session.endTime,
+    session.requestCount,
+    session.filtersJson ?? null,
+    session.viewMode,
+    session.domainFiltersJson ?? null
+  )
+  return result.lastInsertRowid as number
+}
+
+/**
+ * 获取所有会话列表（按创建时间倒序）
+ * @returns 会话列表
+ */
+export function listSessions(): CaptureSession[] {
+  const db = getDatabase()
+  const stmt = db.prepare('SELECT * FROM sessions ORDER BY created_at DESC')
+  const rows = stmt.all() as Array<{
+    id: number
+    name: string
+    start_time: string
+    end_time: string
+    request_count: number
+    filters_json: string | null
+    view_mode: string
+    domain_filters_json: string | null
+    created_at: string
+  }>
+
+  return rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    startTime: row.start_time,
+    endTime: row.end_time,
+    requestCount: row.request_count,
+    filtersJson: row.filters_json ?? undefined,
+    viewMode: (row.view_mode as 'list' | 'group') || 'group',
+    domainFiltersJson: row.domain_filters_json ?? undefined,
+    createdAt: row.created_at,
+  }))
+}
+
+/**
+ * 加载单个会话的请求数据（根据时间范围查询 requests 表）
+ * @param sessionId 会话 ID
+ * @returns 请求列表（按 captured_at 升序）
+ */
+export function loadSessionRequests(sessionId: number): CaptureRequest[] {
+  const db = getDatabase()
+
+  // 先获取会话的时间范围
+  const sessionStmt = db.prepare('SELECT start_time, end_time FROM sessions WHERE id = ?')
+  const session = sessionStmt.get(sessionId) as { start_time: string; end_time: string } | undefined
+  if (!session) return []
+
+  // 根据时间范围查询请求
+  const requestStmt = db.prepare(
+    'SELECT * FROM requests WHERE captured_at >= ? AND captured_at <= ? ORDER BY captured_at ASC'
+  )
+  const dbRequests = requestStmt.all(session.start_time, session.end_time) as DbRequest[]
+
+  return dbRequests.map((row) => ({
+    id: String(row.id),
+    method: row.method as CaptureRequest['method'],
+    url: row.url,
+    path: row.path,
+    host: row.host,
+    statusCode: row.status_code,
+    duration: row.duration,
+    requestHeaders: row.request_headers ? JSON.parse(row.request_headers) : {},
+    requestBody: row.request_body ?? '',
+    responseHeaders: row.response_headers ? JSON.parse(row.response_headers) : {},
+    responseBody: row.response_body ?? '',
+    clientIp: row.client_ip,
+    deviceName: row.device_name ?? '',
+    capturedAt: row.captured_at,
+    isRecorded: !!row.is_recorded,
+    selected: false,
+    checked: false,
+  }))
+}
+
+/**
+ * 删除会话（仅删除元数据，不删除 requests 表数据）
+ * @param sessionId 会话 ID
+ */
+export function deleteSession(sessionId: number): void {
+  const db = getDatabase()
+  const stmt = db.prepare('DELETE FROM sessions WHERE id = ?')
+  stmt.run(sessionId)
+}
+
+/**
+ * 重命名会话
+ * @param sessionId 会话 ID
+ * @param newName 新名称
+ */
+export function renameSession(sessionId: number, newName: string): void {
+  const db = getDatabase()
+  const stmt = db.prepare('UPDATE sessions SET name = ? WHERE id = ?')
+  stmt.run(newName, sessionId)
+}
+
+// ===== Auto Responder 规则管理 =====
+
+/**
+ * 生成唯一 ID
+ */
+function generateId(): string {
+  return `auto_responder_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`
+}
+
+/**
+ * 获取所有 Auto Responder 规则
+ * @returns 规则列表
+ */
+export function listAutoResponderRules(): AutoResponderRule[] {
+  const db = getDatabase()
+  const stmt = db.prepare('SELECT * FROM autoResponderRules ORDER BY created_at DESC')
+  const rows = stmt.all() as Array<{
+    id: string
+    enabled: number
+    name: string
+    url_pattern: string
+    methods_json: string
+    status_code: number
+    headers_json: string
+    body: string
+    delay: number
+    created_at: string
+  }>
+
+  return rows.map(row => ({
+    id: row.id,
+    enabled: Boolean(row.enabled),
+    name: row.name,
+    match: {
+      urlPattern: row.url_pattern,
+      methods: JSON.parse(row.methods_json),
+    },
+    response: {
+      statusCode: row.status_code,
+      headers: JSON.parse(row.headers_json),
+      body: row.body,
+      delay: row.delay,
+    },
+    createdAt: row.created_at,
+  }))
+}
+
+/**
+ * 创建 Auto Responder 规则
+ * @param rule 规则数据（不含 id 和 createdAt）
+ * @returns 创建的规则
+ */
+export function createAutoResponderRule(rule: Omit<AutoResponderRule, 'id' | 'createdAt'>): AutoResponderRule {
+  const db = getDatabase()
+  const id = generateId()
+  const stmt = db.prepare(`
+    INSERT INTO autoResponderRules (id, enabled, name, url_pattern, methods_json, status_code, headers_json, body, delay)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `)
+  stmt.run(
+    id,
+    rule.enabled ? 1 : 0,
+    rule.name,
+    rule.match.urlPattern,
+    JSON.stringify(rule.match.methods),
+    rule.response.statusCode,
+    JSON.stringify(rule.response.headers),
+    rule.response.body,
+    rule.response.delay
+  )
+  return { ...rule, id, createdAt: new Date().toISOString() }
+}
+
+/**
+ * 更新 Auto Responder 规则
+ * @param id 规则 ID
+ * @param updates 更新数据
+ */
+export function updateAutoResponderRule(id: string, updates: Partial<AutoResponderRule>): void {
+  const db = getDatabase()
+
+  // 动态构建 UPDATE 语句
+  const setClauses: string[] = []
+  const values: any[] = []
+
+  if (updates.enabled !== undefined) {
+    setClauses.push('enabled = ?')
+    values.push(updates.enabled ? 1 : 0)
+  }
+  if (updates.name !== undefined) {
+    setClauses.push('name = ?')
+    values.push(updates.name)
+  }
+  if (updates.match?.urlPattern !== undefined) {
+    setClauses.push('url_pattern = ?')
+    values.push(updates.match.urlPattern)
+  }
+  if (updates.match?.methods !== undefined) {
+    setClauses.push('methods_json = ?')
+    values.push(JSON.stringify(updates.match.methods))
+  }
+  if (updates.response?.statusCode !== undefined) {
+    setClauses.push('status_code = ?')
+    values.push(updates.response.statusCode)
+  }
+  if (updates.response?.headers !== undefined) {
+    setClauses.push('headers_json = ?')
+    values.push(JSON.stringify(updates.response.headers))
+  }
+  if (updates.response?.body !== undefined) {
+    setClauses.push('body = ?')
+    values.push(updates.response.body)
+  }
+  if (updates.response?.delay !== undefined) {
+    setClauses.push('delay = ?')
+    values.push(updates.response.delay)
+  }
+
+  if (setClauses.length === 0) return
+
+  values.push(id)
+  const sql = `UPDATE autoResponderRules SET ${setClauses.join(', ')} WHERE id = ?`
+  const stmt = db.prepare(sql)
+  stmt.run(...values)
+}
+
+/**
+ * 删除 Auto Responder 规则
+ * @param id 规则 ID
+ */
+export function deleteAutoResponderRule(id: string): void {
+  const db = getDatabase()
+  const stmt = db.prepare('DELETE FROM autoResponderRules WHERE id = ?')
+  stmt.run(id)
 }

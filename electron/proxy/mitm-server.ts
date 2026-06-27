@@ -17,6 +17,7 @@ import {
   type BreakpointStatus,
   type MapLocalRule,
   type MapRemoteRule,
+  type AutoResponderRule,
 } from '../../src/services/types'
 import { networkInterfaces } from 'os'
 import { SSLErrorClassifier, SSLErrorFormatter, type SSLErrorDetail } from '../services/ssl-error-handler'
@@ -25,6 +26,7 @@ import { gunzipSync, inflateSync, brotliDecompressSync } from 'zlib'
 import { findMatchingRule } from '../../src/utils/breakpoint-matcher'
 import { matchMapLocal } from '../../src/utils/map-local-matcher'
 import { matchMapRemote } from '../../src/utils/map-remote-matcher'
+import { matchAutoResponder } from '../../src/utils/auto-responder-matcher'
 import { readFileSync } from 'fs'
 import { extname } from 'path'
 
@@ -44,6 +46,9 @@ let mapLocalRules: MapLocalRule[] = []
 
 // Map Remote 相关状态
 let mapRemoteRules: MapRemoteRule[] = []
+
+// Auto Responder 相关状态
+let autoResponderRules: AutoResponderRule[] = []
 const pendingInterceptions = new Map<string, {
   resolve: (modified: InterceptSession) => void
   reject: (reason: string) => void
@@ -156,6 +161,13 @@ export function setMapLocalRules(rules: MapLocalRule[]): void {
  */
 export function setMapRemoteRules(rules: MapRemoteRule[]): void {
   mapRemoteRules = rules.filter(r => r.enabled)
+}
+
+/**
+ * 设置 Auto Responder 规则
+ */
+export function setAutoResponderRules(rules: AutoResponderRule[]): void {
+  autoResponderRules = rules.filter(r => r.enabled)
 }
 
 /**
@@ -560,8 +572,9 @@ function readLocalFile(localPath: string, customMime: string): { content: string
  * 返回一个 requestId 用于后续更新
  * @param mapLocalRuleId 可选，Map Local 规则 ID
  * @param mapRemoteRuleId 可选，Map Remote 规则 ID
+ * @param autoResponderRuleId 可选，Auto Responder 规则 ID
  */
-function pushRequestArrived(method: string, url: string, path: string, host: string, clientIp: string, mapLocalRuleId?: string, mapRemoteRuleId?: string): string {
+function pushRequestArrived(method: string, url: string, path: string, host: string, clientIp: string, mapLocalRuleId?: string, mapRemoteRuleId?: string, autoResponderRuleId?: string): string {
   const id = generateRequestId()
   const now = Date.now()
   const partial: CaptureRequest = {
@@ -584,6 +597,7 @@ function pushRequestArrived(method: string, url: string, path: string, host: str
     checked: false,
     mapLocalRuleId,
     mapRemoteRuleId,
+    autoResponderRuleId,
     _arrivedAt: now,
   }
   pushToRenderer(partial, false)
@@ -720,7 +734,59 @@ export async function startProxy(port: number, win: BrowserWindow): Promise<bool
         }
       }
 
-      // ===== Map Remote 检查（Map Local 之后、断点之前） =====
+      // ===== Auto Responder 检查（Map Local 之后、Map Remote 之前） =====
+      const autoResponderMatch = matchAutoResponder(url, method, autoResponderRules)
+      if (autoResponderMatch) {
+        try {
+          const { statusCode, headers, body, delay } = autoResponderMatch.response
+
+          // 收集请求头和请求体
+          const reqHeaders: Record<string, string> = {}
+          ctx.clientToProxyRequest.forEach((value: string, key: string) => { reqHeaders[key] = value })
+          const requestBody = ctx._requestBody || ''
+
+          // 推送请求数据到渲染进程
+          const autoResponderRequestId = pushRequestArrived(method, url, ctx._path, ctx._host, clientIp, undefined, undefined, autoResponderMatch.id)
+
+          // 延迟响应（如果配置了）
+          // 注意：http-mitm-proxy 的回调不支持 async/await，使用 setTimeout 包装
+          const sendResponse = () => {
+            // 推送响应数据到渲染进程
+            pushResponseArrived(
+              autoResponderRequestId,
+              statusCode,
+              0,
+              headers,
+              body,
+              reqHeaders,
+              requestBody
+            )
+
+            // 构造响应返回给客户端
+            const res = ctx.proxyToClientResponse
+            res.writeHead(statusCode, {
+              ...headers,
+              'transfer-encoding': 'chunked',
+            })
+            res.end(body)
+          }
+
+          // 根据延迟配置执行响应
+          if (delay > 0) {
+            setTimeout(sendResponse, delay)
+          } else {
+            sendResponse()
+          }
+
+          // 标记为已处理，跳过后续流程
+          return
+        } catch (error) {
+          console.error('[Auto Responder] 处理失败:', error)
+          // 降级：继续正常流程
+        }
+      }
+
+      // ===== Map Remote 检查（Auto Responder 之后、断点之前） =====
       const mapRemoteMatch = matchMapRemote(url, method, mapRemoteRules)
       if (mapRemoteMatch) {
         const { target } = mapRemoteMatch

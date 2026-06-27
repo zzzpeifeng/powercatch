@@ -1,7 +1,7 @@
 # PowerCatch 功能实现进度跟踪
 
 > 每完成一个功能，把 `[ ]` 改成 `[x]` 即可。  
-> 更新日期：2026-06-26 | 总计：32 项 | 已完成：8 | 进行中：0
+> 更新日期：2026-06-27 | 总计：32 项 | 已完成：10 | 进行中：0
 
 ---
 
@@ -15,9 +15,9 @@
   - JSON树形折叠 / 图片渲染 / Hex查看 / HTML预览 / 语法高亮
   - 改动文件：`body-preview-parser.ts`(新增) + `BodyPreviewRouter.vue`(新增) + `JsonViewer.vue`(新增) + `HtmlViewer.vue`(新增) + `ImageViewer.vue`(新增) + `HexViewer.vue`(新增) + `CodeViewer.vue`(新增) + `RequestDetail.vue` + `mitm-server.ts`
 
-- [ ] **#3 会话保存与恢复** | 工作量:小 | 依赖:无
+- [x] **#3 会话保存与恢复** | 工作量:小 | 依赖:无 | ✅ 2026-06-27
   - 保存/加载抓包会话到SQLite，含过滤状态和视图模式
-  - `sqlite.ts` + 会话管理UI + `request-store.ts`
+  - `sqlite.ts` + `SessionManager.vue`(新增) + `request-store.ts` + `RecordControl.vue` + `MainView.vue`
 
 - [ ] **#4 大响应体处理** | 工作量:小 | 依赖:无
   - >5MB自动截断 + 标记提示 + 按需加载完整内容
@@ -47,9 +47,9 @@
   - A域名请求转发到B域名（线上→测试环境）
   - `mitm-server.ts` + `map-remote-matcher.ts`(新增) + `map-remote-store.ts`(新增) + `MapRemoteRules.vue`(新增)
 
-- [ ] **#10 自动响应器（Auto Responder）** | 工作量:小 | 依赖:#7
+- [x] **#10 自动响应器（Auto Responder）** | 工作量:小 | 依赖:#7 | ✅ 2026-06-27
   - 不请求真实服务器，直接本地规则响应，支持延迟/状态码模拟
-  - `mitm-server.ts` + 规则管理UI
+  - `mitm-server.ts` + `AutoResponderRules.vue`(新增) + `auto-responder-store.ts`(新增) + `auto-responder-matcher.ts`(新增)
 
 - [ ] **#11 请求重写规则（Rewrite Rules）** | 工作量:中 | 依赖:无
   - 持久化自动修改匹配请求的URL/Header/Body/Status
@@ -140,9 +140,9 @@
 
 | 层级 | 总数 | 已完成 | 进度 |
 |------|------|--------|------|
-| 🏗️ 基础设施 | 5 | 3 | ███░░ 60% |
-| 🔥 高价值 | 6 | 3 | ███░░░ 50% |
+| 🏗️ 基础设施 | 5 | 4 | ████░ 80% |
+| 🔥 高价值 | 6 | 4 | ████░░ 67% |
 | 💡 中价值 | 7 | 1 | █░░░░░░ 14% |
 | 🌟 锦上添花 | 8 | 0 | ░░░░░░░░ 0% |
 | 🛠️ 非功能 | 6 | 0 | ░░░░░░ 0% |
-| **合计** | **32** | **8** | **25%** |
+| **合计** | **32** | **10** | **31%** |

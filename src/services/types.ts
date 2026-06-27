@@ -51,6 +51,8 @@ export interface CaptureRequest {
   mapLocalRuleId?: string
   /** 命中的 Map Remote 规则 ID */
   mapRemoteRuleId?: string
+  /** 命中的 Auto Responder 规则 ID */
+  autoResponderRuleId?: string
 }
 
 /** 响应更新数据（通过独立 channel 推送，仅包含响应相关字段） */
@@ -121,6 +123,8 @@ export interface AppSettings {
   mapLocalRules?: MapLocalRule[]
   /** Map Remote 规则 */
   mapRemoteRules?: MapRemoteRule[]
+  /** Auto Responder 规则 */
+  autoResponderRules?: AutoResponderRule[]
   /** AI 代码分析配置 */
   aiCodeAnalysisConfig?: {
     repoUrl?: string
@@ -371,6 +375,36 @@ export interface MapRemoteRule {
   createdAt: string
 }
 
+/** Auto Responder 规则 */
+export interface AutoResponderRule {
+  /** 规则 ID */
+  id: string
+  /** 是否启用 */
+  enabled: boolean
+  /** 规则名称（用户自定义） */
+  name: string
+  /** 匹配模式 */
+  match: {
+    /** URL 通配符，如 *api.shopline.com/users* */
+    urlPattern: string
+    /** HTTP 方法过滤（空 = 所有方法） */
+    methods: HttpMethod[]
+  }
+  /** 响应配置 */
+  response: {
+    /** HTTP 状态码 */
+    statusCode: number
+    /** 响应头 */
+    headers: Record<string, string>
+    /** 响应体（字符串） */
+    body: string
+    /** 响应延迟（毫秒，0 = 无延迟） */
+    delay: number
+  }
+  /** 创建时间 */
+  createdAt: string
+}
+
 /** 拦截会话 */
 export interface InterceptSession {
   /** 会话 ID */
@@ -575,6 +609,20 @@ export const IPC_CHANNELS = {
   MAP_REMOTE_REMOVE_RULE: 'map-remote:remove-rule',
   MAP_REMOTE_UPDATE_RULE: 'map-remote:update-rule',
   MAP_REMOTE_SYNC_RULES: 'map-remote:sync-rules',
+
+  // Auto Responder 功能
+  AUTO_RESPONDER_GET_RULES: 'auto-responder:get-rules',
+  AUTO_RESPONDER_ADD_RULE: 'auto-responder:add-rule',
+  AUTO_RESPONDER_REMOVE_RULE: 'auto-responder:remove-rule',
+  AUTO_RESPONDER_UPDATE_RULE: 'auto-responder:update-rule',
+  AUTO_RESPONDER_SYNC_RULES: 'auto-responder:sync-rules',
+
+  // 会话管理
+  SESSION_SAVE: 'session:save',
+  SESSION_LIST: 'session:list',
+  SESSION_LOAD_REQUESTS: 'session:load-requests',
+  SESSION_DELETE: 'session:delete',
+  SESSION_RENAME: 'session:rename',
 } as const
 
 /** IPC 通道名称类型 */
@@ -962,6 +1010,28 @@ export interface FlatTreeNode {
   hasChecked?: boolean
   /** request 字段 */
   request?: CaptureRequest
+}
+
+/** 会话元数据（Session = 元数据 + 时间范围引用，不复制请求数据） */
+export interface CaptureSession {
+  /** 会话 ID */
+  id: number
+  /** 会话名称（用户自定义） */
+  name: string
+  /** 会话开始时间（ISO 8601） */
+  startTime: string
+  /** 会话结束时间（ISO 8601） */
+  endTime: string
+  /** 会话期间的请求数 */
+  requestCount: number
+  /** 过滤条件 JSON（FilterState 的序列化） */
+  filtersJson?: string
+  /** 视图模式 */
+  viewMode: 'list' | 'group'
+  /** 域名过滤 JSON（string[] 的序列化） */
+  domainFiltersJson?: string
+  /** 创建时间 */
+  createdAt: string
 }
 
 /** Diff 对比结果 */

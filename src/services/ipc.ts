@@ -18,6 +18,7 @@ import type {
   BreakpointStatus,
   MapLocalRule,
   MapRemoteRule,
+  AutoResponderRule,
   CodeAnalysisRequest,
   CodeAnalysisResult,
   CloneProgress,
@@ -25,6 +26,7 @@ import type {
   GitAvailabilityResult,
   AnalysisLogEntry,
   AIDeepAnalysisResult,
+  CaptureSession,
 } from './types'
 
 /** Electron API 类型（由 preload.ts 暴露） */
@@ -184,6 +186,20 @@ interface ElectronAPI {
     updateRule: (ruleId: string, updates: Partial<MapRemoteRule>) => Promise<{ success: boolean; error?: string }>
     getRules: () => Promise<MapRemoteRule[]>
     syncRules: (rules: MapRemoteRule[]) => Promise<{ success: boolean; error?: string }>
+  }
+  autoResponder: {
+    addRule: (rule: Omit<AutoResponderRule, 'id' | 'createdAt'>) => Promise<{ success: boolean; rule?: AutoResponderRule; error?: string }>
+    removeRule: (ruleId: string) => Promise<{ success: boolean; error?: string }>
+    updateRule: (ruleId: string, updates: Partial<AutoResponderRule>) => Promise<{ success: boolean; error?: string }>
+    getRules: () => Promise<AutoResponderRule[]>
+    syncRules: (rules: AutoResponderRule[]) => Promise<{ success: boolean; error?: string }>
+  }
+  session: {
+    save: (session: Omit<CaptureSession, 'id' | 'createdAt'>) => Promise<{ success: boolean; id?: number; error?: string }>
+    list: () => Promise<{ success: boolean; sessions?: CaptureSession[]; error?: string }>
+    loadRequests: (sessionId: number) => Promise<{ success: boolean; requests?: CaptureRequest[]; error?: string }>
+    delete: (sessionId: number) => Promise<{ success: boolean; error?: string }>
+    rename: (sessionId: number, newName: string) => Promise<{ success: boolean; error?: string }>
   }
 }
 
@@ -802,6 +818,72 @@ export const ipc = {
       const api = getElectronAPI()
       if (!api) return { success: false, error: 'Not in Electron environment' }
       return api.mapRemote.syncRules(rules)
+    },
+  },
+
+  // ===== Auto Responder 功能 =====
+  autoResponder: {
+    addRule: async (rule: Omit<AutoResponderRule, 'id' | 'createdAt'>): Promise<{ success: boolean; rule?: AutoResponderRule; error?: string }> => {
+      const api = getElectronAPI()
+      if (!api) return { success: false, error: 'Not in Electron environment' }
+      return api.autoResponder.addRule(rule)
+    },
+
+    removeRule: async (ruleId: string): Promise<{ success: boolean; error?: string }> => {
+      const api = getElectronAPI()
+      if (!api) return { success: false, error: 'Not in Electron environment' }
+      return api.autoResponder.removeRule(ruleId)
+    },
+
+    updateRule: async (ruleId: string, updates: Partial<AutoResponderRule>): Promise<{ success: boolean; error?: string }> => {
+      const api = getElectronAPI()
+      if (!api) return { success: false, error: 'Not in Electron environment' }
+      return api.autoResponder.updateRule(ruleId, updates)
+    },
+
+    getRules: async (): Promise<AutoResponderRule[]> => {
+      const api = getElectronAPI()
+      if (!api) return []
+      return api.autoResponder.getRules()
+    },
+
+    syncRules: async (rules: AutoResponderRule[]): Promise<{ success: boolean; error?: string }> => {
+      const api = getElectronAPI()
+      if (!api) return { success: false, error: 'Not in Electron environment' }
+      return api.autoResponder.syncRules(rules)
+    },
+  },
+
+  // ===== 会话管理 =====
+  session: {
+    save: async (session: Omit<CaptureSession, 'id' | 'createdAt'>): Promise<{ success: boolean; id?: number; error?: string }> => {
+      const api = getElectronAPI()
+      if (!api) return { success: false, error: 'Not in Electron environment' }
+      return api.session.save(session)
+    },
+
+    list: async (): Promise<{ success: boolean; sessions?: CaptureSession[]; error?: string }> => {
+      const api = getElectronAPI()
+      if (!api) return { success: false, error: 'Not in Electron environment' }
+      return api.session.list()
+    },
+
+    loadRequests: async (sessionId: number): Promise<{ success: boolean; requests?: CaptureRequest[]; error?: string }> => {
+      const api = getElectronAPI()
+      if (!api) return { success: false, error: 'Not in Electron environment' }
+      return api.session.loadRequests(sessionId)
+    },
+
+    delete: async (sessionId: number): Promise<{ success: boolean; error?: string }> => {
+      const api = getElectronAPI()
+      if (!api) return { success: false, error: 'Not in Electron environment' }
+      return api.session.delete(sessionId)
+    },
+
+    rename: async (sessionId: number, newName: string): Promise<{ success: boolean; error?: string }> => {
+      const api = getElectronAPI()
+      if (!api) return { success: false, error: 'Not in Electron environment' }
+      return api.session.rename(sessionId, newName)
     },
   },
 }

@@ -2,9 +2,9 @@
  * IPC 通信层 - 注册所有 IPC 通道处理
  */
 import { ipcMain, BrowserWindow, shell, dialog } from 'electron'
-import { IPC_CHANNELS, type BreakpointRule, type BreakpointResumePayload, type MapLocalRule, type MapRemoteRule } from '../src/services/types'
+import { IPC_CHANNELS, type BreakpointRule, type BreakpointResumePayload, type MapLocalRule, type MapRemoteRule, type AutoResponderRule } from '../src/services/types'
 import * as sqlite from './db/sqlite'
-import { startProxy, stopProxy, getProxyStatus, getLocalIP, setDomainFilters, setDeviceAliases, setBreakpointRules as setProxyBreakpointRules, setMapLocalRules as setProxyMapLocalRules, setMapRemoteRules as setProxyMapRemoteRules, abortAllPendingInterceptions, resolveBreakpointResume, rejectBreakpointResume } from './proxy/mitm-server'
+import { startProxy, stopProxy, getProxyStatus, getLocalIP, setDomainFilters, setDeviceAliases, setBreakpointRules as setProxyBreakpointRules, setMapLocalRules as setProxyMapLocalRules, setMapRemoteRules as setProxyMapRemoteRules, setAutoResponderRules, abortAllPendingInterceptions, resolveBreakpointResume, rejectBreakpointResume } from './proxy/mitm-server'
 import { generateCACert, isCAGenerated, getCertFilePath } from './proxy/ca-cert'
 import { setSystemProxy, clearSystemProxy, getSystemProxyStatus } from './proxy/system-proxy'
 import { executeCompare, testConnection, isCompareInProgress } from './services/ai-service'
@@ -17,7 +17,7 @@ import {
 } from './services/repo-service'
 import { exportCompareResult } from './services/export-service'
 import { SSLErrorLogger } from './services/ssl-logger'
-import type { CaptureRequest, AppSettings } from '../src/services/types'
+import type { CaptureRequest, AppSettings, CaptureSession } from '../src/services/types'
 import { generateWifiConfig, generateWifiQRContent } from './wifi-config'
 import { startConfigServer, stopConfigServer, getConfigServerUrl } from './config-server'
 import { generateQRCode } from './qr-generator'
@@ -436,6 +436,52 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     }
   })
 
+  // ===== 会话管理 =====
+  ipcMain.handle(IPC_CHANNELS.SESSION_SAVE, (_event, session: any) => {
+    try {
+      const id = sqlite.saveSession(session)
+      return { success: true, id }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.SESSION_LIST, () => {
+    try {
+      const sessions = sqlite.listSessions()
+      return { success: true, sessions }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.SESSION_LOAD_REQUESTS, (_event, sessionId: number) => {
+    try {
+      const requests = sqlite.loadSessionRequests(sessionId)
+      return { success: true, requests }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.SESSION_DELETE, (_event, sessionId: number) => {
+    try {
+      sqlite.deleteSession(sessionId)
+      return { success: true }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.SESSION_RENAME, (_event, { sessionId, newName }: { sessionId: number; newName: string }) => {
+    try {
+      sqlite.renameSession(sessionId, newName)
+      return { success: true }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
   // ===== 窗口控制 =====
   ipcMain.handle(IPC_CHANNELS.WINDOW_MINIMIZE, () => {
     mainWindow.minimize()
@@ -804,6 +850,58 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     }
   })
 
+  // ===== Auto Responder 功能 =====
+
+  ipcMain.handle(IPC_CHANNELS.AUTO_RESPONDER_GET_RULES, () => {
+    try {
+      return sqlite.listAutoResponderRules()
+    } catch {
+      return []
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.AUTO_RESPONDER_ADD_RULE, async (_event, rule: Omit<AutoResponderRule, 'id' | 'createdAt'>) => {
+    try {
+      const newRule = sqlite.createAutoResponderRule(rule)
+      // 同步规则到主进程
+      setAutoResponderRules(sqlite.listAutoResponderRules().filter(r => r.enabled))
+      return { success: true, rule: newRule }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.AUTO_RESPONDER_UPDATE_RULE, async (_event, { ruleId, updates }: { ruleId: string; updates: Partial<AutoResponderRule> }) => {
+    try {
+      sqlite.updateAutoResponderRule(ruleId, updates)
+      // 同步规则到主进程
+      setAutoResponderRules(sqlite.listAutoResponderRules().filter(r => r.enabled))
+      return { success: true }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.AUTO_RESPONDER_REMOVE_RULE, async (_event, ruleId: string) => {
+    try {
+      sqlite.deleteAutoResponderRule(ruleId)
+      // 同步规则到主进程
+      setAutoResponderRules(sqlite.listAutoResponderRules().filter(r => r.enabled))
+      return { success: true }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.AUTO_RESPONDER_SYNC_RULES, async (_event, rules: AutoResponderRule[]) => {
+    try {
+      setAutoResponderRules(rules)
+      return { success: true }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
   // ===== AI 混合模式（使用 sse-manager.ts）=====
 
   /**
@@ -934,5 +1032,13 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   }
   if (initialSettings.mapRemoteRules) {
     setProxyMapRemoteRules(initialSettings.mapRemoteRules.filter(r => r.enabled))
+  }
+
+  // 初始化时加载 Auto Responder 规则到 proxy
+  try {
+    const autoResponderRules = sqlite.listAutoResponderRules()
+    setAutoResponderRules(autoResponderRules.filter(r => r.enabled))
+  } catch (error) {
+    console.error('[IPC] Failed to load auto responder rules:', error)
   }
 }

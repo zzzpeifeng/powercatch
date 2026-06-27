@@ -294,6 +294,24 @@ const electronAPI = {
     syncRules: (rules: any[]) => ipcRenderer.invoke(IPC_CHANNELS.MAP_REMOTE_SYNC_RULES, rules),
   },
 
+  // Auto Responder 功能
+  autoResponder: {
+    addRule: (rule: any) => ipcRenderer.invoke(IPC_CHANNELS.AUTO_RESPONDER_ADD_RULE, rule),
+    removeRule: (ruleId: string) => ipcRenderer.invoke(IPC_CHANNELS.AUTO_RESPONDER_REMOVE_RULE, ruleId),
+    updateRule: (ruleId: string, updates: any) => ipcRenderer.invoke(IPC_CHANNELS.AUTO_RESPONDER_UPDATE_RULE, { ruleId, updates }),
+    getRules: () => ipcRenderer.invoke(IPC_CHANNELS.AUTO_RESPONDER_GET_RULES),
+    syncRules: (rules: any[]) => ipcRenderer.invoke(IPC_CHANNELS.AUTO_RESPONDER_SYNC_RULES, rules),
+  },
+
+  // 会话管理
+  session: {
+    save: (session: any) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_SAVE, session),
+    list: () => ipcRenderer.invoke(IPC_CHANNELS.SESSION_LIST),
+    loadRequests: (sessionId: number) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_LOAD_REQUESTS, sessionId),
+    delete: (sessionId: number) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_DELETE, sessionId),
+    rename: (sessionId: number, newName: string) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_RENAME, { sessionId, newName }),
+  },
+
   // 文件选择
   file: {
     select: () => ipcRenderer.invoke('file:select'),

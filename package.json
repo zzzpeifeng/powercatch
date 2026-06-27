@@ -1,6 +1,6 @@
 {
   "name": "powercatch",
-  "version": "1.0.33",
+  "version": "1.0.34",
   "description": "PowerCatch - HTTP/HTTPS 抓包调试工具，支持 AI 智能对比分析",
   "author": "Peifeng Zhang <zzzpeifeng@163.com>",
   "main": "dist-electron/main.js",
@@ -15,6 +15,7 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
+    "@prisma/client": "^5.22.0",
     "better-sqlite3": "^12.10.0",
     "canvas": "^3.2.3",
     "dompurify": "^3.4.10",
@@ -24,6 +25,7 @@
     "markdown-it": "^14.2.0",
     "openai": "^4.28.0",
     "pinia": "^2.1.7",
+    "prisma": "^5.22.0",
     "qrcode": "^1.5.4",
     "selfsigned": "^2.4.1",
     "shiki": "^4.2.0",
@@ -53,5 +55,19 @@
     "vite-plugin-electron-renderer": "^0.14.5",
     "vitest": "^4.1.9",
     "vue-tsc": "^2.0.6"
-  }
+  },
+  "directories": {
+    "doc": "docs",
+    "test": "tests"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zzzpeifeng/packet-capture-app.git"
+  },
+  "keywords": [],
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/zzzpeifeng/packet-capture-app/issues"
+  },
+  "homepage": "https://github.com/zzzpeifeng/packet-capture-app#readme"
 }
