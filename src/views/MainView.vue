@@ -53,6 +53,8 @@
       @toggle-dns-override="showDnsOverrideRules = !showDnsOverrideRules"
       @open-diff="openDiff"
       @toggle-session-manager="showSessionManager = !showSessionManager"
+      @import-har="handleImportHar"
+      @export-har="handleExportHar"
     />
 
     <!-- 断点规则面板 -->
@@ -135,6 +137,8 @@ import { useToast } from '../composables/useToast'
 import { useKeyboardShortcuts, createMainShortcuts } from '../utils/keyboard'
 import { useDebounce } from '../composables/useDebounce'
 import type { CaptureRequest, ExportFormat } from '../services/types'
+import { exportHarFile } from '../services/har-export'
+import { importHarFile } from '../services/har-import'
 
 import { ipc } from '../services/ipc'
 import { useSystemProxyStore } from '../stores/system-proxy-store'
@@ -334,6 +338,38 @@ function openDiff(): void {
 }
 
 /** 提示条：关闭本机代理 */
+
+/** 导入 HAR 文件 */
+async function handleImportHar(): Promise<void> {
+  try {
+    const requests = await importHarFile()
+    if (requests.length === 0) {
+      toast.warning('HAR 文件中没有请求数据')
+      return
+    }
+    // 清空现有数据并加载导入的请求
+    requestStore.clearRequests()
+    for (const req of requests) {
+      requestStore.addRequest(req)
+    }
+    toast.success(`已导入 ${requests.length} 条请求`)
+  } catch (error: any) {
+    if (error.message !== '已取消') {
+      toast.error(error.message || '导入 HAR 文件失败')
+    }
+  }
+}
+
+/** 导出为 HAR 文件 */
+function handleExportHar(): void {
+  const requests = requestStore.filteredRequests
+  if (requests.length === 0) {
+    toast.warning('没有可导出的请求数据')
+    return
+  }
+  exportHarFile(requests)
+  toast.success(`已导出 ${requests.length} 条请求为 HAR 文件`)
+}
 async function handleDisableProxy(): Promise<void> {
   try {
     const result = await systemProxyStore.disable()

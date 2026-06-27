@@ -158,6 +158,30 @@
         <div class="h-px bg-gray-200 dark:bg-gray-600 my-1"></div>
         <button
           class="dropdown-item"
+          @click="$emit('import-har'); toolsMenuRef?.close()"
+        >
+          <svg class="w-4 h-4 text-cyan-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+            <polyline points="7 10 12 15 17 10" />
+            <line x1="12" y1="15" x2="12" y2="3" />
+          </svg>
+          <span class="flex-1">导入 HAR 文件</span>
+        </button>
+        <button
+          class="dropdown-item"
+          :disabled="totalCount === 0"
+          @click="$emit('export-har'); toolsMenuRef?.close()"
+        >
+          <svg class="w-4 h-4 text-cyan-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+            <polyline points="17 8 12 3 7 8" />
+            <line x1="12" y1="3" x2="12" y2="15" />
+          </svg>
+          <span class="flex-1">导出为 HAR</span>
+        </button>
+        <div class="h-px bg-gray-200 dark:bg-gray-600 my-1"></div>
+        <button
+          class="dropdown-item"
           @click="$emit('toggle-session-manager'); toolsMenuRef?.close()"
         >
           <svg class="w-4 h-4 text-green-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -256,6 +280,8 @@ defineEmits<{
   (e: 'toggle-dns-override'): void
   (e: 'open-diff'): void
   (e: 'toggle-session-manager'): void
+  (e: 'import-har'): void
+  (e: 'export-har'): void
 }>()
 
 const toolsMenuRef = ref<InstanceType<typeof DropdownMenu> | null>(null)
