@@ -56,10 +56,6 @@
     "vitest": "^4.1.9",
     "vue-tsc": "^2.0.6"
   },
-  "directories": {
-    "doc": "docs",
-    "test": "tests"
-  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/zzzpeifeng/packet-capture-app.git"
