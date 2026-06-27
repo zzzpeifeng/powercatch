@@ -19,6 +19,7 @@ import {
   type MapRemoteRule,
   type AutoResponderRule,
   type RewriteRule,
+  type DnsOverrideRule,
 } from '../../src/services/types'
 import { networkInterfaces } from 'os'
 import { SSLErrorClassifier, SSLErrorFormatter, type SSLErrorDetail } from '../services/ssl-error-handler'
@@ -29,6 +30,7 @@ import { matchMapLocal } from '../../src/utils/map-local-matcher'
 import { matchMapRemote } from '../../src/utils/map-remote-matcher'
 import { matchAutoResponder } from '../../src/utils/auto-responder-matcher'
 import { matchRewriteRules } from '../../src/utils/rewrite-matcher'
+import { matchDnsOverride } from '../../src/utils/dns-override-matcher'
 import { readFileSync } from 'fs'
 import { extname } from 'path'
 
@@ -54,6 +56,9 @@ let autoResponderRules: AutoResponderRule[] = []
 
 // Rewrite Rules 相关状态
 let rewriteRules: RewriteRule[] = []
+
+// DNS 覆盖相关状态
+let dnsOverrideRules: DnsOverrideRule[] = []
 const pendingInterceptions = new Map<string, {
   resolve: (modified: InterceptSession) => void
   reject: (reason: string) => void
@@ -180,6 +185,13 @@ export function setAutoResponderRules(rules: AutoResponderRule[]): void {
  */
 export function setRewriteRules(rules: RewriteRule[]): void {
   rewriteRules = rules.filter(r => r.enabled)
+}
+
+/**
+ * 设置 DNS 覆盖规则
+ */
+export function setDnsOverrideRules(rules: DnsOverrideRule[]): void {
+  dnsOverrideRules = rules.filter(r => r.enabled)
 }
 
 /**
@@ -702,6 +714,19 @@ export async function startProxy(port: number, win: BrowserWindow): Promise<bool
       if (method === 'CONNECT') return callback()
       const upgradeHeader = ctx.clientToProxyRequest?.headers?.upgrade
       if (upgradeHeader && upgradeHeader.toLowerCase() === 'websocket') return callback()
+
+      // ===== DNS 覆盖检查（最高优先级，在所有规则之前） =====
+      const dnsMatch = matchDnsOverride(host, dnsOverrideRules)
+      if (dnsMatch) {
+        // 修改代理目标地址为规则中的 IP
+        ctx.proxyToServerRequestOptions.host = dnsMatch.ip
+        // 保持 Host 头为原始域名（让服务器正确路由）
+        if (!ctx.proxyToServerRequestOptions.headers) {
+          ctx.proxyToServerRequestOptions.headers = {}
+        }
+        ctx.proxyToServerRequestOptions.headers.host = host
+        console.log(`[DNS Override] 🎯 ${host} → ${dnsMatch.ip}`)
+      }
 
       // ===== Map Local 检查（优先于断点） =====
       const mapLocalMatch = matchMapLocal(url, method, mapLocalRules)

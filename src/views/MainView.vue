@@ -38,6 +38,8 @@
       :show-auto-responder-rules="showAutoResponderRules"
       :rewrite-rules-count="rewriteRulesStore.rules.length"
       :show-rewrite-rules="showRewriteRules"
+      :dns-override-count="dnsOverrideStore.rules.length"
+      :show-dns-override-rules="showDnsOverrideRules"
       @toggle-record="handleToggleRecord"
       @compare="handleCompare"
       @export-result="showExportMenu = true"
@@ -48,6 +50,7 @@
       @toggle-map-remote="showMapRemoteRules = !showMapRemoteRules"
       @toggle-auto-responder="showAutoResponderRules = !showAutoResponderRules"
       @toggle-rewrite-rules="showRewriteRules = !showRewriteRules"
+      @toggle-dns-override="showDnsOverrideRules = !showDnsOverrideRules"
       @open-diff="openDiff"
       @toggle-session-manager="showSessionManager = !showSessionManager"
     />
@@ -66,6 +69,9 @@
 
     <!-- Rewrite Rules 规则面板 -->
     <RewriteRules v-if="showRewriteRules" @close="showRewriteRules = false" />
+
+    <!-- DNS 覆盖规则面板 -->
+    <DnsOverrideRules v-if="showDnsOverrideRules" @close="showDnsOverrideRules = false" />
 
     <!-- 会话管理面板 -->
     <SessionManager v-if="showSessionManager" @close="showSessionManager = false" />
@@ -137,6 +143,7 @@ import { useMapLocalStore } from '../stores/map-local-store'
 import { useMapRemoteStore } from '../stores/map-remote-store'
 import { useAutoResponderStore } from '../stores/auto-responder-store'
 import { useRewriteRulesStore } from '../stores/rewrite-rules-store'
+import { useDnsOverrideStore } from '../stores/dns-override-store'
 import { useDiffStore } from '../stores/diff-store'
 import SystemProxyBanner from '../components/SystemProxyBanner.vue'
 import DomainFilter from '../components/DomainFilter.vue'
@@ -150,6 +157,7 @@ import MapLocalRules from '../components/MapLocalRules.vue'
 import MapRemoteRules from '../components/MapRemoteRules.vue'
 import AutoResponderRules from '../components/AutoResponderRules.vue'
 import RewriteRules from '../components/RewriteRules.vue'
+import DnsOverrideRules from '../components/DnsOverrideRules.vue'
 import SessionManager from '../components/SessionManager.vue'
 
 const router = useRouter()
@@ -161,6 +169,7 @@ const mapLocalStore = useMapLocalStore()
 const mapRemoteStore = useMapRemoteStore()
 const autoResponderStore = useAutoResponderStore()
 const rewriteRulesStore = useRewriteRulesStore()
+const dnsOverrideStore = useDnsOverrideStore()
 const diffStore = useDiffStore()
 const toast = useToast()
 
@@ -173,6 +182,7 @@ const showMapLocalRules = ref<boolean>(false)
 const showMapRemoteRules = ref<boolean>(false)
 const showAutoResponderRules = ref<boolean>(false)
 const showRewriteRules = ref<boolean>(false)
+const showDnsOverrideRules = ref<boolean>(false)
 const showSessionManager = ref<boolean>(false)
 
 /** 当前键盘导航焦点在 displayRows 中的索引（group 模式专用，含域名头） */
@@ -199,11 +209,12 @@ onMounted(() => {
   // 启动系统代理状态轮询（开启时 banner 才能正确显示）
   systemProxyStore.startPolling()
 
-  // 加载 Map Local、Map Remote、Auto Responder 和 Rewrite Rules 规则
+  // 加载 Map Local、Map Remote、Auto Responder、Rewrite Rules 和 DNS 覆盖规则
   mapLocalStore.loadRules()
   mapRemoteStore.loadRules()
   autoResponderStore.loadRules()
   rewriteRulesStore.loadRules()
+  dnsOverrideStore.loadRules()
 })
 
 onUnmounted(() => {

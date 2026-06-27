@@ -129,6 +129,8 @@ export interface AppSettings {
   autoResponderRules?: AutoResponderRule[]
   /** Rewrite Rules 规则 */
   rewriteRules?: RewriteRule[]
+  /** DNS 覆盖规则 */
+  dnsOverrideRules?: DnsOverrideRule[]
   /** AI 代码分析配置 */
   aiCodeAnalysisConfig?: {
     repoUrl?: string
@@ -446,6 +448,20 @@ export interface RewriteRule {
   createdAt: string
 }
 
+/** DNS 覆盖规则 */
+export interface DnsOverrideRule {
+  /** 规则 ID */
+  id: string
+  /** 是否启用 */
+  enabled: boolean
+  /** 域名（支持通配符，如 *.example.com） */
+  domain: string
+  /** 目标 IP 地址 */
+  ip: string
+  /** 创建时间 */
+  createdAt: string
+}
+
 /** Auto Responder 规则 */
 export interface AutoResponderRule {
   /** 规则 ID */
@@ -694,6 +710,13 @@ export const IPC_CHANNELS = {
   REWRITE_RULES_REMOVE_RULE: 'rewrite-rules:remove-rule',
   REWRITE_RULES_UPDATE_RULE: 'rewrite-rules:update-rule',
   REWRITE_RULES_SYNC_RULES: 'rewrite-rules:sync-rules',
+
+  // DNS 覆盖功能
+  DNS_OVERRIDE_GET_RULES: 'dns-override:get-rules',
+  DNS_OVERRIDE_ADD_RULE: 'dns-override:add-rule',
+  DNS_OVERRIDE_REMOVE_RULE: 'dns-override:remove-rule',
+  DNS_OVERRIDE_UPDATE_RULE: 'dns-override:update-rule',
+  DNS_OVERRIDE_SYNC_RULES: 'dns-override:sync-rules',
 
   // 会话管理
   SESSION_SAVE: 'session:save',

@@ -20,6 +20,7 @@ import type {
   MapRemoteRule,
   AutoResponderRule,
   RewriteRule,
+  DnsOverrideRule,
   CodeAnalysisRequest,
   CodeAnalysisResult,
   CloneProgress,
@@ -204,6 +205,13 @@ interface ElectronAPI {
     updateRule: (ruleId: string, updates: Partial<RewriteRule>) => Promise<{ success: boolean; error?: string }>
     getRules: () => Promise<RewriteRule[]>
     syncRules: (rules: RewriteRule[]) => Promise<{ success: boolean; error?: string }>
+  }
+  dnsOverride: {
+    addRule: (rule: Omit<DnsOverrideRule, 'id' | 'createdAt'>) => Promise<{ success: boolean; rule?: DnsOverrideRule; error?: string }>
+    removeRule: (ruleId: string) => Promise<{ success: boolean; error?: string }>
+    updateRule: (ruleId: string, updates: Partial<DnsOverrideRule>) => Promise<{ success: boolean; error?: string }>
+    getRules: () => Promise<DnsOverrideRule[]>
+    syncRules: (rules: DnsOverrideRule[]) => Promise<{ success: boolean; error?: string }>
   }
   session: {
     save: (session: Omit<CaptureSession, 'id' | 'createdAt'>) => Promise<{ success: boolean; id?: number; error?: string }>
@@ -918,6 +926,39 @@ export const ipc = {
       const api = getElectronAPI()
       if (!api) return { success: false, error: 'Not in Electron environment' }
       return api.rewriteRules.syncRules(rules)
+    },
+  },
+
+  // ===== DNS 覆盖功能 =====
+  dnsOverride: {
+    addRule: async (rule: Omit<DnsOverrideRule, 'id' | 'createdAt'>): Promise<{ success: boolean; rule?: DnsOverrideRule; error?: string }> => {
+      const api = getElectronAPI()
+      if (!api) return { success: false, error: 'Not in Electron environment' }
+      return api.dnsOverride.addRule(rule)
+    },
+
+    removeRule: async (ruleId: string): Promise<{ success: boolean; error?: string }> => {
+      const api = getElectronAPI()
+      if (!api) return { success: false, error: 'Not in Electron environment' }
+      return api.dnsOverride.removeRule(ruleId)
+    },
+
+    updateRule: async (ruleId: string, updates: Partial<DnsOverrideRule>): Promise<{ success: boolean; error?: string }> => {
+      const api = getElectronAPI()
+      if (!api) return { success: false, error: 'Not in Electron environment' }
+      return api.dnsOverride.updateRule(ruleId, updates)
+    },
+
+    getRules: async (): Promise<DnsOverrideRule[]> => {
+      const api = getElectronAPI()
+      if (!api) return []
+      return api.dnsOverride.getRules()
+    },
+
+    syncRules: async (rules: DnsOverrideRule[]): Promise<{ success: boolean; error?: string }> => {
+      const api = getElectronAPI()
+      if (!api) return { success: false, error: 'Not in Electron environment' }
+      return api.dnsOverride.syncRules(rules)
     },
   },
 

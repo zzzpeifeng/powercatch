@@ -4,9 +4,9 @@
 import { ipcMain, BrowserWindow, shell, dialog } from 'electron'
 import * as http from 'http'
 import * as https from 'https'
-import { IPC_CHANNELS, type BreakpointRule, type BreakpointResumePayload, type MapLocalRule, type MapRemoteRule, type AutoResponderRule, type RewriteRule, type ReplayRequest, type ReplayResult } from '../src/services/types'
+import { IPC_CHANNELS, type BreakpointRule, type BreakpointResumePayload, type MapLocalRule, type MapRemoteRule, type AutoResponderRule, type RewriteRule, type DnsOverrideRule, type ReplayRequest, type ReplayResult } from '../src/services/types'
 import * as sqlite from './db/sqlite'
-import { startProxy, stopProxy, getProxyStatus, getLocalIP, setDomainFilters, setDeviceAliases, setBreakpointRules as setProxyBreakpointRules, setMapLocalRules as setProxyMapLocalRules, setMapRemoteRules as setProxyMapRemoteRules, setAutoResponderRules, setRewriteRules as setProxyRewriteRules, abortAllPendingInterceptions, resolveBreakpointResume, rejectBreakpointResume } from './proxy/mitm-server'
+import { startProxy, stopProxy, getProxyStatus, getLocalIP, setDomainFilters, setDeviceAliases, setBreakpointRules as setProxyBreakpointRules, setMapLocalRules as setProxyMapLocalRules, setMapRemoteRules as setProxyMapRemoteRules, setAutoResponderRules, setRewriteRules as setProxyRewriteRules, setDnsOverrideRules as setProxyDnsOverrideRules, abortAllPendingInterceptions, resolveBreakpointResume, rejectBreakpointResume } from './proxy/mitm-server'
 import { generateCACert, isCAGenerated, getCertFilePath } from './proxy/ca-cert'
 import { setSystemProxy, clearSystemProxy, getSystemProxyStatus } from './proxy/system-proxy'
 import { executeCompare, testConnection, isCompareInProgress } from './services/ai-service'
@@ -1047,6 +1047,77 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle(IPC_CHANNELS.REWRITE_RULES_SYNC_RULES, async (_event, rules: RewriteRule[]) => {
     try {
       setProxyRewriteRules(rules)
+      return { success: true }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  // ===== DNS 覆盖功能 =====
+
+  ipcMain.handle(IPC_CHANNELS.DNS_OVERRIDE_GET_RULES, () => {
+    try {
+      const settings = sqlite.getAllSettings()
+      return settings.dnsOverrideRules || []
+    } catch {
+      return []
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.DNS_OVERRIDE_ADD_RULE, async (_event, rule: Omit<DnsOverrideRule, 'id' | 'createdAt'>) => {
+    try {
+      const settings = sqlite.getAllSettings()
+      const rules = settings.dnsOverrideRules || []
+
+      const newRule: DnsOverrideRule = {
+        ...rule,
+        id: `dns_override_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+        createdAt: new Date().toISOString(),
+      }
+
+      rules.push(newRule)
+      sqlite.saveAllSettings({ dnsOverrideRules: rules })
+      setProxyDnsOverrideRules(rules.filter(r => r.enabled))
+      return { success: true, rule: newRule }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.DNS_OVERRIDE_REMOVE_RULE, async (_event, ruleId: string) => {
+    try {
+      const settings = sqlite.getAllSettings()
+      const rules = (settings.dnsOverrideRules || []).filter(r => r.id !== ruleId)
+      sqlite.saveAllSettings({ dnsOverrideRules: rules })
+      setProxyDnsOverrideRules(rules.filter(r => r.enabled))
+      return { success: true }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.DNS_OVERRIDE_UPDATE_RULE, async (_event, { ruleId, updates }: { ruleId: string; updates: Partial<DnsOverrideRule> }) => {
+    try {
+      const settings = sqlite.getAllSettings()
+      const rules = settings.dnsOverrideRules || []
+      const index = rules.findIndex(r => r.id === ruleId)
+
+      if (index === -1) {
+        return { success: false, error: '规则不存在' }
+      }
+
+      rules[index] = { ...rules[index], ...updates }
+      sqlite.saveAllSettings({ dnsOverrideRules: rules })
+      setProxyDnsOverrideRules(rules.filter(r => r.enabled))
+      return { success: true }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.DNS_OVERRIDE_SYNC_RULES, async (_event, rules: DnsOverrideRule[]) => {
+    try {
+      setProxyDnsOverrideRules(rules)
       return { success: true }
     } catch (error: any) {
       return { success: false, error: error.message }

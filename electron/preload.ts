@@ -313,6 +313,15 @@ const electronAPI = {
     syncRules: (rules: any[]) => ipcRenderer.invoke(IPC_CHANNELS.REWRITE_RULES_SYNC_RULES, rules),
   },
 
+  // DNS 覆盖功能
+  dnsOverride: {
+    addRule: (rule: any) => ipcRenderer.invoke(IPC_CHANNELS.DNS_OVERRIDE_ADD_RULE, rule),
+    removeRule: (ruleId: string) => ipcRenderer.invoke(IPC_CHANNELS.DNS_OVERRIDE_REMOVE_RULE, ruleId),
+    updateRule: (ruleId: string, updates: any) => ipcRenderer.invoke(IPC_CHANNELS.DNS_OVERRIDE_UPDATE_RULE, { ruleId, updates }),
+    getRules: () => ipcRenderer.invoke(IPC_CHANNELS.DNS_OVERRIDE_GET_RULES),
+    syncRules: (rules: any[]) => ipcRenderer.invoke(IPC_CHANNELS.DNS_OVERRIDE_SYNC_RULES, rules),
+  },
+
   // 会话管理
   session: {
     save: (session: any) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_SAVE, session),
