@@ -85,6 +85,24 @@ export function runMigrations(db: Database.Database): void {
     )
   `)
 
+  // 创建 cookies 表
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS cookies (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      value TEXT NOT NULL,
+      domain TEXT NOT NULL,
+      path TEXT NOT NULL DEFAULT '/',
+      expires TEXT,
+      http_only INTEGER NOT NULL DEFAULT 0,
+      secure INTEGER NOT NULL DEFAULT 0,
+      same_site TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(domain, path, name)
+    )
+  `)
+
   // 创建索引以优化查询性能
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_requests_host ON requests(host)
@@ -97,6 +115,12 @@ export function runMigrations(db: Database.Database): void {
   `)
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_comparisons_created_at ON comparisons(created_at)
+  `)
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_cookies_domain ON cookies(domain)
+  `)
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_cookies_expires ON cookies(expires)
   `)
 
   // 插入默认设置（如果不存在）

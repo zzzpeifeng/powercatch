@@ -6,7 +6,7 @@ import Database from 'better-sqlite3'
 import { app } from 'electron'
 import { join } from 'path'
 import { runMigrations } from './migrations'
-import type { DbRequest, CaptureRequest, ComparisonRecord, AppSettings, CaptureSession, AutoResponderRule } from '../../src/services/types'
+import type { DbRequest, CaptureRequest, ComparisonRecord, AppSettings, CaptureSession, AutoResponderRule, Cookie, CookieJar } from '../../src/services/types'
 import { DEFAULT_PROMPT_V1 } from '../../src/services/types'
 
 let db: Database.Database | null = null
@@ -541,4 +541,188 @@ export function deleteAutoResponderRule(id: string): void {
   const db = getDatabase()
   const stmt = db.prepare('DELETE FROM autoResponderRules WHERE id = ?')
   stmt.run(id)
+}
+
+// ===== Cookie 管理 =====
+
+/**
+ * 获取所有 Cookie
+ * @returns Cookie 列表
+ */
+export function getAllCookies(): Cookie[] {
+  const db = getDatabase()
+  const stmt = db.prepare('SELECT * FROM cookies ORDER BY domain, name')
+  const rows = stmt.all() as Array<{
+    name: string
+    value: string
+    domain: string
+    path: string
+    expires: string | null
+    http_only: number
+    secure: number
+    same_site: string | null
+    created_at: string
+  }>
+
+  return rows.map(row => ({
+    name: row.name,
+    value: row.value,
+    domain: row.domain,
+    path: row.path,
+    expires: row.expires || undefined,
+    httpOnly: Boolean(row.http_only),
+    secure: Boolean(row.secure),
+    sameSite: (row.same_site as Cookie['sameSite']) || undefined,
+    createdAt: row.created_at,
+  }))
+}
+
+/**
+ * 添加或更新 Cookie（使用 UNIQUE 约束的 upsert）
+ * @param cookie Cookie 数据
+ */
+export function addCookie(cookie: Cookie): void {
+  const db = getDatabase()
+  const stmt = db.prepare(`
+    INSERT INTO cookies (name, value, domain, path, expires, http_only, secure, same_site, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    ON CONFLICT(domain, path, name) DO UPDATE SET
+      value = excluded.value,
+      expires = excluded.expires,
+      http_only = excluded.http_only,
+      secure = excluded.secure,
+      same_site = excluded.same_site,
+      updated_at = datetime('now')
+  `)
+  stmt.run(
+    cookie.name,
+    cookie.value,
+    cookie.domain,
+    cookie.path,
+    cookie.expires || null,
+    cookie.httpOnly ? 1 : 0,
+    cookie.secure ? 1 : 0,
+    cookie.sameSite || null,
+    cookie.createdAt,
+  )
+}
+
+/**
+ * 更新 Cookie
+ * @param domain 域名
+ * @param path 路径
+ * @param name 名称
+ * @param updates 更新数据
+ */
+export function updateCookie(domain: string, path: string, name: string, updates: Partial<Cookie>): void {
+  const db = getDatabase()
+
+  const setClauses: string[] = []
+  const values: any[] = []
+
+  if (updates.value !== undefined) {
+    setClauses.push('value = ?')
+    values.push(updates.value)
+  }
+  if (updates.expires !== undefined) {
+    setClauses.push('expires = ?')
+    values.push(updates.expires || null)
+  }
+  if (updates.httpOnly !== undefined) {
+    setClauses.push('http_only = ?')
+    values.push(updates.httpOnly ? 1 : 0)
+  }
+  if (updates.secure !== undefined) {
+    setClauses.push('secure = ?')
+    values.push(updates.secure ? 1 : 0)
+  }
+  if (updates.sameSite !== undefined) {
+    setClauses.push('same_site = ?')
+    values.push(updates.sameSite || null)
+  }
+
+  if (setClauses.length === 0) return
+
+  setClauses.push("updated_at = datetime('now')")
+  values.push(domain, path, name)
+
+  const sql = `UPDATE cookies SET ${setClauses.join(', ')} WHERE domain = ? AND path = ? AND name = ?`
+  const stmt = db.prepare(sql)
+  stmt.run(...values)
+}
+
+/**
+ * 删除单个 Cookie
+ * @param domain 域名
+ * @param path 路径
+ * @param name 名称
+ */
+export function deleteCookie(domain: string, path: string, name: string): void {
+  const db = getDatabase()
+  const stmt = db.prepare('DELETE FROM cookies WHERE domain = ? AND path = ? AND name = ?')
+  stmt.run(domain, path, name)
+}
+
+/**
+ * 清空某个域名下的所有 Cookie
+ * @param domain 域名
+ */
+export function clearDomainCookies(domain: string): void {
+  const db = getDatabase()
+  const stmt = db.prepare('DELETE FROM cookies WHERE domain = ?')
+  stmt.run(domain)
+}
+
+/**
+ * 清空所有 Cookie
+ */
+export function clearAllCookies(): void {
+  const db = getDatabase()
+  db.exec('DELETE FROM cookies')
+}
+
+/**
+ * 批量导入 Cookie（事务内执行）
+ * @param cookies Cookie 列表
+ */
+export function importCookies(cookies: Cookie[]): void {
+  const db = getDatabase()
+  const stmt = db.prepare(`
+    INSERT INTO cookies (name, value, domain, path, expires, http_only, secure, same_site, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    ON CONFLICT(domain, path, name) DO UPDATE SET
+      value = excluded.value,
+      expires = excluded.expires,
+      http_only = excluded.http_only,
+      secure = excluded.secure,
+      same_site = excluded.same_site,
+      updated_at = datetime('now')
+  `)
+
+  const transaction = db.transaction(() => {
+    for (const cookie of cookies) {
+      stmt.run(
+        cookie.name,
+        cookie.value,
+        cookie.domain,
+        cookie.path,
+        cookie.expires || null,
+        cookie.httpOnly ? 1 : 0,
+        cookie.secure ? 1 : 0,
+        cookie.sameSite || null,
+        cookie.createdAt,
+      )
+    }
+  })
+
+  transaction()
+}
+
+/**
+ * 清理过期 Cookie
+ */
+export function cleanExpiredCookies(): void {
+  const db = getDatabase()
+  const stmt = db.prepare("DELETE FROM cookies WHERE expires IS NOT NULL AND expires < datetime('now')")
+  stmt.run()
 }

@@ -331,6 +331,19 @@ const electronAPI = {
     rename: (sessionId: number, newName: string) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_RENAME, { sessionId, newName }),
   },
 
+  // Cookie 管理
+  cookie: {
+    getAll: () => ipcRenderer.invoke(IPC_CHANNELS.COOKIE_GET_ALL),
+    add: (cookie: any) => ipcRenderer.invoke(IPC_CHANNELS.COOKIE_ADD, cookie),
+    update: (domain: string, path: string, name: string, updates: any) =>
+      ipcRenderer.invoke(IPC_CHANNELS.COOKIE_UPDATE, { domain, path, name, updates }),
+    delete: (domain: string, path: string, name: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.COOKIE_DELETE, { domain, path, name }),
+    clearDomain: (domain: string) => ipcRenderer.invoke(IPC_CHANNELS.COOKIE_CLEAR_DOMAIN, domain),
+    clearAll: () => ipcRenderer.invoke(IPC_CHANNELS.COOKIE_CLEAR_ALL),
+    importJar: (jar: any) => ipcRenderer.invoke(IPC_CHANNELS.COOKIE_IMPORT_JAR, jar),
+  },
+
   // 文件选择
   file: {
     select: () => ipcRenderer.invoke('file:select'),

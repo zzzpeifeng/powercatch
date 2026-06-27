@@ -31,6 +31,8 @@ import type {
   CaptureSession,
   ReplayRequest,
   ReplayResult,
+  Cookie,
+  CookieJar,
 } from './types'
 
 /** Electron API 类型（由 preload.ts 暴露） */
@@ -219,6 +221,15 @@ interface ElectronAPI {
     loadRequests: (sessionId: number) => Promise<{ success: boolean; requests?: CaptureRequest[]; error?: string }>
     delete: (sessionId: number) => Promise<{ success: boolean; error?: string }>
     rename: (sessionId: number, newName: string) => Promise<{ success: boolean; error?: string }>
+  }
+  cookie: {
+    getAll: () => Promise<Cookie[]>
+    add: (cookie: Cookie) => Promise<{ success: boolean; error?: string }>
+    update: (domain: string, path: string, name: string, updates: Partial<Cookie>) => Promise<{ success: boolean; error?: string }>
+    delete: (domain: string, path: string, name: string) => Promise<{ success: boolean; error?: string }>
+    clearDomain: (domain: string) => Promise<{ success: boolean; error?: string }>
+    clearAll: () => Promise<{ success: boolean; error?: string }>
+    importJar: (jar: CookieJar) => Promise<{ success: boolean; error?: string }>
   }
 }
 
@@ -992,6 +1003,51 @@ export const ipc = {
       const api = getElectronAPI()
       if (!api) return { success: false, error: 'Not in Electron environment' }
       return api.session.rename(sessionId, newName)
+    },
+  },
+
+  // ===== Cookie 管理 =====
+  cookie: {
+    getAll: async (): Promise<Cookie[]> => {
+      const api = getElectronAPI()
+      if (!api) return []
+      return api.cookie.getAll()
+    },
+
+    add: async (cookie: Cookie): Promise<{ success: boolean; error?: string }> => {
+      const api = getElectronAPI()
+      if (!api) return { success: false, error: 'Not in Electron environment' }
+      return api.cookie.add(cookie)
+    },
+
+    update: async (domain: string, path: string, name: string, updates: Partial<Cookie>): Promise<{ success: boolean; error?: string }> => {
+      const api = getElectronAPI()
+      if (!api) return { success: false, error: 'Not in Electron environment' }
+      return api.cookie.update(domain, path, name, updates)
+    },
+
+    delete: async (domain: string, path: string, name: string): Promise<{ success: boolean; error?: string }> => {
+      const api = getElectronAPI()
+      if (!api) return { success: false, error: 'Not in Electron environment' }
+      return api.cookie.delete(domain, path, name)
+    },
+
+    clearDomain: async (domain: string): Promise<{ success: boolean; error?: string }> => {
+      const api = getElectronAPI()
+      if (!api) return { success: false, error: 'Not in Electron environment' }
+      return api.cookie.clearDomain(domain)
+    },
+
+    clearAll: async (): Promise<{ success: boolean; error?: string }> => {
+      const api = getElectronAPI()
+      if (!api) return { success: false, error: 'Not in Electron environment' }
+      return api.cookie.clearAll()
+    },
+
+    importJar: async (jar: CookieJar): Promise<{ success: boolean; error?: string }> => {
+      const api = getElectronAPI()
+      if (!api) return { success: false, error: 'Not in Electron environment' }
+      return api.cookie.importJar(jar)
     },
   },
 }

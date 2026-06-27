@@ -724,6 +724,15 @@ export const IPC_CHANNELS = {
   DNS_OVERRIDE_UPDATE_RULE: 'dns-override:update-rule',
   DNS_OVERRIDE_SYNC_RULES: 'dns-override:sync-rules',
 
+  // Cookie 管理
+  COOKIE_GET_ALL: 'cookie:get-all',
+  COOKIE_ADD: 'cookie:add',
+  COOKIE_UPDATE: 'cookie:update',
+  COOKIE_DELETE: 'cookie:delete',
+  COOKIE_CLEAR_DOMAIN: 'cookie:clear-domain',
+  COOKIE_CLEAR_ALL: 'cookie:clear-all',
+  COOKIE_IMPORT_JAR: 'cookie:import-jar',
+
   // 会话管理
   SESSION_SAVE: 'session:save',
   SESSION_LIST: 'session:list',
@@ -1071,6 +1080,38 @@ export interface SSEAgentToolCall {
 export interface SSEAgentToolResult {
   tool: string
   result: any
+}
+
+/** Cookie 数据 */
+export interface Cookie {
+  /** Cookie 名称 */
+  name: string
+  /** Cookie 值 */
+  value: string
+  /** 所属域名 */
+  domain: string
+  /** 路径 */
+  path: string
+  /** 过期时间（ISO 8601 字符串，空表示会话 Cookie） */
+  expires?: string
+  /** 是否 HttpOnly */
+  httpOnly: boolean
+  /** 是否 Secure */
+  secure: boolean
+  /** SameSite 属性 */
+  sameSite?: 'Strict' | 'Lax' | 'None'
+  /** 创建时间 */
+  createdAt: string
+}
+
+/** Cookie Jar（导入导出格式） */
+export interface CookieJar {
+  /** Cookie 列表 */
+  cookies: Cookie[]
+  /** 导出时间 */
+  exportedAt: string
+  /** 来源 */
+  source: string
 }
 
 /** 请求重放参数 */

@@ -4,9 +4,9 @@
 import { ipcMain, BrowserWindow, shell, dialog } from 'electron'
 import * as http from 'http'
 import * as https from 'https'
-import { IPC_CHANNELS, type BreakpointRule, type BreakpointResumePayload, type MapLocalRule, type MapRemoteRule, type AutoResponderRule, type RewriteRule, type DnsOverrideRule, type ReplayRequest, type ReplayResult } from '../src/services/types'
+import { IPC_CHANNELS, type BreakpointRule, type BreakpointResumePayload, type MapLocalRule, type MapRemoteRule, type AutoResponderRule, type RewriteRule, type DnsOverrideRule, type ReplayRequest, type ReplayResult, type Cookie, type CookieJar } from '../src/services/types'
 import * as sqlite from './db/sqlite'
-import { startProxy, stopProxy, getProxyStatus, getLocalIP, setDomainFilters, setDeviceAliases, setBreakpointRules as setProxyBreakpointRules, setMapLocalRules as setProxyMapLocalRules, setMapRemoteRules as setProxyMapRemoteRules, setAutoResponderRules, setRewriteRules as setProxyRewriteRules, setDnsOverrideRules as setProxyDnsOverrideRules, abortAllPendingInterceptions, resolveBreakpointResume, rejectBreakpointResume } from './proxy/mitm-server'
+import { startProxy, stopProxy, getProxyStatus, getLocalIP, setDomainFilters, setDeviceAliases, setBreakpointRules as setProxyBreakpointRules, setMapLocalRules as setProxyMapLocalRules, setMapRemoteRules as setProxyMapRemoteRules, setAutoResponderRules, setRewriteRules as setProxyRewriteRules, setDnsOverrideRules as setProxyDnsOverrideRules, setCookieStore, abortAllPendingInterceptions, resolveBreakpointResume, rejectBreakpointResume } from './proxy/mitm-server'
 import { generateCACert, isCAGenerated, getCertFilePath } from './proxy/ca-cert'
 import { setSystemProxy, clearSystemProxy, getSystemProxyStatus } from './proxy/system-proxy'
 import { executeCompare, testConnection, isCompareInProgress } from './services/ai-service'
@@ -1124,6 +1124,83 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     }
   })
 
+  // ===== Cookie 管理功能 =====
+
+  ipcMain.handle(IPC_CHANNELS.COOKIE_GET_ALL, () => {
+    try {
+      return sqlite.getAllCookies()
+    } catch (error: any) {
+      console.error('[IPC] Failed to get cookies:', error)
+      return []
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.COOKIE_ADD, (_event, cookie: Cookie) => {
+    try {
+      sqlite.addCookie(cookie)
+      // 同步到 proxy
+      setCookieStore(sqlite.getAllCookies())
+      return { success: true }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.COOKIE_UPDATE, (_event, { domain, path, name, updates }: { domain: string; path: string; name: string; updates: Partial<Cookie> }) => {
+    try {
+      sqlite.updateCookie(domain, path, name, updates)
+      // 同步到 proxy
+      setCookieStore(sqlite.getAllCookies())
+      return { success: true }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.COOKIE_DELETE, (_event, { domain, path, name }: { domain: string; path: string; name: string }) => {
+    try {
+      sqlite.deleteCookie(domain, path, name)
+      // 同步到 proxy
+      setCookieStore(sqlite.getAllCookies())
+      return { success: true }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.COOKIE_CLEAR_DOMAIN, (_event, domain: string) => {
+    try {
+      sqlite.clearDomainCookies(domain)
+      // 同步到 proxy
+      setCookieStore(sqlite.getAllCookies())
+      return { success: true }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.COOKIE_CLEAR_ALL, () => {
+    try {
+      sqlite.clearAllCookies()
+      // 同步到 proxy
+      setCookieStore([])
+      return { success: true }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.COOKIE_IMPORT_JAR, (_event, jar: CookieJar) => {
+    try {
+      sqlite.importCookies(jar.cookies)
+      // 同步到 proxy
+      setCookieStore(sqlite.getAllCookies())
+      return { success: true }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
   // ===== AI 混合模式（使用 sse-manager.ts）=====
 
   /**
@@ -1271,4 +1348,22 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   } catch (error) {
     console.error('[IPC] Failed to load rewrite rules:', error)
   }
+
+  // 初始化时加载 Cookie 到 proxy
+  try {
+    const cookies = sqlite.getAllCookies()
+    setCookieStore(cookies)
+    console.log(`[IPC] Loaded ${cookies.length} cookies into proxy`)
+  } catch (error) {
+    console.error('[IPC] Failed to load cookies:', error)
+  }
+
+  // 定期清理过期 Cookie（每天执行一次）
+  setInterval(() => {
+    try {
+      sqlite.cleanExpiredCookies()
+    } catch (error) {
+      console.error('[IPC] Failed to clean expired cookies:', error)
+    }
+  }, 24 * 60 * 60 * 1000)
 }

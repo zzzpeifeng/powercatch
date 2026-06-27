@@ -40,6 +40,7 @@
       :show-rewrite-rules="showRewriteRules"
       :dns-override-count="dnsOverrideStore.rules.length"
       :show-dns-override-rules="showDnsOverrideRules"
+      :cookie-count="cookieStore.cookieCount"
       @toggle-record="handleToggleRecord"
       @compare="handleCompare"
       @export-result="showExportMenu = true"
@@ -51,6 +52,7 @@
       @toggle-auto-responder="showAutoResponderRules = !showAutoResponderRules"
       @toggle-rewrite-rules="showRewriteRules = !showRewriteRules"
       @toggle-dns-override="showDnsOverrideRules = !showDnsOverrideRules"
+      @toggle-cookie-manager="showCookieManager = !showCookieManager"
       @open-diff="openDiff"
       @toggle-session-manager="showSessionManager = !showSessionManager"
       @import-har="handleImportHar"
@@ -74,6 +76,9 @@
 
     <!-- DNS 覆盖规则面板 -->
     <DnsOverrideRules v-if="showDnsOverrideRules" @close="showDnsOverrideRules = false" />
+
+    <!-- Cookie 管理器面板 -->
+    <CookieManager v-if="showCookieManager" @close="showCookieManager = false" />
 
     <!-- 会话管理面板 -->
     <SessionManager v-if="showSessionManager" @close="showSessionManager = false" />
@@ -146,6 +151,7 @@ import { useBreakpointStore } from '../stores/breakpoint-store'
 import { useMapLocalStore } from '../stores/map-local-store'
 import { useMapRemoteStore } from '../stores/map-remote-store'
 import { useAutoResponderStore } from '../stores/auto-responder-store'
+import { useCookieStore } from '../stores/cookie-store'
 import { useRewriteRulesStore } from '../stores/rewrite-rules-store'
 import { useDnsOverrideStore } from '../stores/dns-override-store'
 import { useDiffStore } from '../stores/diff-store'
@@ -160,6 +166,7 @@ import BreakpointRules from '../components/BreakpointRules.vue'
 import MapLocalRules from '../components/MapLocalRules.vue'
 import MapRemoteRules from '../components/MapRemoteRules.vue'
 import AutoResponderRules from '../components/AutoResponderRules.vue'
+import CookieManager from '../components/CookieManager.vue'
 import RewriteRules from '../components/RewriteRules.vue'
 import DnsOverrideRules from '../components/DnsOverrideRules.vue'
 import SessionManager from '../components/SessionManager.vue'
@@ -172,6 +179,7 @@ const breakpointStore = useBreakpointStore()
 const mapLocalStore = useMapLocalStore()
 const mapRemoteStore = useMapRemoteStore()
 const autoResponderStore = useAutoResponderStore()
+const cookieStore = useCookieStore()
 const rewriteRulesStore = useRewriteRulesStore()
 const dnsOverrideStore = useDnsOverrideStore()
 const diffStore = useDiffStore()
@@ -185,6 +193,7 @@ const showBreakpointRules = ref<boolean>(false)
 const showMapLocalRules = ref<boolean>(false)
 const showMapRemoteRules = ref<boolean>(false)
 const showAutoResponderRules = ref<boolean>(false)
+const showCookieManager = ref<boolean>(false)
 const showRewriteRules = ref<boolean>(false)
 const showDnsOverrideRules = ref<boolean>(false)
 const showSessionManager = ref<boolean>(false)
@@ -213,12 +222,13 @@ onMounted(() => {
   // 启动系统代理状态轮询（开启时 banner 才能正确显示）
   systemProxyStore.startPolling()
 
-  // 加载 Map Local、Map Remote、Auto Responder、Rewrite Rules 和 DNS 覆盖规则
+  // 加载 Map Local、Map Remote、Auto Responder、Rewrite Rules、DNS 覆盖规则和 Cookie
   mapLocalStore.loadRules()
   mapRemoteStore.loadRules()
   autoResponderStore.loadRules()
   rewriteRulesStore.loadRules()
   dnsOverrideStore.loadRules()
+  cookieStore.loadCookies()
 })
 
 onUnmounted(() => {

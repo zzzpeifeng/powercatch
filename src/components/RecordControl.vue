@@ -155,6 +155,22 @@
           <span class="flex-1">Diff 视图</span>
           <span class="text-[10px] text-gray-400">{{ checkedCount }}/2</span>
         </button>
+        <button
+          class="dropdown-item"
+          @click="$emit('toggle-cookie-manager'); toolsMenuRef?.close()"
+        >
+          <svg class="w-4 h-4 text-amber-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 2a10 10 0 100 20 10 10 0 000-20z" />
+            <path d="M8 12h.01M12 12h.01M16 12h.01" />
+          </svg>
+          <span class="flex-1">Cookie 管理器</span>
+          <span
+            v-if="cookieCount > 0"
+            class="min-w-[16px] h-[16px] flex items-center justify-center px-1 text-[9px] font-bold rounded-full bg-amber-500 text-white"
+          >
+            {{ cookieCount }}
+          </span>
+        </button>
         <div class="h-px bg-gray-200 dark:bg-gray-600 my-1"></div>
         <button
           class="dropdown-item"
@@ -264,6 +280,7 @@ defineProps<{
   showRewriteRules: boolean
   dnsOverrideCount: number
   showDnsOverrideRules: boolean
+  cookieCount: number
 }>()
 
 defineEmits<{
@@ -280,6 +297,7 @@ defineEmits<{
   (e: 'toggle-dns-override'): void
   (e: 'open-diff'): void
   (e: 'toggle-session-manager'): void
+  (e: 'toggle-cookie-manager'): void
   (e: 'import-har'): void
   (e: 'export-har'): void
 }>()

@@ -20,7 +20,9 @@ import {
   type AutoResponderRule,
   type RewriteRule,
   type DnsOverrideRule,
+  type Cookie,
 } from '../../src/services/types'
+import { parseSetCookieHeader, cookiesToHeader } from '../../src/utils/cookie-parser'
 import { networkInterfaces } from 'os'
 import { SSLErrorClassifier, SSLErrorFormatter, type SSLErrorDetail } from '../services/ssl-error-handler'
 import { SSLErrorLogger } from '../services/ssl-logger'
@@ -33,6 +35,7 @@ import { matchRewriteRules } from '../../src/utils/rewrite-matcher'
 import { matchDnsOverride } from '../../src/utils/dns-override-matcher'
 import { readFileSync } from 'fs'
 import { extname } from 'path'
+import * as sqlite from '../db/sqlite'
 
 let proxyInstance: any = null
 let proxyStatus: ProxyStatus = 'stopped'
@@ -59,6 +62,9 @@ let rewriteRules: RewriteRule[] = []
 
 // DNS 覆盖相关状态
 let dnsOverrideRules: DnsOverrideRule[] = []
+
+// Cookie 相关状态
+let cookieStore: Cookie[] = []
 const pendingInterceptions = new Map<string, {
   resolve: (modified: InterceptSession) => void
   reject: (reason: string) => void
@@ -192,6 +198,14 @@ export function setRewriteRules(rules: RewriteRule[]): void {
  */
 export function setDnsOverrideRules(rules: DnsOverrideRule[]): void {
   dnsOverrideRules = rules.filter(r => r.enabled)
+}
+
+/**
+ * 设置 Cookie Store（供 IPC 层调用）
+ * @param cookies Cookie 列表
+ */
+export function setCookieStore(cookies: Cookie[]): void {
+  cookieStore = cookies
 }
 
 /**
@@ -1053,6 +1067,37 @@ export async function startProxy(port: number, win: BrowserWindow): Promise<bool
       }
 
       // ===== 非断点请求：原有流程 =====
+
+      // ===== Cookie 注入 =====
+      if (cookieStore.length > 0 && host) {
+        const path = ctx._path || '/'
+        const matchingCookies = cookieStore.filter(c => {
+          // 域名匹配（支持 .example.com 匹配 example.com）
+          const domainMatch = c.domain === host ||
+            (c.domain.startsWith('.') && host.endsWith(c.domain))
+          // 路径匹配
+          const pathMatch = path.startsWith(c.path)
+          // 过期时间检查
+          const notExpired = !c.expires || new Date(c.expires) > new Date()
+
+          return domainMatch && pathMatch && notExpired
+        })
+
+        if (matchingCookies.length > 0) {
+          if (!ctx.proxyToServerRequestOptions) {
+            ctx.proxyToServerRequestOptions = {}
+          }
+          if (!ctx.proxyToServerRequestOptions.headers) {
+            ctx.proxyToServerRequestOptions.headers = {}
+          }
+          const existingCookie = ctx.proxyToServerRequestOptions.headers.cookie || ''
+          const newCookie = cookiesToHeader(matchingCookies)
+          // 合并 Cookie（Store 的优先）
+          ctx.proxyToServerRequestOptions.headers.cookie = newCookie + (existingCookie ? '; ' + existingCookie : '')
+          console.log(`[Cookie] 注入 ${matchingCookies.length} 个 Cookie 到 ${host}`)
+        }
+      }
+
       const requestChunks: Buffer[] = []
       ctx.onRequestData((ctx: any, chunk: Buffer, callback: any) => {
         if (ctx._domainMatched) {
@@ -1108,6 +1153,37 @@ export async function startProxy(port: number, win: BrowserWindow): Promise<bool
       // 调试日志：记录响应
       const url = ctx.clientToProxyRequest?.url || ctx._url || 'unknown'
       console.log(`[Proxy] 📤 收到响应: ${url} (状态: ${ctx.serverToProxyResponse?.statusCode || 'unknown'})`)
+
+      // ===== Set-Cookie 提取 =====
+      const setCookie = ctx.serverToProxyResponse?.headers?.['set-cookie']
+      if (setCookie && ctx._host) {
+        try {
+          const newCookies = parseSetCookieHeader(setCookie, ctx._host)
+          if (newCookies.length > 0) {
+            // 更新内存 Cookie Store
+            for (const cookie of newCookies) {
+              const key = `${cookie.domain}:${cookie.path}:${cookie.name}`
+              const index = cookieStore.findIndex(
+                c => `${c.domain}:${c.path}:${c.name}` === key
+              )
+              if (index !== -1) {
+                cookieStore[index] = cookie
+              } else {
+                cookieStore.push(cookie)
+              }
+            }
+            // 持久化到数据库
+            try {
+              sqlite.importCookies(newCookies)
+            } catch (dbErr) {
+              console.error('[Cookie] 持久化 Set-Cookie 失败:', dbErr)
+            }
+            console.log(`[Cookie] 从 ${ctx._host} 提取 ${newCookies.length} 个 Set-Cookie`)
+          }
+        } catch (e) {
+          console.error('[Cookie] Set-Cookie 解析错误:', e)
+        }
+      }
 
       // 检查响应阶段断点
       const shouldInterceptResponse = ctx._breakpointMatched && 

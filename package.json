@@ -1,6 +1,6 @@
 {
   "name": "powercatch",
-  "version": "1.0.40",
+  "version": "1.0.41",
   "description": "PowerCatch - HTTP/HTTPS 抓包调试工具，支持 AI 智能对比分析",
   "author": "Peifeng Zhang <zzzpeifeng@163.com>",
   "main": "dist-electron/main.js",
