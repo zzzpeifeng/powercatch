@@ -3,8 +3,9 @@
  * 拦截 WS/WSS 连接的帧级别消息
  */
 
+import crypto from 'crypto'
+
 import type { WebSocketMessage, WebSocketConnection, WebSocketMessageType } from '../../src/services/types'
-import { v4 as uuidv4 } from 'uuid'
 
 /**
  * WebSocket 连接跟踪器
@@ -46,7 +47,7 @@ class WebSocketTracker {
     const connection = this.connections.get(requestId)
     
     const message: WebSocketMessage = {
-      id: uuidv4(),
+      id: crypto.randomUUID(),
       requestId,
       direction,
       type: this.detectMessageType(data),

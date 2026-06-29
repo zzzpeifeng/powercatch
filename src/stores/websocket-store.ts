@@ -228,12 +228,12 @@ export const useWebSocketStore = defineStore('websocket', () => {
 
   if (typeof window !== 'undefined') {
     // 订阅 WebSocket 消息推送
-    unsubMessageAdded = ipc.websocket.onMessageAdded((message: WebSocketMessage) => {
+    unsubMessageAdded = ipc.webSocket.onMessageAdded((message: WebSocketMessage) => {
       addMessage(message)
     })
 
     // 订阅 WebSocket 连接关闭事件
-    unsubConnectionClosed = ipc.websocket.onConnectionClosed((data: { requestId: string; reason?: string }) => {
+    unsubConnectionClosed = ipc.webSocket.onConnectionClosed((data: { requestId: string; reason?: string }) => {
       closeConnection(data.requestId, data.reason)
     })
   }

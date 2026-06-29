@@ -6,7 +6,7 @@
         <!-- 方向过滤 -->
         <select
           :value="webSocketStore.filterDirection"
-          @change="webSocketStore.setFilterDirection($event.target.value as any)"
+          @change="webSocketStore.setFilterDirection(($event.target as HTMLSelectElement).value as any)"
           class="px-2 py-1 text-sm border border-[var(--color-border)] rounded bg-[var(--color-surface)]"
         >
           <option value="all">所有方向</option>
@@ -17,7 +17,7 @@
         <!-- 类型过滤 -->
         <select
           :value="webSocketStore.filterType"
-          @change="webSocketStore.setFilterType($event.target.value as any)"
+          @change="webSocketStore.setFilterType(($event.target as HTMLSelectElement).value as any)"
           class="px-2 py-1 text-sm border border-[var(--color-border)] rounded bg-[var(--color-surface)]"
         >
           <option value="all">所有类型</option>
