@@ -104,6 +104,15 @@
             >
               {{ item.request!.graphQLOperationName }}
             </span>
+
+            <!-- WebSocket 标识 -->
+            <span
+              v-if="item.request!.isWebSocket"
+              class="text-[10px] px-1.5 py-0.5 rounded-full shrink-0 bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200"
+              title="WebSocket 连接"
+            >
+              🔌 WS
+            </span>
           </div>
           <div class="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
             <span class="text-gray-500 dark:text-gray-400 shrink-0 font-mono tabular-nums">{{ formatTime(item.request!.capturedAt) }}</span>

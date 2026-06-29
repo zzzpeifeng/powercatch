@@ -344,6 +344,21 @@ const electronAPI = {
     importJar: (jar: any) => ipcRenderer.invoke(IPC_CHANNELS.COOKIE_IMPORT_JAR, jar),
   },
 
+  // ===== WebSocket 抓包 =====
+  webSocket: {
+    onMessageAdded: (callback: (message: any) => void) => {
+      const handler = (_event: any, message: any) => callback(message)
+      ipcRenderer.on(IPC_CHANNELS.WEBSOCKET_MESSAGE_ADDED, handler)
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.WEBSOCKET_MESSAGE_ADDED, handler)
+    },
+
+    onConnectionClosed: (callback: (data: any) => void) => {
+      const handler = (_event: any, data: any) => callback(data)
+      ipcRenderer.on(IPC_CHANNELS.WEBSOCKET_CONNECTION_CLOSED, handler)
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.WEBSOCKET_CONNECTION_CLOSED, handler)
+    },
+  },
+
   // 文件选择
   file: {
     select: () => ipcRenderer.invoke('file:select'),

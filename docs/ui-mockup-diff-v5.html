@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>#12 请求 Diff 视图 - UI 设计稿 v5</title>
+<style>
+/* ========== 完全复制 PowerCatch main.css 的 CSS 变量 ========== */
+:root {
+  --color-bg: #f5f5f5;
+  --color-surface: #ffffff;
+  --color-text: #1a1a1a;
+  --color-text-secondary: #374151;
+  --color-border: #e5e7eb;
+  --color-primary: #3b82f6;
+  --color-primary-hover: #2563eb;
+  --color-success: #22c55e;
+  --color-warning: #f59e0b;
+  --color-danger: #ef4444;
+  --color-info: #3b82f6;
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+}
+.dark {
+  --color-bg: #1a1a1a;
+  --color-surface: #2d2d2d;
+  --color-text: #f0f0f0;
+  --color-text-secondary: #999999;
+  --color-border: #3d3d3d;
+  --color-primary: #60a5fa;
+  --color-primary-hover: #3b82f6;
+  --color-success: #4ade80;
+  --color-warning: #fbbf24;
+  --color-danger: #f87171;
+  --color-info: #60a5fa;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, sans-serif;
+  background: var(--color-bg);
+  color: var(--color-text);
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* ========== 布局 ========== */
+.app-layout { display: flex; height: 100vh; }
+.sidebar { width: 260px; background: var(--color-surface); border-right: 1px solid var(--color-border); display: flex; flex-direction: column; }
+.main-content { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.detail-panel { width: 55%; background: var(--color-surface); border-left: 1px solid var(--color-border); display: flex; flex-direction: column; }
+
+/* ========== 侧边栏 ========== */
+.sidebar-header { padding: 12px 16px; border-bottom: 1px solid var(--color-border); display: flex; align-items: center; gap: 8px; }
+.search-input { flex: 1; padding: 6px 10px; border-radius: var(--radius-sm); border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text); font-size: 13px; }
+.request-list { flex: 1; overflow-y: auto; }
+.request-item { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--color-border); cursor: pointer; font-size: 13px; transition: background 0.15s; }
+.request-item:hover { background: rgba(255,255,255,0.05); }
+.request-item.selected { background: rgba(96, 165, 250, 0.15); border-left: 3px solid var(--color-primary); }
+.method-badge { font-size: 11px; font-weight: 600; padding: 2px 6px; border-radius: 3px; }
+.method-get { background: rgba(59,130,246,0.2); color: #60a5fa; }
+.method-post { background: rgba(34,197,94,0.2); color: #4ade80; }
+.url-text { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.status-code { font-size: 12px; font-weight: 600; }
+
+/* ========== 主内容区头部 ========== */
+.main-header { padding: 10px 16px; border-bottom: 1px solid var(--color-border); display: flex; align-items: center; gap: 12px; }
+.diff-title { font-size: 15px; font-weight: 600; }
+.diff-subtitle { font-size: 12px; color: var(--color-text-secondary); }
+.btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 500; cursor: pointer; border: none; transition: all 0.15s; }
+.btn-primary { background: var(--color-primary); color: white; }
+.btn-primary:hover { filter: brightness(1.1); }
+.btn-secondary { background: transparent; color: var(--color-text-secondary); border: 1px solid var(--color-border); }
+.btn-secondary:hover { background: rgba(255,255,255,0.05); }
+.btn-sm { padding: 4px 10px; font-size: 12px; }
+.btn-danger { background: var(--color-danger); color: white; }
+
+/* ========== 请求对比卡片 ========== */
+.request-cards { display: flex; gap: 1px; background: var(--color-border); padding: 1px; }
+.request-card { flex: 1; background: var(--color-surface); padding: 12px 16px; }
+.card-label { font-size: 11px; color: var(--color-text-secondary); margin-bottom: 4px; }
+.card-value { font-size: 13px; font-weight: 500; }
+.card-meta { font-size: 12px; color: var(--color-text-secondary); margin-top: 4px; }
+
+/* ========== Tab 栏 ========== */
+.tab-bar { display: flex; border-bottom: 1px solid var(--color-border); }
+.tab-item { padding: 8px 16px; cursor: pointer; font-size: 13px; color: var(--color-text-secondary); border-bottom: 2px solid transparent; transition: all 0.15s; }
+.tab-item:hover { color: var(--color-text); }
+.tab-item.active { color: var(--color-primary); border-bottom-color: var(--color-primary); font-weight: 500; }
+
+/* ========== Diff 内容区 ========== */
+.diff-content { flex: 1; overflow-y: auto; padding: 16px; }
+.diff-section { margin-bottom: 20px; }
+.diff-section-title { font-size: 12px; font-weight: 600; color: var(--color-text-secondary); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; padding-bottom: 4px; border-bottom: 1px solid var(--color-border); }
+
+/* ========== 概览 Tab ========== */
+.diff-stats { display: flex; gap: 16px; margin-bottom: 20px; }
+.stat-card { flex: 1; background: var(--color-bg); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 12px 16px; text-align: center; }
+.stat-value { font-size: 24px; font-weight: 700; }
+.stat-label { font-size: 12px; color: var(--color-text-secondary); margin-top: 2px; }
+.stat-added .stat-value { color: var(--color-success); }
+.stat-removed .stat-value { color: var(--color-danger); }
+.stat-changed .stat-value { color: var(--color-warning); }
+
+.diff-highlights { background: var(--color-bg); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 12px 16px; }
+.highlight-item { display: flex; align-items: flex-start; gap: 8px; padding: 6px 0; font-size: 13px; border-bottom: 1px solid var(--color-border); }
+.highlight-item:last-child { border-bottom: none; }
+.highlight-badge { font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 3px; flex-shrink: 0; }
+.badge-added { background: rgba(74,222,128,0.2); color: var(--color-success); }
+.badge-removed { background: rgba(248,113,113,0.2); color: var(--color-danger); }
+.badge-changed { background: rgba(251,191,36,0.2); color: var(--color-warning); }
+
+/* ========== Headers Diff ========== */
+.headers-diff-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.headers-diff-table th { text-align: left; padding: 8px 12px; background: var(--color-bg); border-bottom: 1px solid var(--color-border); font-weight: 600; font-size: 12px; color: var(--color-text-secondary); }
+.headers-diff-table td { padding: 6px 12px; border-bottom: 1px solid var(--color-border); vertical-align: top; }
+.header-name { font-weight: 600; color: var(--color-text); white-space: nowrap; width: 180px; }
+.header-value { font-family: 'SF Mono', Menlo, monospace; font-size: 12px; word-break: break-all; }
+.diff-cell-added { background: rgba(74,222,128,0.1); }
+.diff-cell-removed { background: rgba(248,113,113,0.1); }
+.diff-cell-changed { background: rgba(251,191,36,0.1); }
+
+/* ========== JSON Diff ========== */
+.json-diff-container { display: flex; gap: 1px; background: var(--color-border); }
+.json-diff-side { flex: 1; background: var(--color-surface); padding: 12px; overflow-x: auto; }
+.json-diff-side pre { font-family: 'SF Mono', Menlo, monospace; font-size: 12px; line-height: 1.6; margin: 0; }
+.json-key { color: #fca5a5; }
+.json-string { color: #86efac; }
+.json-number { color: #93c5fd; }
+.json-diff-added { background: rgba(74,222,128,0.15); border-left: 3px solid var(--color-success); padding-left: 4px; }
+.json-diff-removed { background: rgba(248,113,113,0.15); border-left: 3px solid var(--color-danger); padding-left: 4px; text-decoration: line-through; opacity: 0.6; }
+.json-diff-changed { background: rgba(251,191,36,0.15); border-left: 3px solid var(--color-warning); padding-left: 4px; }
+
+/* ========== 空状态 ========== */
+.empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--color-text-secondary); gap: 8px; }
+.empty-icon { font-size: 48px; opacity: 0.3; }
+.empty-text { font-size: 14px; }
+
+/* ========== 主题切换按钮 ========== */
+.theme-toggle { position: fixed; top: 12px; right: 16px; z-index: 999; }
+
+/* ========== 暗色模式微调 ========== */
+.dark .request-item:hover { background: rgba(255,255,255,0.05); }
+.dark .request-item.selected { background: rgba(96,165,250,0.15); }
+.dark .btn-secondary { background: transparent; color: var(--color-text-secondary); border-color: var(--color-border); }
+.dark .btn-secondary:hover { background: rgba(255,255,255,0.05); }
+</style>
+</head>
+<body>
+<!-- 主题切换 -->
+<div class="theme-toggle">
+  <button class="btn btn-secondary btn-sm" onclick="toggleTheme()">切换亮/暗主题</button>
+</div>
+
+<div class="app-layout">
+  <!-- ====== 左侧：请求列表 ====== -->
+  <div class="sidebar">
+    <div class="sidebar-header">
+      <input class="search-input" placeholder="搜索请求..." />
+      <button class="btn btn-primary btn-sm">Diff</button>
+    </div>
+    <div class="request-list">
+      <div class="request-item selected">
+        <span class="method-badge method-get">GET</span>
+        <span class="url-text">/api/v1/users/profile</span>
+        <span class="status-code" style="color: var(--color-success);">200</span>
+      </div>
+      <div class="request-item">
+        <span class="method-badge method-post">POST</span>
+        <span class="url-text">/api/v1/orders/create</span>
+        <span class="status-code" style="color: var(--color-danger);">500</span>
+      </div>
+      <div class="request-item">
+        <span class="method-badge method-get">GET</span>
+        <span class="url-text">/api/v1/products/list</span>
+        <span class="status-code" style="color: var(--color-success);">200</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====== 中间：Diff 视图 ====== -->
+  <div class="main-content">
+    <!-- 头部 -->
+    <div class="main-header">
+      <span class="diff-title">🔍 Diff 视图</span>
+      <span class="diff-subtitle">对比 2 个请求的差异</span>
+      <div style="flex:1;"></div>
+      <button class="btn btn-secondary btn-sm">交换顺序</button>
+      <button class="btn btn-danger btn-sm">清空</button>
+    </div>
+
+    <!-- 请求对比卡片 -->
+    <div class="request-cards">
+      <div class="request-card">
+        <div class="card-label">请求 1（较旧）</div>
+        <div class="card-value">GET /api/v1/users/profile</div>
+        <div class="card-meta">200 OK · 1.2 KB · 145ms</div>
+      </div>
+      <div class="request-card" style="border-left: 1px solid var(--color-border);">
+        <div class="card-label">请求 2（较新）</div>
+        <div class="card-value">GET /api/v1/users/profile</div>
+        <div class="card-meta">200 OK · 1.8 KB · 98ms</div>
+      </div>
+    </div>
+
+    <!-- Tab 栏 -->
+    <div class="tab-bar">
+      <div class="tab-item active">概览</div>
+      <div class="tab-item">请求头</div>
+      <div class="tab-item">请求体</div>
+      <div class="tab-item">响应体</div>
+      <div class="tab-item">查询参数</div>
+    </div>
+
+    <!-- Diff 内容区 -->
+    <div class="diff-content">
+      <!-- 概览 Tab -->
+      <div class="diff-stats">
+        <div class="stat-card stat-added">
+          <div class="stat-value">+3</div>
+          <div class="stat-label">新增</div>
+        </div>
+        <div class="stat-card stat-removed">
+          <div class="stat-value">-2</div>
+          <div class="stat-label">删除</div>
+        </div>
+        <div class="stat-card stat-changed">
+          <div class="stat-value">~1</div>
+          <div class="stat-label">修改</div>
+        </div>
+      </div>
+
+      <div class="diff-section">
+        <div class="diff-section-title">📊 差异概览</div>
+        <div class="diff-highlights">
+          <div class="highlight-item">
+            <span class="highlight-badge badge-added">新增</span>
+            <span>响应头新增 <code style="color:var(--color-primary);">X-RateLimit-Remaining: 99</code></span>
+          </div>
+          <div class="highlight-item">
+            <span class="highlight-badge badge-changed">修改</span>
+            <span>响应时间从 <code>145ms</code> 降低到 <code style="color:var(--color-success);">98ms</code></span>
+          </div>
+          <div class="highlight-item">
+            <span class="highlight-badge badge-changed">修改</span>
+            <span>响应体大小从 <code>1.2 KB</code> 增加到 <code style="color:var(--color-warning);">1.8 KB</code></span>
+          </div>
+          <div class="highlight-item">
+            <span class="highlight-badge badge-added">新增</span>
+            <span>响应体新增字段 <code style="color:var(--color-primary);">user.role = "admin"</code></span>
+          </div>
+          <div class="highlight-item">
+            <span class="highlight-badge badge-removed">删除</span>
+            <span>请求头移除 <code style="color:var(--color-danger);">X-Legacy-Client: true</code></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====== 右侧：详情面板（放置 JSON Diff 示例） ====== -->
+  <div class="detail-panel">
+    <div class="main-header">
+      <span class="diff-title">响应体 Diff</span>
+    </div>
+    <div class="tab-bar">
+      <div class="tab-item active">并排对比</div>
+      <div class="tab-item">内联对比</div>
+    </div>
+    <div class="diff-content">
+      <div class="json-diff-container">
+        <!-- 左侧：请求1的响应 -->
+        <div class="json-diff-side">
+          <pre>{
+  <span class="json-key">"user"</span>: {
+    <span class="json-key">"id"</span>: <span class="json-number">12345</span>,
+    <span class="json-key">"name"</span>: <span class="json-string">"张三"</span>,
+    <span class="json-key">"email"</span>: <span class="json-string">"zhangsan@example.com"</span><span class="json-diff-removed">,
+    <span class="json-key">"role"</span>: <span class="json-string">"user"</span></span>
+  },
+  <span class="json-key">"timestamp"</span>: <span class="json-number">1719400000</span>
+}</pre>
+        </div>
+        <!-- 右侧：请求2的响应 -->
+        <div class="json-diff-side">
+          <pre>{
+  <span class="json-key">"user"</span>: {
+    <span class="json-key">"id"</span>: <span class="json-number">12345</span>,
+    <span class="json-key">"name"</span>: <span class="json-string">"张三"</span>,
+    <span class="json-key">"email"</span>: <span class="json-string">"zhangsan@example.com"</span><span class="json-diff-added">,
+    <span class="json-key">"role"</span>: <span class="json-string">"admin"</span></span>
+  },
+  <span class="json-key">"timestamp"</span>: <span class="json-number">1719480000</span>
+}</pre>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function toggleTheme() {
+  const html = document.documentElement;
+  if (html.classList.contains('dark')) {
+    html.classList.remove('dark');
+  } else {
+    html.classList.add('dark');
+  }
+}
+</script>
+</body>
+</html>

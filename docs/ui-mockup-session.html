@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>#3 会话保存与恢复 - UI 设计图</title>
+<style>
+/* ========== PowerCatch CSS 变量 ========== */
+:root {
+  --color-bg: #f5f5f5;
+  --color-surface: #ffffff;
+  --color-text: #1a1a1a;
+  --color-text-secondary: #374151;
+  --color-border: #e5e7eb;
+  --color-primary: #3b82f6;
+  --color-primary-hover: #2563eb;
+  --color-success: #22c55e;
+  --color-warning: #f59e0b;
+  --color-danger: #ef4444;
+  --color-info: #3b82f6;
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+}
+.dark {
+  --color-bg: #1a1a1a;
+  --color-surface: #2d2d2d;
+  --color-text: #f0f0f0;
+  --color-text-secondary: #999999;
+  --color-border: #3d3d3d;
+  --color-primary: #60a5fa;
+  --color-primary-hover: #3b82f6;
+  --color-success: #4ade80;
+  --color-warning: #fbbf24;
+  --color-danger: #f87171;
+  --color-info: #60a5fa;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, sans-serif;
+  background: var(--color-bg);
+  color: var(--color-text);
+  padding: 24px;
+  line-height: 1.6;
+}
+
+.container { max-width: 900px; margin: 0 auto; }
+
+h1 { margin-bottom: 8px; }
+h2 { margin: 24px 0 12px; font-size: 18px; }
+h3 { margin: 16px 0 8px; font-size: 15px; }
+
+.subtitle {
+  color: var(--color-text-secondary);
+  margin-bottom: 24px;
+  font-size: 14px;
+}
+
+/* ========== Mockup 容器 ========== */
+.mockup {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  margin-bottom: 24px;
+}
+.mockup-title {
+  padding: 10px 16px;
+  background: var(--color-bg);
+  border-bottom: 1px solid var(--color-border);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.mockup-body { padding: 16px; }
+
+/* ========== 通用组件 ========== */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border: none;
+  transition: all 0.15s;
+}
+.btn-primary { background: var(--color-primary); color: white; }
+.btn-secondary { background: transparent; color: var(--color-text-secondary); border: 1px solid var(--color-border); }
+.btn-danger { background: var(--color-danger); color: white; }
+.btn-sm { padding: 4px 10px; font-size: 12px; }
+.btn-icon {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.btn-icon:hover { background: var(--color-bg); color: var(--color-text); }
+
+.input {
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-size: 13px;
+  width: 100%;
+  outline: none;
+}
+.input:focus { border-color: var(--color-primary); }
+
+/* ========== 会话列表 ========== */
+.session-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  margin-bottom: 8px;
+  transition: all 0.15s;
+  cursor: pointer;
+}
+.session-item:hover {
+  border-color: var(--color-primary);
+  background: rgba(96,165,250,0.05);
+}
+.session-item.active {
+  border-color: var(--color-primary);
+  background: rgba(96,165,250,0.1);
+}
+
+.session-icon {
+  font-size: 24px;
+  flex-shrink: 0;
+}
+
+.session-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.session-name {
+  font-weight: 600;
+  font-size: 14px;
+  margin-bottom: 2px;
+}
+
+.session-meta {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  display: flex;
+  gap: 12px;
+}
+
+.session-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+/* ========== 保存弹窗 ========== */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0,0,0,0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.modal {
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
+  width: 400px;
+  max-width: 90vw;
+  overflow: hidden;
+}
+
+.modal-header {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.modal-title {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.modal-body {
+  padding: 20px;
+}
+
+.modal-footer {
+  padding: 12px 20px;
+  border-top: 1px solid var(--color-border);
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* ========== 状态指示 ========== */
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.status-dot.active { background: var(--color-success); }
+.status-dot.inactive { background: var(--color-text-secondary); }
+
+/* ========== 工具栏入口 ========== */
+.toolbar-entry {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  margin-bottom: 12px;
+}
+
+/* ========== 统计卡片 ========== */
+.stats-row {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.stat-card {
+  flex: 1;
+  padding: 12px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  text-align: center;
+}
+.stat-value {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--color-primary);
+}
+.stat-label {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  margin-top: 2px;
+}
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>#3 会话保存与恢复</h1>
+  <p class="subtitle">保存当前抓包会话，下次打开时恢复所有请求数据和 UI 状态</p>
+
+  <!-- ===== 方案说明 ===== -->
+  <h2>📐 技术方案</h2>
+  <div class="mockup">
+    <div class="mockup-title">💡 核心设计：Session = 元数据 + 时间范围引用</div>
+    <div class="mockup-body">
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+        <div>
+          <h4 style="font-size: 13px; color: var(--color-text-secondary); margin-bottom: 8px;">❌ 错误方案</h4>
+          <div style="padding: 12px; background: rgba(248,113,113,0.1); border: 1px solid rgba(248,113,113,0.3); border-radius: var(--radius-md); font-size: 13px;">
+            <div>session 表存储 requests[]</div>
+            <div style="color: var(--color-danger); margin-top: 4px;">→ 数据重复存储</div>
+            <div style="color: var(--color-danger);">→ 存储空间浪费</div>
+            <div style="color: var(--color-danger);">→ 数据一致性问题</div>
+          </div>
+        </div>
+        <div>
+          <h4 style="font-size: 13px; color: var(--color-text-secondary); margin-bottom: 8px;">✅ 正确方案</h4>
+          <div style="padding: 12px; background: rgba(74,222,128,0.1); border: 1px solid rgba(74,222,128,0.3); border-radius: var(--radius-md); font-size: 13px;">
+            <div>session 表存储时间范围</div>
+            <div style="color: var(--color-success); margin-top: 4px;">→ 零数据重复</div>
+            <div style="color: var(--color-success);">→ 查询 requests 表获取数据</div>
+            <div style="color: var(--color-success);">→ 数据始终一致</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== UI 设计 ===== -->
+  <h2>🎨 UI 设计</h2>
+
+  <!-- 工具栏入口 -->
+  <h3>1. 工具栏入口</h3>
+  <div class="mockup">
+    <div class="mockup-title">RecordControl.vue - 工具下拉菜单</div>
+    <div class="mockup-body">
+      <div style="background: var(--color-bg); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 8px; display: inline-block;">
+        <div style="padding: 8px 12px; display: flex; align-items: center; gap: 8px; border-radius: var(--radius-sm);">
+          <span style="font-size: 14px;">🔧</span>
+          <span style="font-weight: 500;">工具</span>
+          <span style="margin-left: auto; color: var(--color-text-secondary);">▶</span>
+        </div>
+      </div>
+      <div style="margin-top: 12px; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 4px; display: inline-block; min-width: 180px;">
+        <div style="padding: 8px 12px; display: flex; align-items: center; gap: 8px; border-radius: var(--radius-sm);">
+          <span style="color: var(--color-danger);">🔴</span>
+          <span>断点</span>
+          <span style="margin-left: auto; font-size: 11px; color: var(--color-text-secondary);">2</span>
+        </div>
+        <div style="padding: 8px 12px; display: flex; align-items: center; gap: 8px; border-radius: var(--radius-sm);">
+          <span style="color: var(--color-success);">🗺️</span>
+          <span>Map Local</span>
+        </div>
+        <div style="padding: 8px 12px; display: flex; align-items: center; gap: 8px; border-radius: var(--radius-sm);">
+          <span style="color: var(--color-primary);">🔗</span>
+          <span>Map Remote</span>
+        </div>
+        <div style="padding: 8px 12px; display: flex; align-items: center; gap: 8px; border-radius: var(--radius-sm);">
+          <span style="color: var(--color-info);">🔍</span>
+          <span>Diff 视图</span>
+        </div>
+        <div style="height: 1px; background: var(--color-border); margin: 4px 0;"></div>
+        <div style="padding: 8px 12px; display: flex; align-items: center; gap: 8px; border-radius: var(--radius-sm); background: rgba(96,165,250,0.1);">
+          <span>💾</span>
+          <span style="font-weight: 500;">会话管理</span>
+          <span class="status-dot active" style="margin-left: auto;"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 会话管理面板 -->
+  <h3>2. 会话管理面板</h3>
+  <div class="mockup">
+    <div class="mockup-title">SessionManager.vue - 会话列表</div>
+    <div class="mockup-body">
+      <!-- 头部 -->
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 18px;">💾</span>
+          <span style="font-weight: 600; font-size: 15px;">会话管理</span>
+          <span style="font-size: 12px; color: var(--color-text-secondary);">共 3 个会话</span>
+        </div>
+        <button class="btn btn-primary btn-sm">+ 保存当前会话</button>
+      </div>
+
+      <!-- 搜索 -->
+      <div style="margin-bottom: 12px;">
+        <input class="input" placeholder="搜索会话名称...">
+      </div>
+
+      <!-- 统计 -->
+      <div class="stats-row">
+        <div class="stat-card">
+          <div class="stat-value">3</div>
+          <div class="stat-label">总会话数</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">456</div>
+          <div class="stat-label">总请求数</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">2.3 MB</div>
+          <div class="stat-label">存储占用</div>
+        </div>
+      </div>
+
+      <!-- 会话列表 -->
+      <div class="session-item active">
+        <span class="session-icon">📁</span>
+        <div class="session-info">
+          <div class="session-name">当前会话（未保存）</div>
+          <div class="session-meta">
+            <span>28 个请求</span>
+            <span>2026-06-27 13:30 - 进行中</span>
+          </div>
+        </div>
+        <div class="session-actions">
+          <button class="btn btn-primary btn-sm">保存</button>
+        </div>
+      </div>
+
+      <div class="session-item">
+        <span class="session-icon">📁</span>
+        <div class="session-info">
+          <div class="session-name">登录流程调试</div>
+          <div class="session-meta">
+            <span>128 个请求</span>
+            <span>2026-06-27 14:30 - 15:45</span>
+          </div>
+        </div>
+        <div class="session-actions">
+          <button class="btn btn-secondary btn-sm">加载</button>
+          <button class="btn-icon" title="重命名">✏️</button>
+          <button class="btn-icon" title="导出">📤</button>
+          <button class="btn-icon" title="删除" style="color: var(--color-danger);">🗑️</button>
+        </div>
+      </div>
+
+      <div class="session-item">
+        <span class="session-icon">📁</span>
+        <div class="session-info">
+          <div class="session-name">API 性能测试</div>
+          <div class="session-meta">
+            <span>256 个请求</span>
+            <span>2026-06-26 10:15 - 12:30</span>
+          </div>
+        </div>
+        <div class="session-actions">
+          <button class="btn btn-secondary btn-sm">加载</button>
+          <button class="btn-icon" title="重命名">✏️</button>
+          <button class="btn-icon" title="导出">📤</button>
+          <button class="btn-icon" title="删除" style="color: var(--color-danger);">🗑️</button>
+        </div>
+      </div>
+
+      <div class="session-item">
+        <span class="session-icon">📁</span>
+        <div class="session-info">
+          <div class="session-name">支付接口抓包</div>
+          <div class="session-meta">
+            <span>72 个请求</span>
+            <span>2026-06-25 16:00 - 17:20</span>
+          </div>
+        </div>
+        <div class="session-actions">
+          <button class="btn btn-secondary btn-sm">加载</button>
+          <button class="btn-icon" title="重命名">✏️</button>
+          <button class="btn-icon" title="导出">📤</button>
+          <button class="btn-icon" title="删除" style="color: var(--color-danger);">🗑️</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 保存弹窗 -->
+  <h3>3. 保存会话弹窗</h3>
+  <div class="mockup">
+    <div class="mockup-title">保存会话弹窗</div>
+    <div class="mockup-body" style="background: rgba(0,0,0,0.3); padding: 24px;">
+      <div class="modal" style="margin: 0 auto;">
+        <div class="modal-header">
+          <span class="modal-title">💾 保存当前会话</span>
+          <button class="btn-icon">✕</button>
+        </div>
+        <div class="modal-body">
+          <div style="margin-bottom: 16px;">
+            <label style="font-size: 13px; font-weight: 500; display: block; margin-bottom: 6px;">会话名称</label>
+            <input class="input" placeholder="输入会话名称，如：登录流程调试" value="登录流程调试">
+          </div>
+          <div style="margin-bottom: 16px;">
+            <label style="font-size: 13px; font-weight: 500; display: block; margin-bottom: 6px;">会话信息</label>
+            <div style="background: var(--color-bg); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 12px; font-size: 13px;">
+              <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                <span style="color: var(--color-text-secondary);">请求数量</span>
+                <span>128 个</span>
+              </div>
+              <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                <span style="color: var(--color-text-secondary);">时间范围</span>
+                <span>14:30 - 15:45</span>
+              </div>
+              <div style="display: flex; justify-content: space-between;">
+                <span style="color: var(--color-text-secondary);">视图模式</span>
+                <span>分组视图</span>
+              </div>
+            </div>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--color-text-secondary);">
+            <span>ℹ️</span>
+            <span>会话将保存当前的请求时间范围和 UI 设置，不会重复存储请求数据</span>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary">取消</button>
+          <button class="btn btn-primary">保存</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 加载确认 -->
+  <h3>4. 加载会话确认</h3>
+  <div class="mockup">
+    <div class="mockup-title">加载会话确认弹窗</div>
+    <div class="mockup-body" style="background: rgba(0,0,0,0.3); padding: 24px;">
+      <div class="modal" style="margin: 0 auto;">
+        <div class="modal-header">
+          <span class="modal-title">📂 加载会话</span>
+          <button class="btn-icon">✕</button>
+        </div>
+        <div class="modal-body">
+          <div style="text-align: center; margin-bottom: 16px;">
+            <span style="font-size: 32px;">⚠️</span>
+          </div>
+          <div style="text-align: center; margin-bottom: 16px;">
+            <div style="font-weight: 600; margin-bottom: 8px;">确定加载会话「登录流程调试」？</div>
+            <div style="font-size: 13px; color: var(--color-text-secondary);">当前未保存的请求将会丢失</div>
+          </div>
+          <div style="background: var(--color-bg); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 12px; font-size: 13px;">
+            <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+              <span style="color: var(--color-text-secondary);">会话名称</span>
+              <span>登录流程调试</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+              <span style="color: var(--color-text-secondary);">请求数量</span>
+              <span>128 个</span>
+            </div>
+            <div style="display: flex; justify-content: space-between;">
+              <span style="color: var(--color-text-secondary);">保存时间</span>
+              <span>2026-06-27 15:45</span>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary">取消</button>
+          <button class="btn btn-danger">确定加载</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 数据库设计 ===== -->
+  <h2>🗄️ 数据库设计</h2>
+  <div class="mockup">
+    <div class="mockup-title">sessions 表结构</div>
+    <div class="mockup-body">
+      <table style="width: 100%; font-size: 13px; border-collapse: collapse;">
+        <thead>
+          <tr style="border-bottom: 1px solid var(--color-border);">
+            <th style="text-align: left; padding: 8px; color: var(--color-text-secondary);">字段</th>
+            <th style="text-align: left; padding: 8px; color: var(--color-text-secondary);">类型</th>
+            <th style="text-align: left; padding: 8px; color: var(--color-text-secondary);">说明</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr style="border-bottom: 1px solid var(--color-border);">
+            <td style="padding: 8px; font-family: monospace; color: var(--color-primary);">id</td>
+            <td style="padding: 8px;">INTEGER</td>
+            <td style="padding: 8px;">主键，自增</td>
+          </tr>
+          <tr style="border-bottom: 1px solid var(--color-border);">
+            <td style="padding: 8px; font-family: monospace; color: var(--color-primary);">name</td>
+            <td style="padding: 8px;">TEXT</td>
+            <td style="padding: 8px;">会话名称</td>
+          </tr>
+          <tr style="border-bottom: 1px solid var(--color-border);">
+            <td style="padding: 8px; font-family: monospace; color: var(--color-primary);">start_time</td>
+            <td style="padding: 8px;">DATETIME</td>
+            <td style="padding: 8px;">会话开始时间</td>
+          </tr>
+          <tr style="border-bottom: 1px solid var(--color-border);">
+            <td style="padding: 8px; font-family: monospace; color: var(--color-primary);">end_time</td>
+            <td style="padding: 8px;">DATETIME</td>
+            <td style="padding: 8px;">会话结束时间</td>
+          </tr>
+          <tr style="border-bottom: 1px solid var(--color-border);">
+            <td style="padding: 8px; font-family: monospace; color: var(--color-primary);">request_count</td>
+            <td style="padding: 8px;">INTEGER</td>
+            <td style="padding: 8px;">请求数量</td>
+          </tr>
+          <tr style="border-bottom: 1px solid var(--color-border);">
+            <td style="padding: 8px; font-family: monospace; color: var(--color-primary);">filters_json</td>
+            <td style="padding: 8px;">TEXT</td>
+            <td style="padding: 8px;">过滤状态 JSON</td>
+          </tr>
+          <tr style="border-bottom: 1px solid var(--color-border);">
+            <td style="padding: 8px; font-family: monospace; color: var(--color-primary);">view_mode</td>
+            <td style="padding: 8px;">TEXT</td>
+            <td style="padding: 8px;">视图模式 (list/group)</td>
+          </tr>
+          <tr>
+            <td style="padding: 8px; font-family: monospace; color: var(--color-primary);">created_at</td>
+            <td style="padding: 8px;">DATETIME</td>
+            <td style="padding: 8px;">创建时间</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ===== 流程图 ===== -->
+  <h2>🔄 数据流</h2>
+  <div class="mockup">
+    <div class="mockup-title">保存 & 加载流程</div>
+    <div class="mockup-body">
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
+        <div>
+          <h4 style="font-size: 13px; margin-bottom: 12px; color: var(--color-text-secondary);">保存流程</h4>
+          <div style="display: flex; flex-direction: column; gap: 8px;">
+            <div style="padding: 8px 12px; background: rgba(96,165,250,0.1); border-radius: var(--radius-sm); font-size: 13px;">1. 用户点击「保存当前会话」</div>
+            <div style="text-align: center; color: var(--color-text-secondary);">↓</div>
+            <div style="padding: 8px 12px; background: rgba(96,165,250,0.1); border-radius: var(--radius-sm); font-size: 13px;">2. 弹窗输入会话名称</div>
+            <div style="text-align: center; color: var(--color-text-secondary);">↓</div>
+            <div style="padding: 8px 12px; background: rgba(96,165,250,0.1); border-radius: var(--radius-sm); font-size: 13px;">3. 记录时间范围 + UI 状态</div>
+            <div style="text-align: center; color: var(--color-text-secondary);">↓</div>
+            <div style="padding: 8px 12px; background: rgba(74,222,128,0.1); border-radius: var(--radius-sm); font-size: 13px;">4. 写入 sessions 表</div>
+          </div>
+        </div>
+        <div>
+          <h4 style="font-size: 13px; margin-bottom: 12px; color: var(--color-text-secondary);">加载流程</h4>
+          <div style="display: flex; flex-direction: column; gap: 8px;">
+            <div style="padding: 8px 12px; background: rgba(96,165,250,0.1); border-radius: var(--radius-sm); font-size: 13px;">1. 用户点击「加载」</div>
+            <div style="text-align: center; color: var(--color-text-secondary);">↓</div>
+            <div style="padding: 8px 12px; background: rgba(96,165,250,0.1); border-radius: var(--radius-sm); font-size: 13px;">2. 确认弹窗（提示丢失当前数据）</div>
+            <div style="text-align: center; color: var(--color-text-secondary);">↓</div>
+            <div style="padding: 8px 12px; background: rgba(96,165,250,0.1); border-radius: var(--radius-sm); font-size: 13px;">3. 根据时间范围查询 requests 表</div>
+            <div style="text-align: center; color: var(--color-text-secondary);">↓</div>
+            <div style="padding: 8px 12px; background: rgba(74,222,128,0.1); border-radius: var(--radius-sm); font-size: 13px;">4. 恢复请求列表 + UI 状态</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

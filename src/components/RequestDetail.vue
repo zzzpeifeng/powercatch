@@ -8,7 +8,12 @@
       </div>
     </div>
 
-    <!-- 详情内容 -->
+    <!-- WebSocket 请求详情 -->
+    <template v-else-if="request.isWebSocket">
+      <WebSocketMessages :request-id="request.id" />
+    </template>
+
+    <!-- HTTP 请求详情 -->
     <template v-else>
       <!-- 顶部信息栏 -->
       <div class="px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 shrink-0">
@@ -161,6 +166,7 @@ import type { CaptureRequest } from '../services/types'
 import { formatHostWithProtocol } from '../utils/url-formatter'
 import { parseBody, type PreviewMode } from '../utils/body-preview-parser'
 import BodyPreviewRouter from './body-preview/BodyPreviewRouter.vue'
+import WebSocketMessages from './WebSocketMessages.vue'
 
 const props = defineProps<{
   request: CaptureRequest | null

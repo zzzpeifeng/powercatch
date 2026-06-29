@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PowerCatch #12 Request Diff View - 设计稿 v4</title>
+  <style>
+    /* 完全复制 PowerCatch 的 CSS 变量 */
+    :root {
+      --color-bg: #f5f5f5;
+      --color-surface: #ffffff;
+      --color-text: #1a1a1a;
+      --color-text-secondary: #374151;
+      --color-border: #e5e7eb;
+      --color-primary: #3b82f6;
+      --color-primary-hover: #2563eb;
+      --color-success: #22c55e;
+      --color-warning: #f59e0b;
+      --color-danger: #ef4444;
+      --radius-sm: 4px;
+      --radius-md: 8px;
+      --radius-lg: 12px;
+      --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+      --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.1);
+      --shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.15);
+    }
+
+    .dark {
+      --color-bg: #1a1a1a;
+      --color-surface: #2d2d2d;
+      --color-text: #f0f0f0;
+      --color-text-secondary: #999999;
+      --color-border: #3d3d3d;
+      --color-primary: #60a5fa;
+      --color-primary-hover: #3b82f6;
+      --color-success: #4ade80;
+      --color-warning: #fbbf24;
+      --color-danger: #f87171;
+    }
+
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, sans-serif;
+      background-color: var(--color-bg);
+      color: var(--color-text);
+      line-height: 1.5;
+    }
+
+    /* Tab 样式 - 复制自 main.css */
+    .tab-bar {
+      display: flex;
+      gap: 0;
+      border-bottom: 1px solid var(--color-border);
+    }
+
+    .tab-item {
+      padding: 8px 16px;
+      cursor: pointer;
+      font-size: 13px;
+      color: var(--color-text-secondary);
+      border-bottom: 2px solid transparent;
+      transition: all 0.15s ease;
+    }
+
+    .tab-item:hover {
+      color: var(--color-text);
+    }
+
+    .tab-item.active {
+      color: var(--color-primary);
+      border-bottom-color: var(--color-primary);
+      font-weight: 500;
+    }
+
+    /* Diff 样式 - 复制自 main.css */
+    .diff-added {
+      background: rgba(74, 222, 128, 0.15);
+      color: var(--color-success);
+      border-left: 3px solid var(--color-success);
+      padding-left: 8px;
+    }
+
+    .diff-removed {
+      background: rgba(248, 113, 113, 0.15);
+      color: var(--color-danger);
+      border-left: 3px solid var(--color-danger);
+      padding-left: 8px;
+      text-decoration: line-through;
+      opacity: 0.7;
+    }
+
+    .diff-changed {
+      background: rgba(251, 191, 36, 0.15);
+      color: var(--color-warning);
+      border-left: 3px solid var(--color-warning);
+      padding-left: 8px;
+    }
+
+    /* 按钮样式 - 复制自 main.css */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 10px 24px;
+      border-radius: var(--radius-md);
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s;
+      border: none;
+    }
+
+    .btn-primary {
+      background: var(--color-primary);
+      color: white;
+    }
+
+    .btn-primary:hover {
+      background: var(--color-primary-hover);
+    }
+
+    .btn-secondary {
+      background: var(--color-bg);
+      border: 1px solid var(--color-border);
+      color: var(--color-text);
+    }
+
+    .btn-secondary:hover {
+      background: var(--color-border);
+    }
+
+    .btn-danger {
+      background: var(--color-danger);
+      color: white;
+    }
+
+    /* 请求列表项 - 复制自 main.css */
+    .scroller-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      height: 48px;
+      min-height: 48px;
+      box-sizing: border-box;
+      padding: 6px 10px;
+      border-bottom: 1px solid var(--color-border);
+      cursor: pointer;
+      transition: background-color 0.15s ease;
+    }
+
+    .scroller-item:hover {
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    .scroller-item.selected {
+      background: rgba(96, 165, 250, 0.1);
+      border-left: 3px solid var(--color-primary);
+    }
+
+    /* 标签样式 */
+    .method-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    .method-get {
+      background: rgba(96, 165, 250, 0.2);
+      color: var(--color-primary);
+    }
+
+    .method-post {
+      background: rgba(74, 222, 128, 0.2);
+      color: var(--color-success);
+    }
+
+    /* 输入框样式 */
+    .input {
+      background: var(--color-bg);
+      border: 1px solid var(--color-border);
+      color: var(--color-text);
+      padding: 10px 12px;
+      border-radius: var(--radius-md);
+      font-size: 14px;
+      transition: border-color 0.15s;
+    }
+
+    .input:focus {
+      outline: none;
+      border-color: var(--color-primary);
+    }
+
+    /* 卡片样式 */
+    .card {
+      background: var(--color-surface);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-lg);
+    }
+  </style>
+</head>
+<body>
+  <div style="display: flex; height: 100vh;">
+    <!-- 左侧：请求列表 -->
+    <div style="width: 320px; background: var(--color-surface); border-right: 1px solid var(--color-border); display: flex; flex-direction: column;">
+      <!-- 列表头部 -->
+      <div style="padding: 16px; border-bottom: 1px solid var(--color-border);">
+        <div style="font-size: 14px; font-weight: 600; color: var(--color-text);">请求列表</div>
+        <div style="font-size: 12px; color: var(--color-text-secondary); margin-top: 4px;">勾选 2 个请求进行 Diff 对比</div>
+      </div>
+
+      <!-- 请求列表 -->
+      <div style="flex: 1; overflow-y: auto;">
+        <div class="scroller-item selected">
+          <input type="checkbox" checked style="margin: 0;">
+          <span class="method-badge method-get">GET</span>
+          <span style="font-size: 13px; color: var(--color-text); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">/api/users?page=1&limit=10</span>
+          <span style="font-size: 12px; color: var(--color-success);">200</span>
+        </div>
+
+        <div class="scroller-item selected">
+          <input type="checkbox" checked style="margin: 0;">
+          <span class="method-badge method-get">GET</span>
+          <span style="font-size: 13px; color: var(--color-text); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">/api/users?page=2&limit=20</span>
+          <span style="font-size: 12px; color: var(--color-success);">200</span>
+        </div>
+
+        <div class="scroller-item">
+          <input type="checkbox" style="margin: 0;">
+          <span class="method-badge method-post">POST</span>
+          <span style="font-size: 13px; color: var(--color-text); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">/api/login</span>
+          <span style="font-size: 12px; color: var(--color-success);">200</span>
+        </div>
+
+        <div class="scroller-item">
+          <input type="checkbox" style="margin: 0;">
+          <span class="method-badge method-get">GET</span>
+          <span style="font-size: 13px; color: var(--color-text); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">/api/posts</span>
+          <span style="font-size: 12px; color: var(--color-success);">200</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 右侧：Diff 视图 -->
+    <div style="flex: 1; display: flex; flex-direction: column;">
+      <!-- Diff 头部 -->
+      <div style="padding: 16px 24px; border-bottom: 1px solid var(--color-border); background: var(--color-surface);">
+        <div style="display: flex; align-items: center; justify-content: space-between;">
+          <div>
+            <div style="font-size: 16px; font-weight: 600; color: var(--color-text);">Diff 视图</div>
+            <div style="font-size: 12px; color: var(--color-text-secondary); margin-top: 2px;">对比两个请求的差异</div>
+          </div>
+          <button class="btn btn-danger" style="padding: 8px 16px; font-size: 13px;">清空选择</button>
+        </div>
+
+        <!-- 请求概览卡片 -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px;">
+          <div class="card" style="padding: 16px;">
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
+              <span style="font-size: 12px; background: var(--color-primary); color: white; padding: 2px 8px; border-radius: 4px;">基准</span>
+              <span class="method-badge method-get">GET</span>
+            </div>
+            <div style="font-size: 13px; color: var(--color-text); margin-bottom: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">/api/users?page=1&limit=10</div>
+            <div style="display: flex; gap: 16px; font-size: 12px; color: var(--color-text-secondary);">
+              <span>状态码: <span style="color: var(--color-success);">200</span></span>
+              <span>耗时: 145ms</span>
+              <span>大小: 2.3 KB</span>
+            </div>
+          </div>
+
+          <div class="card" style="padding: 16px;">
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
+              <span style="font-size: 12px; background: var(--color-warning); color: white; padding: 2px 8px; border-radius: 4px;">对比</span>
+              <span class="method-badge method-get">GET</span>
+            </div>
+            <div style="font-size: 13px; color: var(--color-text); margin-bottom: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">/api/users?page=2&limit=20</div>
+            <div style="display: flex; gap: 16px; font-size: 12px; color: var(--color-text-secondary);">
+              <span>状态码: <span style="color: var(--color-success);">200</span></span>
+              <span>耗时: 89ms</span>
+              <span>大小: 4.1 KB</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab 栏 -->
+      <div class="tab-bar" style="padding: 0 24px; background: var(--color-surface);">
+        <div class="tab-item active">概览</div>
+        <div class="tab-item">Headers</div>
+        <div class="tab-item">请求体</div>
+        <div class="tab-item">响应体</div>
+        <div class="tab-item">查询参数</div>
+      </div>
+
+      <!-- Diff 内容区域 -->
+      <div style="flex: 1; overflow-y: auto; padding: 24px;">
+        <!-- 差异统计 -->
+        <div class="card" style="padding: 20px; margin-bottom: 16px;">
+          <div style="font-size: 14px; font-weight: 600; color: var(--color-text); margin-bottom: 16px;">差异统计</div>
+          <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px;">
+            <div style="text-align: center;">
+              <div style="font-size: 32px; font-weight: 700; color: var(--color-success);">3</div>
+              <div style="font-size: 12px; color: var(--color-text-secondary);">新增</div>
+            </div>
+            <div style="text-align: center;">
+              <div style="font-size: 32px; font-weight: 700; color: var(--color-danger);">2</div>
+              <div style="font-size: 12px; color: var(--color-text-secondary);">删除</div>
+            </div>
+            <div style="text-align: center;">
+              <div style="font-size: 32px; font-weight: 700; color: var(--color-warning);">5</div>
+              <div style="font-size: 12px; color: var(--color-text-secondary);">修改</div>
+            </div>
+            <div style="text-align: center;">
+              <div style="font-size: 32px; font-weight: 700; color: var(--color-text-secondary);">18</div>
+              <div style="font-size: 12px; color: var(--color-text-secondary);">相同</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 关键差异列表 -->
+        <div class="card" style="padding: 20px;">
+          <div style="font-size: 14px; font-weight: 600; color: var(--color-text); margin-bottom: 16px;">关键差异</div>
+
+          <!-- 差异项 1 -->
+          <div class="diff-changed" style="padding: 12px; border-radius: var(--radius-sm); margin-bottom: 12px;">
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+              <span style="font-size: 11px; background: var(--color-warning); color: white; padding: 2px 8px; border-radius: 4px;">修改</span>
+              <span style="font-size: 12px; color: var(--color-text-secondary);">URL 查询参数</span>
+            </div>
+            <div style="font-family: monospace; font-size: 12px;">
+              <div style="color: var(--color-danger);">- page=1&limit=10</div>
+              <div style="color: var(--color-success);">+ page=2&limit=20</div>
+            </div>
+          </div>
+
+          <!-- 差异项 2 -->
+          <div class="diff-removed" style="padding: 12px; border-radius: var(--radius-sm); margin-bottom: 12px;">
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+              <span style="font-size: 11px; background: var(--color-danger); color: white; padding: 2px 8px; border-radius: 4px;">删除</span>
+              <span style="font-size: 12px; color: var(--color-text-secondary);">请求头</span>
+            </div>
+            <div style="font-family: monospace; font-size: 12px;">- X-Custom-Header: old-value</div>
+          </div>
+
+          <!-- 差异项 3 -->
+          <div class="diff-added" style="padding: 12px; border-radius: var(--radius-sm); margin-bottom: 12px;">
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+              <span style="font-size: 11px; background: var(--color-success); color: white; padding: 2px 8px; border-radius: 4px;">新增</span>
+              <span style="font-size: 12px; color: var(--color-text-secondary);">响应头</span>
+            </div>
+            <div style="font-family: monospace; font-size: 12px;">+ Cache-Control: max-age=3600</div>
+          </div>
+
+          <!-- 差异项 4 -->
+          <div class="diff-changed" style="padding: 12px; border-radius: var(--radius-sm);">
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+              <span style="font-size: 11px; background: var(--color-warning); color: white; padding: 2px 8px; border-radius: 4px;">修改</span>
+              <span style="font-size: 12px; color: var(--color-text-secondary);">性能指标</span>
+            </div>
+            <div style="font-size: 12px;">
+              <span style="color: var(--color-text-secondary);">响应时间: </span>
+              <span style="color: var(--color-danger);">145ms</span>
+              <span style="color: var(--color-text-secondary);"> → </span>
+              <span style="color: var(--color-success);">89ms</span>
+              <span style="color: var(--color-success); margin-left: 8px;">(↓38.6%)</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

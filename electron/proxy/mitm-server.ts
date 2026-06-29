@@ -36,6 +36,8 @@ import { matchDnsOverride } from '../../src/utils/dns-override-matcher'
 import { readFileSync } from 'fs'
 import { extname } from 'path'
 import * as sqlite from '../db/sqlite'
+import { wsTracker } from './websocket-handler'
+import type { WebSocketMessage } from '../../src/services/types'
 
 let proxyInstance: any = null
 let proxyStatus: ProxyStatus = 'stopped'
@@ -724,10 +726,21 @@ export async function startProxy(port: number, win: BrowserWindow): Promise<bool
       ctx._path = parseUrlPath(url)
       ctx._domainMatched = matchDomain(host, domainFilters)
 
-      // 跳过 CONNECT 方法和 WebSocket 升级
+      // 跳过 CONNECT 方法（HTTPS 隧道建立）
       if (method === 'CONNECT') return callback()
+
+      // ===== WebSocket 升级处理（不再跳过）=====
       const upgradeHeader = ctx.clientToProxyRequest?.headers?.upgrade
-      if (upgradeHeader && upgradeHeader.toLowerCase() === 'websocket') return callback()
+      const isWebSocket = upgradeHeader && upgradeHeader.toLowerCase() === 'websocket'
+      
+      if (isWebSocket) {
+        // 标记请求为 WebSocket
+        ctx._isWebSocket = true
+        ctx._webSocketUrl = url
+        
+        // 继续处理，让后面的 WebSocket 事件处理器处理
+        return callback()
+      }
 
       // ===== DNS 覆盖检查（最高优先级，在所有规则之前） =====
       const dnsMatch = matchDnsOverride(host, dnsOverrideRules)
@@ -1107,6 +1120,48 @@ export async function startProxy(port: number, win: BrowserWindow): Promise<bool
       })
 
       ctx.onRequestEnd((ctx: any, callback: any) => {
+        // WebSocket 连接特殊处理
+        if (ctx._isWebSocket) {
+          // WebSocket 升级请求：创建 CaptureRequest 并标记为 WebSocket
+          const requestId = ctx._webSocketRequestId || `ws_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`
+          const now = new Date().toISOString()
+          
+          // 收集请求头
+          const reqHeaders: Record<string, any> = {}
+          ctx.clientToProxyRequest?.forEach((value: string, key: string) => {
+            reqHeaders[key] = value
+          })
+          
+          // 创建 CaptureRequest（标记为 WebSocket）
+          const partial: any = {
+            id: requestId,
+            method: (ctx._method || 'GET') as any,
+            url: ctx._webSocketUrl || ctx._url || '',
+            path: ctx._path || '',
+            host: ctx._host || '',
+            statusCode: 101, // 101 Switching Protocols
+            duration: 0,
+            requestHeaders: reqHeaders,
+            requestBody: '',
+            responseHeaders: { 'connection': 'upgrade', 'upgrade': 'websocket' },
+            responseBody: '',
+            clientIp: ctx._clientIp || 'unknown',
+            deviceName: getDeviceName(ctx._clientIp || ''),
+            capturedAt: now,
+            isRecorded: true,
+            selected: false,
+            checked: false,
+            isWebSocket: true,
+          }
+          
+          // 推送到渲染进程
+          pushToRenderer(partial, false)
+          
+          console.log(`[WebSocket] ✓ 已记录 WebSocket 请求: ${partial.url} (ID: ${requestId})`)
+          
+          return callback()
+        }
+        
         if (ctx._domainMatched) {
           const rawRequestBuffer = Buffer.concat(requestChunks)
           const reqHeaders = ctx.clientToProxyRequest?.headers || {}
@@ -1149,6 +1204,14 @@ export async function startProxy(port: number, win: BrowserWindow): Promise<bool
     // 响应拦截
     proxy.onResponse((ctx: any, callback: any) => {
       const responseChunks: Buffer[] = []
+      
+      // ===== WebSocket 连接特殊处理 =====
+      // WebSocket 升级后，响应是 101 Switching Protocols
+      // 之后的消息由 WebSocket 事件处理器处理
+      if (ctx._isWebSocket) {
+        console.log(`[WebSocket] 响应阶段：101 Switching Protocols，跳过正常响应处理`)
+        return callback()
+      }
       
       // 调试日志：记录响应
       const url = ctx.clientToProxyRequest?.url || ctx._url || 'unknown'
@@ -1425,6 +1488,159 @@ export async function startProxy(port: number, win: BrowserWindow): Promise<bool
       }
       // 注意：不需要调用 callback，http-mitm-proxy 的 onError handler 无回调
     })
+
+    // ===== WebSocket 事件处理 =====
+
+    /**
+     * WebSocket 连接建立事件
+     * 当客户端通过代理升级到 WebSocket 时触发
+     */
+    proxy.onWebSocketConnection((ctx: any, callback: any) => {
+      try {
+        const requestId = ctx.clientToProxyWebSocket?.upgradeReq?.requestId || `ws_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`
+        const url = ctx.clientToProxyWebSocket?.upgradeReq?.url || ctx.clientToProxyWebSocket?.upgradeReq?.headers?.host || ''
+        
+        console.log(`[WebSocket] 🔌 连接建立: ${url} (ID: ${requestId})`)
+        
+        // 记录 WebSocket 升级
+        wsTracker.onUpgrade(requestId, url)
+        
+        // 标记请求为 WebSocket（需要在 onRequest 中设置）
+        // 这里先存储到 ctx 中，在 onRequest 中会用到
+        ctx._isWebSocket = true
+        ctx._webSocketRequestId = requestId
+        ctx._webSocketUrl = url
+        
+        return callback()
+      } catch (err) {
+        console.error('[WebSocket] onWebSocketConnection 错误:', err)
+        return callback()
+      }
+    })
+
+    /**
+     * 客户端发送消息（客户端→服务器）
+     * 当客户端通过 WebSocket 发送消息时触发
+     */
+    proxy.onWebSocketSend((ctx: any, message: Buffer, flags: any, callback: any) => {
+      try {
+        const requestId = ctx._webSocketRequestId || ctx.clientToProxyWebSocket?.upgradeReq?.requestId
+        
+        if (!requestId) {
+          console.warn('[WebSocket] onWebSocketSend: 未找到 requestId')
+          return callback()
+        }
+        
+        console.log(`[WebSocket] ↑ 客户端发送消息 (ID: ${requestId}, 大小: ${message.length} 字节)`)
+        
+        // 记录消息
+        const wsMessage = wsTracker.onMessage(requestId, 'client-to-server', message)
+        
+        // 限制内存中的消息数量（最多 1000 条）
+        const messages = wsTracker.getMessages(requestId)
+        if (messages.length > 1000) {
+          messages.shift() // 移除最旧的消息
+        }
+        
+        // 推送消息到渲染进程
+        pushWebSocketMessageToRenderer(wsMessage)
+        
+        return callback()
+      } catch (err) {
+        console.error('[WebSocket] onWebSocketSend 错误:', err)
+        return callback()
+      }
+    })
+
+    /**
+     * 服务端返回消息（服务器→客户端）
+     * 当服务器通过 WebSocket 返回消息时触发
+     */
+    proxy.onWebSocketMessage((ctx: any, message: Buffer, flags: any, callback: any) => {
+      try {
+        const requestId = ctx._webSocketRequestId || ctx.clientToProxyWebSocket?.upgradeReq?.requestId
+        
+        if (!requestId) {
+          console.warn('[WebSocket] onWebSocketMessage: 未找到 requestId')
+          return callback()
+        }
+        
+        console.log(`[WebSocket] ↓ 服务器返回消息 (ID: ${requestId}, 大小: ${message.length} 字节)`)
+        
+        // 记录消息
+        const wsMessage = wsTracker.onMessage(requestId, 'server-to-client', message)
+        
+        // 限制内存中的消息数量（最多 1000 条）
+        const messages = wsTracker.getMessages(requestId)
+        if (messages.length > 1000) {
+          messages.shift() // 移除最旧的消息
+        }
+        
+        // 推送消息到渲染进程
+        pushWebSocketMessageToRenderer(wsMessage)
+        
+        return callback()
+      } catch (err) {
+        console.error('[WebSocket] onWebSocketMessage 错误:', err)
+        return callback()
+      }
+    })
+
+    /**
+     * WebSocket 连接关闭事件
+     * 当 WebSocket 连接关闭时触发
+     */
+    proxy.onWebSocketClose((ctx: any, code: number, reason: Buffer, callback: any) => {
+      try {
+        const requestId = ctx._webSocketRequestId || ctx.clientToProxyWebSocket?.upgradeReq?.requestId
+        const reasonStr = reason?.toString() || undefined
+        
+        console.log(`[WebSocket] ✖ 连接关闭: ${requestId} (code: ${code}, reason: ${reasonStr || '无'})`)
+        
+        // 记录关闭
+        wsTracker.onClose(requestId, reasonStr)
+        
+        // 推送连接关闭事件到渲染进程
+        pushWebSocketConnectionClosedToRenderer(requestId, reasonStr)
+        
+        return callback()
+      } catch (err) {
+        console.error('[WebSocket] onWebSocketClose 错误:', err)
+        return callback()
+      }
+    })
+
+    /**
+     * 推送 WebSocket 消息到渲染进程
+     * @param message WebSocket 消息
+     */
+    function pushWebSocketMessageToRenderer(message: WebSocketMessage): void {
+      if (!mainWindow || mainWindow.isDestroyed()) return
+      
+      try {
+        mainWindow.webContents.send(IPC_CHANNELS.WEBSOCKET_MESSAGE_ADDED, message)
+      } catch (err) {
+        console.error('[WebSocket] 推送消息到渲染进程失败:', err)
+      }
+    }
+
+    /**
+     * 推送 WebSocket 连接关闭事件到渲染进程
+     * @param requestId 请求 ID
+     * @param reason 关闭原因
+     */
+    function pushWebSocketConnectionClosedToRenderer(requestId: string, reason?: string): void {
+      if (!mainWindow || mainWindow.isDestroyed()) return
+      
+      try {
+        mainWindow.webContents.send(IPC_CHANNELS.WEBSOCKET_CONNECTION_CLOSED, {
+          requestId,
+          reason,
+        })
+      } catch (err) {
+        console.error('[WebSocket] 推送连接关闭事件到渲染进程失败:', err)
+      }
+    }
 
     // 启动代理
     return new Promise<boolean>((resolve) => {

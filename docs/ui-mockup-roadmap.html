@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PowerCatch 功能规划 - UI 设计图</title>
+<style>
+/* ========== PowerCatch CSS 变量 ========== */
+:root {
+  --color-bg: #f5f5f5;
+  --color-surface: #ffffff;
+  --color-text: #1a1a1a;
+  --color-text-secondary: #374151;
+  --color-border: #e5e7eb;
+  --color-primary: #3b82f6;
+  --color-primary-hover: #2563eb;
+  --color-success: #22c55e;
+  --color-warning: #f59e0b;
+  --color-danger: #ef4444;
+  --color-info: #3b82f6;
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+}
+.dark {
+  --color-bg: #1a1a1a;
+  --color-surface: #2d2d2d;
+  --color-text: #f0f0f0;
+  --color-text-secondary: #999999;
+  --color-border: #3d3d3d;
+  --color-primary: #60a5fa;
+  --color-primary-hover: #3b82f6;
+  --color-success: #4ade80;
+  --color-warning: #fbbf24;
+  --color-danger: #f87171;
+  --color-info: #60a5fa;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, sans-serif;
+  background: var(--color-bg);
+  color: var(--color-text);
+  padding: 24px;
+  line-height: 1.6;
+}
+
+.container { max-width: 1200px; margin: 0 auto; }
+
+/* ========== 导航 ========== */
+.nav { display: flex; gap: 8px; margin-bottom: 24px; flex-wrap: wrap; }
+.nav-item {
+  padding: 8px 16px;
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.15s;
+}
+.nav-item:hover, .nav-item.active {
+  background: var(--color-primary);
+  color: white;
+  border-color: var(--color-primary);
+}
+
+/* ========== 区块 ========== */
+.section {
+  margin-bottom: 32px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+.section-header {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.section-title {
+  font-size: 16px;
+  font-weight: 600;
+}
+.section-badge {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-weight: 600;
+}
+.badge-p0 { background: rgba(239,68,68,0.2); color: var(--color-danger); }
+.badge-p1 { background: rgba(251,191,36,0.2); color: var(--color-warning); }
+.badge-p2 { background: rgba(96,165,250,0.2); color: var(--color-primary); }
+
+.section-content { padding: 20px; }
+
+/* ========== Mockup 容器 ========== */
+.mockup {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  margin-bottom: 16px;
+}
+.mockup-title {
+  padding: 8px 12px;
+  background: var(--color-bg);
+  border-bottom: 1px solid var(--color-border);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+.mockup-body { padding: 16px; }
+
+/* ========== 通用组件 ========== */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border: none;
+  transition: all 0.15s;
+}
+.btn-primary { background: var(--color-primary); color: white; }
+.btn-secondary { background: transparent; color: var(--color-text-secondary); border: 1px solid var(--color-border); }
+.btn-danger { background: var(--color-danger); color: white; }
+.btn-sm { padding: 4px 8px; font-size: 12px; }
+
+.input {
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-size: 13px;
+  width: 100%;
+}
+
+.toggle {
+  width: 36px;
+  height: 20px;
+  border-radius: 10px;
+  background: var(--color-border);
+  position: relative;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.toggle.active { background: var(--color-primary); }
+.toggle::after {
+  content: '';
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: white;
+  top: 2px;
+  left: 2px;
+  transition: transform 0.2s;
+}
+.toggle.active::after { transform: translateX(16px); }
+
+.badge {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  font-weight: 600;
+}
+.badge-success { background: rgba(74,222,128,0.2); color: var(--color-success); }
+.badge-warning { background: rgba(251,191,36,0.2); color: var(--color-warning); }
+.badge-danger { background: rgba(248,113,113,0.2); color: var(--color-danger); }
+.badge-info { background: rgba(96,165,250,0.2); color: var(--color-primary); }
+
+/* ========== 特殊样式 ========== */
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+
+.rule-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  margin-bottom: 8px;
+}
+.rule-item:last-child { margin-bottom: 0; }
+
+.stat-card {
+  padding: 16px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  text-align: center;
+}
+.stat-value { font-size: 24px; font-weight: 700; }
+.stat-label { font-size: 12px; color: var(--color-text-secondary); }
+
+.chart-placeholder {
+  height: 200px;
+  background: var(--color-bg);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+}
+
+.waterfall-bar {
+  height: 20px;
+  border-radius: 3px;
+  position: relative;
+}
+.waterfall-label {
+  position: absolute;
+  left: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 11px;
+  color: white;
+  white-space: nowrap;
+}
+</style>
+</head>
+<body>
+<div class="container">
+  <h1 style="margin-bottom: 8px;">PowerCatch 功能规划 - UI 设计图</h1>
+  <p style="color: var(--color-text-secondary); margin-bottom: 24px;">24 个待实施功能的界面设计参考</p>
+
+  <!-- 导航 -->
+  <div class="nav">
+    <div class="nav-item active">全部</div>
+    <div class="nav-item">基础设施</div>
+    <div class="nav-item">高价值</div>
+    <div class="nav-item">中价值</div>
+    <div class="nav-item">AI 特色</div>
+    <div class="nav-item">监控</div>
+  </div>
+
+  <!-- ===== 阶段一：基础设施 ===== -->
+  <div class="section">
+    <div class="section-header">
+      <span class="section-title">🏗️ 阶段一：基础设施</span>
+      <span class="section-badge badge-p0">P0</span>
+      <span style="font-size: 12px; color: var(--color-text-secondary);">预计 2-3 天</span>
+    </div>
+    <div class="section-content">
+      <!-- #3 会话保存 -->
+      <h3 style="margin-bottom: 12px;">#3 会话保存与恢复</h3>
+      <div class="mockup">
+        <div class="mockup-title">会话管理 UI</div>
+        <div class="mockup-body">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <div style="display: flex; gap: 8px;">
+              <button class="btn btn-primary btn-sm">+ 保存当前会话</button>
+              <button class="btn btn-secondary btn-sm">导入</button>
+            </div>
+            <span style="font-size: 12px; color: var(--color-text-secondary);">共 5 个会话</span>
+          </div>
+          <div class="rule-item">
+            <span style="font-size: 18px;">📁</span>
+            <div style="flex: 1;">
+              <div style="font-weight: 500;">登录流程调试</div>
+              <div style="font-size: 12px; color: var(--color-text-secondary);">128 个请求 · 2026-06-27 14:30</div>
+            </div>
+            <button class="btn btn-secondary btn-sm">加载</button>
+            <button class="btn btn-secondary btn-sm">导出</button>
+            <button class="btn btn-secondary btn-sm" style="color: var(--color-danger);">删除</button>
+          </div>
+          <div class="rule-item">
+            <span style="font-size: 18px;">📁</span>
+            <div style="flex: 1;">
+              <div style="font-weight: 500;">API 性能测试</div>
+              <div style="font-size: 12px; color: var(--color-text-secondary);">256 个请求 · 2026-06-26 10:15</div>
+            </div>
+            <button class="btn btn-secondary btn-sm">加载</button>
+            <button class="btn btn-secondary btn-sm">导出</button>
+            <button class="btn btn-secondary btn-sm" style="color: var(--color-danger);">删除</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- #4 大响应体 -->
+      <h3 style="margin: 20px 0 12px;">#4 大响应体处理</h3>
+      <div class="mockup">
+        <div class="mockup-title">截断提示 UI</div>
+        <div class="mockup-body">
+          <div style="padding: 12px; background: rgba(251,191,36,0.1); border: 1px solid rgba(251,191,36,0.3); border-radius: var(--radius-md); display: flex; align-items: center; gap: 12px;">
+            <span style="font-size: 20px;">⚠️</span>
+            <div style="flex: 1;">
+              <div style="font-weight: 500;">响应体过大，已截断显示</div>
+              <div style="font-size: 12px; color: var(--color-text-secondary);">原始大小: 12.5 MB · 显示前 5 MB</div>
+            </div>
+            <button class="btn btn-primary btn-sm">加载完整内容</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 阶段二：高价值 ===== -->
+  <div class="section">
+    <div class="section-header">
+      <span class="section-title">🔥 阶段二：高价值功能</span>
+      <span class="section-badge badge-p1">P1</span>
+      <span style="font-size: 12px; color: var(--color-text-secondary);">预计 3-4 天</span>
+    </div>
+    <div class="section-content">
+      <!-- #10 自动响应器 -->
+      <h3 style="margin-bottom: 12px;">#10 自动响应器（Auto Responder）</h3>
+      <div class="mockup">
+        <div class="mockup-title">规则管理 UI</div>
+        <div class="mockup-body">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <div style="display: flex; gap: 8px;">
+              <button class="btn btn-primary btn-sm">+ 添加规则</button>
+              <button class="btn btn-secondary btn-sm">全部启用</button>
+              <button class="btn btn-secondary btn-sm">全部禁用</button>
+            </div>
+            <span class="badge badge-info">3 条规则</span>
+          </div>
+          <div class="rule-item">
+            <div class="toggle active"></div>
+            <div style="flex: 1;">
+              <div style="font-weight: 500;">模拟登录成功</div>
+              <div style="font-size: 12px; color: var(--color-text-secondary);">*api.example.com/login* → 200 OK</div>
+            </div>
+            <span class="badge badge-success">启用</span>
+          </div>
+          <div class="rule-item">
+            <div class="toggle active"></div>
+            <div style="flex: 1;">
+              <div style="font-weight: 500;">模拟网络错误</div>
+              <div style="font-size: 12px; color: var(--color-text-secondary);">*api.example.com/payment* → 500 Error</div>
+            </div>
+            <span class="badge badge-success">启用</span>
+          </div>
+          <div class="rule-item">
+            <div class="toggle"></div>
+            <div style="flex: 1;">
+              <div style="font-weight: 500;">延迟模拟</div>
+              <div style="font-size: 12px; color: var(--color-text-secondary);">*api.example.com/slow* → 200 OK (延迟 3s)</div>
+            </div>
+            <span class="badge badge-warning">禁用</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- #16 DNS 覆盖 -->
+      <h3 style="margin: 20px 0 12px;">#16 DNS 覆盖</h3>
+      <div class="mockup">
+        <div class="mockup-title">DNS 覆盖规则 UI</div>
+        <div class="mockup-body">
+          <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+            <input class="input" placeholder="域名，如 api.example.com" style="flex: 1;">
+            <input class="input" placeholder="目标 IP，如 192.168.1.100" style="flex: 1;">
+            <button class="btn btn-primary btn-sm">添加</button>
+          </div>
+          <div class="rule-item">
+            <div class="toggle active"></div>
+            <span style="font-weight: 500; flex: 1;">api.example.com</span>
+            <span style="font-family: monospace; color: var(--color-primary);">→ 192.168.1.100</span>
+            <button class="btn btn-secondary btn-sm" style="color: var(--color-danger);">删除</button>
+          </div>
+          <div class="rule-item">
+            <div class="toggle active"></div>
+            <span style="font-weight: 500; flex: 1;">cdn.example.com</span>
+            <span style="font-family: monospace; color: var(--color-primary);">→ 10.0.0.50</span>
+            <button class="btn btn-secondary btn-sm" style="color: var(--color-danger);">删除</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- #19 单请求 AI 分析 -->
+      <h3 style="margin: 20px 0 12px;">#19 单请求 AI 分析</h3>
+      <div class="mockup">
+        <div class="mockup-title">AI 分析入口 + 结果展示</div>
+        <div class="mockup-body">
+          <div style="display: flex; gap: 16px;">
+            <div style="flex: 1;">
+              <div style="font-size: 12px; color: var(--color-text-secondary); margin-bottom: 8px;">右键菜单入口</div>
+              <div style="background: var(--color-bg); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 8px;">
+                <div style="padding: 6px 8px; border-radius: var(--radius-sm); cursor: pointer;">复制 cURL</div>
+                <div style="padding: 6px 8px; border-radius: var(--radius-sm); cursor: pointer;">重放请求</div>
+                <div style="height: 1px; background: var(--color-border); margin: 4px 0;"></div>
+                <div style="padding: 6px 8px; border-radius: var(--radius-sm); cursor: pointer; background: rgba(96,165,250,0.1); color: var(--color-primary);">🤖 AI 分析错误原因</div>
+              </div>
+            </div>
+            <div style="flex: 1;">
+              <div style="font-size: 12px; color: var(--color-text-secondary); margin-bottom: 8px;">分析结果弹窗</div>
+              <div style="background: var(--color-bg); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 12px;">
+                <div style="font-weight: 600; margin-bottom: 8px;">🔍 AI 分析结果</div>
+                <div style="font-size: 13px; margin-bottom: 8px;"><strong>错误原因：</strong>请求头缺少 Authorization token</div>
+                <div style="font-size: 13px; margin-bottom: 8px;"><strong>修复建议：</strong>在请求头中添加有效的 Bearer token</div>
+                <div style="display: flex; gap: 8px;">
+                  <button class="btn btn-primary btn-sm">复制结果</button>
+                  <button class="btn btn-secondary btn-sm">关闭</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 阶段三：效率提升 ===== -->
+  <div class="section">
+    <div class="section-header">
+      <span class="section-title">💡 阶段三：效率提升</span>
+      <span class="section-badge badge-p2">P2</span>
+      <span style="font-size: 12px; color: var(--color-text-secondary);">预计 5-6 天</span>
+    </div>
+    <div class="section-content">
+      <!-- #8 请求重放 -->
+      <h3 style="margin-bottom: 12px;">#8 请求重放 & 编辑重发</h3>
+      <div class="mockup">
+        <div class="mockup-title">重放编辑弹窗</div>
+        <div class="mockup-body">
+          <div style="display: grid; gap: 12px;">
+            <div style="display: flex; gap: 8px;">
+              <select class="input" style="width: 100px;">
+                <option>POST</option>
+                <option>GET</option>
+              </select>
+              <input class="input" value="https://api.example.com/users" style="flex: 1;">
+              <button class="btn btn-primary">发送</button>
+            </div>
+            <div>
+              <div style="font-size: 12px; color: var(--color-text-secondary); margin-bottom: 4px;">请求头</div>
+              <textarea class="input" rows="3" style="font-family: monospace; resize: vertical;">Content-Type: application/json
+Authorization: Bearer xxx</textarea>
+            </div>
+            <div>
+              <div style="font-size: 12px; color: var(--color-text-secondary); margin-bottom: 4px;">请求体</div>
+              <textarea class="input" rows="4" style="font-family: monospace; resize: vertical;">{
+  "name": "test",
+  "email": "test@example.com"
+}</textarea>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- #23 GraphQL 感知 -->
+      <h3 style="margin: 20px 0 12px;">#23 GraphQL 感知</h3>
+      <div class="mockup">
+        <div class="mockup-title">GraphQL 请求展示</div>
+        <div class="mockup-body">
+          <div style="display: flex; gap: 12px; align-items: center; margin-bottom: 12px;">
+            <span class="badge badge-info">QUERY</span>
+            <span style="font-weight: 500;">GetUser</span>
+            <span style="font-size: 12px; color: var(--color-text-secondary);">/graphql</span>
+          </div>
+          <div style="background: var(--color-bg); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 12px; font-family: monospace; font-size: 12px;">
+            <div style="color: var(--color-primary);">query GetUser {</div>
+            <div style="padding-left: 16px;">user(id: "123") {</div>
+            <div style="padding-left: 32px;">name</div>
+            <div style="padding-left: 32px;">email</div>
+            <div style="padding-left: 16px;">}</div>
+            <div style="color: var(--color-primary);">}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 阶段四：监控 ===== -->
+  <div class="section">
+    <div class="section-header">
+      <span class="section-title">📊 阶段四：监控与统计</span>
+      <span class="section-badge badge-p2">P3</span>
+      <span style="font-size: 12px; color: var(--color-text-secondary);">预计 6-8 天</span>
+    </div>
+    <div class="section-content">
+      <!-- #13 带宽限流 -->
+      <h3 style="margin-bottom: 12px;">#13 带宽限流 / 网络节流</h3>
+      <div class="mockup">
+        <div class="mockup-title">节流配置 UI</div>
+        <div class="mockup-body">
+          <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+            <div class="rule-item" style="flex: 1; cursor: pointer;">
+              <span>📶</span>
+              <div>
+                <div style="font-weight: 500;">3G</div>
+                <div style="font-size: 11px; color: var(--color-text-secondary);">750kbps</div>
+              </div>
+            </div>
+            <div class="rule-item" style="flex: 1; cursor: pointer; border-color: var(--color-primary);">
+              <span>📶</span>
+              <div>
+                <div style="font-weight: 500;">4G</div>
+                <div style="font-size: 11px; color: var(--color-text-secondary);">4Mbps</div>
+              </div>
+            </div>
+            <div class="rule-item" style="flex: 1; cursor: pointer;">
+              <span>📶</span>
+              <div>
+                <div style="font-weight: 500;">WiFi</div>
+                <div style="font-size: 11px; color: var(--color-text-secondary);">30Mbps</div>
+              </div>
+            </div>
+            <div class="rule-item" style="flex: 1; cursor: pointer;">
+              <span>🚫</span>
+              <div>
+                <div style="font-weight: 500;">离线</div>
+                <div style="font-size: 11px; color: var(--color-text-secondary);">0kbps</div>
+              </div>
+            </div>
+          </div>
+          <div style="font-size: 12px; color: var(--color-text-secondary);">自定义配置</div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px;">
+            <div>
+              <label style="font-size: 12px;">带宽 (kbps)</label>
+              <input class="input" value="4000" type="number">
+            </div>
+            <div>
+              <label style="font-size: 12px;">延迟 (ms)</label>
+              <input class="input" value="50" type="number">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- #20 请求统计面板 -->
+      <h3 style="margin: 20px 0 12px;">#20 请求统计面板</h3>
+      <div class="mockup">
+        <div class="mockup-title">统计面板 UI</div>
+        <div class="mockup-body">
+          <div class="grid-3" style="margin-bottom: 16px;">
+            <div class="stat-card">
+              <div class="stat-value" style="color: var(--color-primary);">1,234</div>
+              <div class="stat-label">总请求数</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value" style="color: var(--color-danger);">23</div>
+              <div class="stat-label">错误请求</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value" style="color: var(--color-warning);">145ms</div>
+              <div class="stat-label">平均响应时间</div>
+            </div>
+          </div>
+          <div class="grid-2">
+            <div class="chart-placeholder">📊 域名分布饼图</div>
+            <div class="chart-placeholder">📈 响应时间折线图</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- #14 请求时间线 -->
+      <h3 style="margin: 20px 0 12px;">#14 请求时间线（Waterfall）</h3>
+      <div class="mockup">
+        <div class="mockup-title">Waterfall 瀑布图</div>
+        <div class="mockup-body">
+          <div style="display: grid; gap: 8px;">
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <span style="width: 120px; font-size: 12px; text-align: right;">DNS 解析</span>
+              <div style="flex: 1; position: relative; height: 20px;">
+                <div class="waterfall-bar" style="width: 10%; background: var(--color-primary); left: 0;">
+                  <span class="waterfall-label">12ms</span>
+                </div>
+              </div>
+            </div>
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <span style="width: 120px; font-size: 12px; text-align: right;">TCP 连接</span>
+              <div style="flex: 1; position: relative; height: 20px;">
+                <div class="waterfall-bar" style="width: 15%; background: var(--color-success); left: 10%;">
+                  <span class="waterfall-label">18ms</span>
+                </div>
+              </div>
+            </div>
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <span style="width: 120px; font-size: 12px; text-align: right;">TLS 握手</span>
+              <div style="flex: 1; position: relative; height: 20px;">
+                <div class="waterfall-bar" style="width: 20%; background: var(--color-warning); left: 25%;">
+                  <span class="waterfall-label">25ms</span>
+                </div>
+              </div>
+            </div>
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <span style="width: 120px; font-size: 12px; text-align: right;">TTFB</span>
+              <div style="flex: 1; position: relative; height: 20px;">
+                <div class="waterfall-bar" style="width: 30%; background: var(--color-info); left: 45%;">
+                  <span class="waterfall-label">38ms</span>
+                </div>
+              </div>
+            </div>
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <span style="width: 120px; font-size: 12px; text-align: right;">内容下载</span>
+              <div style="flex: 1; position: relative; height: 20px;">
+                <div class="waterfall-bar" style="width: 25%; background: var(--color-text-secondary); left: 75%;">
+                  <span class="waterfall-label">32ms</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 总结 ===== -->
+  <div class="section">
+    <div class="section-header">
+      <span class="section-title">📋 实施计划总结</span>
+    </div>
+    <div class="section-content">
+      <div class="grid-3">
+        <div class="stat-card">
+          <div class="stat-value" style="color: var(--color-danger);">24</div>
+          <div class="stat-label">待实施功能</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" style="color: var(--color-warning);">40-50</div>
+          <div class="stat-label">预估人天</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" style="color: var(--color-success);">4</div>
+          <div class="stat-label">里程碑阶段</div>
+        </div>
+      </div>
+      <div style="margin-top: 16px; padding: 12px; background: var(--color-bg); border-radius: var(--radius-md);">
+        <div style="font-weight: 600; margin-bottom: 8px;">🚀 推荐实施顺序</div>
+        <div style="font-size: 13px; color: var(--color-text-secondary);">
+          <div>1. <strong>#3 会话保存</strong> → 解锁 #8, #21, #22</div>
+          <div>2. <strong>#4 大响应体</strong> → 提升基础体验</div>
+          <div>3. <strong>#10, #16, #19</strong> → 小工作量高价值</div>
+          <div>4. <strong>P2 批量实施</strong> → 互相独立可并行</div>
+          <div>5. <strong>#14, #26</strong> → 架构级功能最后做</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// 简单的 Tab 切换
+document.querySelectorAll('.nav-item').forEach(item => {
+  item.addEventListener('click', () => {
+    document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+    item.classList.add('active');
+  });
+});
+</script>
+</body>
+</html>

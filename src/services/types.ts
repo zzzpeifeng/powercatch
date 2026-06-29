@@ -61,6 +61,12 @@ export interface CaptureRequest {
   graphQLOperationName?: string
   /** GraphQL operation type */
   graphQLOperationType?: 'query' | 'mutation' | 'subscription'
+  /** 是否是 WebSocket 请求 */
+  isWebSocket?: boolean
+  /** WebSocket 连接信息（如果是 WS 请求） */
+  webSocketConnection?: WebSocketConnection
+  /** WebSocket 消息列表（如果是 WS 请求） */
+  webSocketMessages?: WebSocketMessage[]
 }
 
 /** 响应更新数据（通过独立 channel 推送，仅包含响应相关字段） */
@@ -742,6 +748,10 @@ export const IPC_CHANNELS = {
 
   // 请求重放
   REQUEST_REPLAY: 'request:replay',
+
+  // ===== WebSocket 抓包 =====
+  WEBSOCKET_MESSAGE_ADDED: 'websocket:message-added',
+  WEBSOCKET_CONNECTION_CLOSED: 'websocket:connection-closed',
 } as const
 
 /** IPC 通道名称类型 */
@@ -813,6 +823,64 @@ export const DEFAULT_PROMPT_V2 = `对比以下两个 JSON 响应的差异。
 忽略所有 ID、时间戳、URL 等动态字段。
 只关注业务字段差异：金额、状态、数量、结构。
 输出格式：关键差异 | 精度差异 | 字段缺失 | 总结`
+
+// ===== WebSocket 抓包类型定义 =====
+
+/** WebSocket 消息方向 */
+export type WebSocketMessageDirection = 'client-to-server' | 'server-to-client'
+
+/** WebSocket 消息类型 */
+export type WebSocketMessageType = 'text' | 'binary' | 'ping' | 'pong' | 'close' | 'unknown'
+
+/** WebSocket 消息 */
+export interface WebSocketMessage {
+  /** 消息 ID */
+  id: string
+  /** 所属请求 ID（关联到 CaptureRequest） */
+  requestId: string
+  /** 消息方向 */
+  direction: WebSocketMessageDirection
+  /** 消息类型 */
+  type: WebSocketMessageType
+  /** 消息内容（文本） */
+  content?: string
+  /** 消息内容（二进制，Base64 编码） */
+  binaryContent?: string
+  /** 消息大小（字节） */
+  size: number
+  /** 时间戳 */
+  timestamp: string
+  /** 是否压缩 */
+  compressed?: boolean
+  /** 帧序号（同一连接内递增） */
+  frameIndex: number
+}
+
+/** WebSocket 连接信息 */
+export interface WebSocketConnection {
+  /** 请求 ID */
+  requestId: string
+  /** WebSocket URL */
+  url: string
+  /** 协议（ws:// 或 wss://） */
+  protocol: string
+  /** 升级时间 */
+  upgradeTime: string
+  /** 关闭时间 */
+  closeTime?: string
+  /** 关闭原因 */
+  closeReason?: string
+  /** 消息总数 */
+  messageCount: number
+  /** 客户端→服务器消息数 */
+  clientToServerCount: number
+  /** 服务器→客户端消息数 */
+  serverToClientCount: number
+  /** 总字节数 */
+  totalBytes: number
+}
+
+// ===== WebSocket 类型导出结束 =====
 
 /** 过滤条件状态 */
 export interface FilterState {

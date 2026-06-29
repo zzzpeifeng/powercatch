@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PowerCatch #12 Diff 视图 - 设计稿 v3</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            primary: { 600: '#2563eb' },
+            success: '#22c55e',
+            warning: '#f59e0b',
+            danger: '#ef4444',
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { font-family: 'Inter', system-ui, -apple-system, sans-serif; }
+    .diff-added { background: rgba(34,197,94,0.15); border-left: 3px solid #22c55e; }
+    .diff-removed { background: rgba(239,68,68,0.15); border-left: 3px solid #ef4444; text-decoration: line-through; opacity: 0.6; }
+    .diff-changed { background: rgba(245,158,11,0.15); border-left: 3px solid #f59e0b; }
+    .method-get { color: #22c55e; }
+    .method-post { color: #f59e0b; }
+    .status-2xx { color: #22c55e; }
+  </style>
+</head>
+<body class="bg-gray-900 text-gray-200 min-h-screen">
+  <div class="flex h-screen">
+    <!-- 左侧：请求列表 (简化) -->
+    <div class="w-80 bg-gray-800 border-r border-gray-700 flex flex-col">
+      <div class="p-4 border-b border-gray-700 font-semibold text-sm">请求列表</div>
+      <div class="flex-1 overflow-auto p-2">
+        <div class="px-3 py-2 bg-blue-600 bg-opacity-20 rounded text-sm mb-1 border-l-2 border-blue-600">
+          ✓ GET /api/users 200 (已选 - 作为基准)
+        </div>
+        <div class="px-3 py-2 bg-purple-600 bg-opacity-20 rounded text-sm mb-1 border-l-2 border-purple-600">
+          ✓ GET /api/users 200 (已选 - 对比)
+        </div>
+        <div class="px-3 py-2 hover:bg-gray-700 rounded text-sm mb-1 text-gray-400">GET /api/posts 200</div>
+        <div class="px-3 py-2 hover:bg-gray-700 rounded text-sm mb-1 text-gray-400">POST /api/login 200</div>
+      </div>
+    </div>
+
+    <!-- 右侧：Diff 视图主区域 -->
+    <div class="flex-1 flex flex-col">
+      <!-- Header -->
+      <div class="bg-gray-800 border-b border-gray-700 px-6 py-4 flex items-center justify-between">
+        <div>
+          <h1 class="text-lg font-semibold text-gray-100">Diff 视图</h1>
+          <p class="text-xs text-gray-400 mt-1">对比两个请求的差异 · 已选择 2 个请求</p>
+        </div>
+        <div class="flex gap-2">
+          <button class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-sm">交换顺序</button>
+          <button class="px-3 py-1.5 bg-red-600 hover:bg-red-700 rounded text-sm text-white">清空</button>
+        </div>
+      </div>
+
+      <!-- 请求卡片概览 -->
+      <div class="px-6 py-4 grid grid-cols-2 gap-4">
+        <!-- 请求 1 -->
+        <div class="bg-gray-800 rounded-lg border border-gray-700 p-4">
+          <div class="flex items-center gap-2 mb-2">
+            <span class="text-xs bg-blue-600 text-white px-2 py-0.5 rounded font-mono">基准</span>
+            <span class="method-get font-mono font-semibold text-sm">GET</span>
+            <span class="text-sm text-gray-300 truncate">/api/users?page=1&limit=10</span>
+          </div>
+          <div class="flex items-center gap-4 text-xs text-gray-400">
+            <span>状态码: <span class="status-2xx">200</span></span>
+            <span>耗时: 145ms</span>
+            <span>大小: 2.3 KB</span>
+          </div>
+        </div>
+
+        <!-- 请求 2 -->
+        <div class="bg-gray-800 rounded-lg border border-gray-700 p-4">
+          <div class="flex items-center gap-2 mb-2">
+            <span class="text-xs bg-purple-600 text-white px-2 py-0.5 rounded font-mono">对比</span>
+            <span class="method-get font-mono font-semibold text-sm">GET</span>
+            <span class="text-sm text-gray-300 truncate">/api/users?page=2&limit=20</span>
+          </div>
+          <div class="flex items-center gap-4 text-xs text-gray-400">
+            <span>状态码: <span class="status-2xx">200</span></span>
+            <span>耗时: 89ms</span>
+            <span>大小: 4.1 KB</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab 栏 -->
+      <div class="px-6 border-b border-gray-700 flex gap-1">
+        <button class="px-4 py-2 text-sm bg-gray-700 rounded-t font-medium text-blue-400 border-b-2 border-blue-600">概览</button>
+        <button class="px-4 py-2 text-sm hover:bg-gray-700 rounded-t text-gray-400">Headers</button>
+        <button class="px-4 py-2 text-sm hover:bg-gray-700 rounded-t text-gray-400">请求体</button>
+        <button class="px-4 py-2 text-sm hover:bg-gray-700 rounded-t text-gray-400">响应体</button>
+        <button class="px-4 py-2 text-sm hover:bg-gray-700 rounded-t text-gray-400">查询参数</button>
+      </div>
+
+      <!-- Diff 内容区域 -->
+      <div class="flex-1 overflow-auto p-6">
+        <!-- 概览 Tab -->
+        <div class="space-y-4">
+          <!-- 差异统计卡片 -->
+          <div class="bg-gray-800 rounded-lg border border-gray-700 p-4">
+            <h3 class="text-sm font-semibold text-gray-300 mb-3">差异统计</h3>
+            <div class="grid grid-cols-4 gap-4">
+              <div class="text-center">
+                <div class="text-2xl font-bold text-green-500">3</div>
+                <div class="text-xs text-gray-400">新增</div>
+              </div>
+              <div class="text-center">
+                <div class="text-2xl font-bold text-red-500">2</div>
+                <div class="text-xs text-gray-400">删除</div>
+              </div>
+              <div class="text-center">
+                <div class="text-2xl font-bold text-yellow-500">5</div>
+                <div class="text-xs text-gray-400">修改</div>
+              </div>
+              <div class="text-center">
+                <div class="text-2xl font-bold text-gray-400">18</div>
+                <div class="text-xs text-gray-400">相同</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 关键差异列表 -->
+          <div class="bg-gray-800 rounded-lg border border-gray-700 p-4">
+            <h3 class="text-sm font-semibold text-gray-300 mb-3">关键差异</h3>
+            <div class="space-y-2">
+              <!-- 差异项 1 -->
+              <div class="diff-changed p-3 rounded text-sm">
+                <div class="flex items-center gap-2 mb-1">
+                  <span class="text-xs bg-yellow-600 text-white px-1.5 py-0.5 rounded">修改</span>
+                  <span class="text-gray-400">URL 查询参数</span>
+                </div>
+                <div class="font-mono text-xs mt-1">
+                  <div class="text-red-400">- page=1&limit=10</div>
+                  <div class="text-green-400">+ page=2&limit=20</div>
+                </div>
+              </div>
+
+              <!-- 差异项 2 -->
+              <div class="diff-removed p-3 rounded text-sm">
+                <div class="flex items-center gap-2 mb-1">
+                  <span class="text-xs bg-red-600 text-white px-1.5 py-0.5 rounded">删除</span>
+                  <span class="text-gray-400">请求头</span>
+                </div>
+                <div class="font-mono text-xs mt-1 text-red-400">- X-Custom-Header: old-value</div>
+              </div>
+
+              <!-- 差异项 3 -->
+              <div class="diff-added p-3 rounded text-sm">
+                <div class="flex items-center gap-2 mb-1">
+                  <span class="text-xs bg-green-600 text-white px-1.5 py-0.5 rounded">新增</span>
+                  <span class="text-gray-400">响应头</span>
+                </div>
+                <div class="font-mono text-xs mt-1 text-green-400">+ Cache-Control: max-age=3600</div>
+              </div>
+
+              <!-- 差异项 4 -->
+              <div class="diff-changed p-3 rounded text-sm">
+                <div class="flex items-center gap-2 mb-1">
+                  <span class="text-xs bg-yellow-600 text-white px-1.5 py-0.5 rounded">修改</span>
+                  <span class="text-gray-400">性能</span>
+                </div>
+                <div class="text-xs mt-1">
+                  <span class="text-gray-400">耗时: </span>
+                  <span class="text-red-400">145ms → 89ms</span>
+                  <span class="text-green-400 ml-2">(-38.6%)</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 主题切换说明 -->
+  <div class="fixed bottom-4 right-4 bg-gray-800 border border-gray-700 rounded-lg p-3 text-xs text-gray-400">
+    <p>💡 当前为暗色主题预览</p>
+    <p>删除 &lt;html class="dark"&gt; 可查看亮色主题</p>
+  </div>
+</body>
+</html>

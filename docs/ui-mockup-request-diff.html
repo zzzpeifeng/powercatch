@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>#12 请求 Diff 视图 - UI 设计稿</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body { 
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #1a1a2e;
+      color: #e0e0e0;
+    }
+    .mockup-container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    .mockup-section {
+      background: #16213e;
+      border-radius: 12px;
+      padding: 24px;
+      margin-bottom: 24px;
+      border: 1px solid #0f3460;
+    }
+    .mockup-title {
+      font-size: 18px;
+      font-weight: 600;
+      color: #e94560;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .diff-view {
+      background: #0a0a1a;
+      border-radius: 8px;
+      padding: 16px;
+      font-family: 'Monaco', 'Menlo', monospace;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    .diff-line {
+      padding: 2px 8px;
+      border-radius: 4px;
+      margin: 2px 0;
+    }
+    .diff-added {
+      background: rgba(0, 255, 0, 0.1);
+      border-left: 3px solid #00ff00;
+      color: #00ff00;
+    }
+    .diff-removed {
+      background: rgba(255, 0, 0, 0.1);
+      border-left: 3px solid #ff0000;
+      color: #ff0000;
+      text-decoration: line-through;
+    }
+    .diff-modified {
+      background: rgba(255, 255, 0, 0.1);
+      border-left: 3px solid #ffff00;
+      color: #ffff00;
+    }
+    .diff-same {
+      color: #888;
+    }
+    .tab-bar {
+      display: flex;
+      gap: 2px;
+      background: #0a0a1a;
+      padding: 4px;
+      border-radius: 8px;
+      margin-bottom: 16px;
+    }
+    .tab-item {
+      padding: 8px 16px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-size: 13px;
+    }
+    .tab-item:hover {
+      background: rgba(233, 69, 96, 0.1);
+    }
+    .tab-item.active {
+      background: #e94560;
+      color: white;
+    }
+    .request-card {
+      background: #1a1a2e;
+      border-radius: 8px;
+      padding: 12px;
+      border: 1px solid #0f3460;
+    }
+    .request-card.selected {
+      border-color: #e94560;
+      box-shadow: 0 0 20px rgba(233, 69, 96, 0.3);
+    }
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .badge-green { background: rgba(0, 255, 0, 0.2); color: #00ff00; }
+    .badge-red { background: rgba(255, 0, 0, 0.2); color: #ff0000; }
+    .badge-yellow { background: rgba(255, 255, 0, 0.2); color: #ffff00; }
+    .badge-blue { background: rgba(0, 150, 255, 0.2); color: #0096ff; }
+    .overview-stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 12px;
+      margin-top: 16px;
+    }
+    .stat-card {
+      background: #1a1a2e;
+      border-radius: 8px;
+      padding: 16px;
+      border: 1px solid #0f3460;
+    }
+    .stat-label {
+      font-size: 12px;
+      color: #888;
+      margin-bottom: 8px;
+    }
+    .stat-value {
+      font-size: 24px;
+      font-weight: 700;
+    }
+  </style>
+</head>
+<body>
+  <div class="mockup-container">
+    <h1 style="color: #e94560; margin-bottom: 8px;">#12 请求 Diff 视图 - UI 设计稿</h1>
+    <p style="color: #888; margin-bottom: 32px;">PowerCatch 功能设计 | 创建日期: 2026-06-26</p>
+
+    <!-- Mockup 1: Diff 视图整体布局 -->
+    <div class="mockup-section">
+      <div class="mockup-title">
+        📐 Mockup 1: Diff 视图整体布局
+      </div>
+      
+      <div style="background: #0a0a1a; border-radius: 8px; padding: 16px;">
+        <!-- 顶部工具栏 -->
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; padding-bottom: 16px; border-bottom: 1px solid #0f3460;">
+          <div style="display: flex; align-items: center; gap: 16px;">
+            <h2 style="font-size: 16px; font-weight: 600;">Diff 视图</h2>
+            <button style="padding: 6px 12px; background: #e94560; border: none; border-radius: 6px; color: white; cursor: pointer; font-size: 12px;">
+              清空
+            </button>
+            <button style="padding: 6px 12px; background: #0f3460; border: none; border-radius: 6px; color: #e0e0e0; cursor: pointer; font-size: 12px;">
+              交换请求
+            </button>
+          </div>
+          <button style="padding: 6px 12px; background: #0f3460; border: none; border-radius: 6px; color: #e0e0e0; cursor: pointer; font-size: 12px;">
+            📥 导出报告
+          </button>
+        </div>
+
+        <!-- 请求对比卡片 -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;">
+          <div class="request-card selected">
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+              <span class="badge badge-blue">GET</span>
+              <span style="font-size: 13px; color: #e0e0e0;">/api/users/profile</span>
+            </div>
+            <div style="font-size: 12px; color: #888; display: flex; gap: 16px;">
+              <span>✅ 200 OK</span>
+              <span>⏱️ 50ms</span>
+              <span>📦 2.3 KB</span>
+            </div>
+          </div>
+          
+          <div class="request-card">
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+              <span class="badge badge-blue">GET</span>
+              <span style="font-size: 13px; color: #e0e0e0;">/api/users/profile</span>
+            </div>
+            <div style="font-size: 12px; color: #888; display: flex; gap: 16px;">
+              <span class="badge badge-red" style="font-size: 11px;">500 Error</span>
+              <span>⏱️ 5000ms</span>
+              <span>📦 0.5 KB</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 栏 -->
+        <div class="tab-bar">
+          <div class="tab-item active">📊 概览</div>
+          <div class="tab-item">📤 请求头</div>
+          <div class="tab-item">📦 请求体</div>
+          <div class="tab-item">📥 响应头</div>
+          <div class="tab-item">📦 响应体</div>
+        </div>
+
+        <!-- Diff 内容区域 (概览 Tab) -->
+        <div style="padding: 16px;">
+          <div style="margin-bottom: 16px;">
+            <h3 style="font-size: 14px; font-weight: 600; color: #00ff00; margin-bottom: 8px;">✅ 相同</h3>
+            <div style="font-size: 13px; color: #888; padding-left: 16px;">
+              <div>• URL: /api/users/profile</div>
+              <div>• Method: GET</div>
+              <div>• Host: api.example.com</div>
+            </div>
+          </div>
+
+          <div>
+            <h3 style="font-size: 14px; font-weight: 600; color: #ffff00; margin-bottom: 8px;">⚠️ 不同</h3>
+            <div style="font-size: 13px; padding-left: 16px;">
+              <div class="diff-line diff-modified" style="margin: 4px 0;">
+                Status Code: <span style="text-decoration: line-through;">200</span> → <span style="font-weight: 600;">500</span>
+              </div>
+              <div class="diff-line diff-modified" style="margin: 4px 0;">
+                Duration: <span style="text-decoration: line-through;">50ms</span> → <span style="font-weight: 600;">5000ms</span>
+              </div>
+              <div class="diff-line diff-removed" style="margin: 4px 0;">
+                - Request Headers: Authorization Bearer token1
+              </div>
+              <div class="diff-line diff-added" style="margin: 4px 0;">
+                + Request Headers: Authorization Bearer token2
+              </div>
+            </div>
+          </div>
+
+          <!-- 统计卡片 -->
+          <div class="overview-stats" style="margin-top: 24px;">
+            <div class="stat-card">
+              <div class="stat-label">请求头</div>
+              <div class="stat-value" style="color: #ffff00;">+2 / -1 / ~3</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">请求体</div>
+              <div class="stat-value" style="color: #00ff00;">无差异</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">响应头</div>
+              <div class="stat-value" style="color: #00ff00;">无差异</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">响应体</div>
+              <div class="stat-value" style="color: #ff0000;">结构不同 (5处)</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Mockup 2: Headers Diff 视图 -->
+    <div class="mockup-section">
+      <div class="mockup-title">
+        📤 Mockup 2: 请求头 Diff 视图
+      </div>
+      
+      <div style="background: #0a0a1a; border-radius: 8px; padding: 16px;">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+          <!-- 请求 1 Headers -->
+          <div>
+            <h3 style="font-size: 14px; font-weight: 600; margin-bottom: 12px; color: #e94560;">请求 1 - 请求头</h3>
+            <div class="diff-view" style="max-height: 400px; overflow-y: auto;">
+              <div class="diff-line diff-same">Host: api.example.com</div>
+              <div class="diff-line diff-same">Content-Type: application/json</div>
+              <div class="diff-line diff-removed">- Authorization: Bearer xyz...</div>
+              <div class="diff-line diff-same">User-Agent: PowerCatch/1.0</div>
+              <div class="diff-line diff-modified">- Cache-Control: no-cache</div>
+              <div class="diff-line diff-added">+ X-Custom-Header: value1</div>
+            </div>
+          </div>
+
+          <!-- 请求 2 Headers -->
+          <div>
+            <h3 style="font-size: 14px; font-weight: 600; margin-bottom: 12px; color: #0096ff;">请求 2 - 请求头</h3>
+            <div class="diff-view" style="max-height: 400px; overflow-y: auto;">
+              <div class="diff-line diff-same">Host: api.example.com</div>
+              <div class="diff-line diff-same">Content-Type: application/json</div>
+              <div class="diff-line diff-added">+ Authorization: Bearer abc...</div>
+              <div class="diff-line diff-same">User-Agent: PowerCatch/1.0</div>
+              <div class="diff-line diff-modified">+ Cache-Control: max-age=3600</div>
+              <div class="diff-line diff-removed">- X-Custom-Header: value1</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 图例 -->
+        <div style="display: flex; gap: 16px; margin-top: 16px; padding-top: 16px; border-top: 1px solid #0f3460; font-size: 12px; color: #888;">
+          <div style="display: flex; align-items: center; gap: 4px;">
+            <div style="width: 12px; height: 12px; background: rgba(0, 255, 0, 0.2); border-left: 3px solid #00ff00;"></div>
+            <span>新增</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 4px;">
+            <div style="width: 12px; height: 12px; background: rgba(255, 0, 0, 0.2); border-left: 3px solid #ff0000;"></div>
+            <span>删除</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 4px;">
+            <div style="width: 12px; height: 12px; background: rgba(255, 255, 0, 0.2); border-left: 3px solid #ffff00;"></div>
+            <span>修改</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 4px;">
+            <div style="width: 12px; height: 12px; background: transparent;"></div>
+            <span>相同</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Mockup 3: JSON Body Diff 视图 -->
+    <div class="mockup-section">
+      <div class="mockup-title">
+        📦 Mockup 3: JSON 响应体 Diff 视图 (结构化)
+      </div>
+      
+      <div style="background: #0a0a1a; border-radius: 8px; padding: 16px;">
+        <div class="diff-view" style="max-height: 500px; overflow-y: auto;">
+          <div style="color: #888; margin-bottom: 8px;">&#123;</div>
+          <div style="padding-left: 20px;">
+            <div class="diff-line diff-same">"code": 200,</div>
+            <div class="diff-line diff-same">"message": "success",</div>
+            <div class="diff-line diff-same">"data": &#123;</div>
+            <div style="padding-left: 20px;">
+              <div class="diff-line diff-same">"user": &#123;</div>
+              <div style="padding-left: 20px;">
+                <div class="diff-line diff-same">"id": 123,</div>
+                <div class="diff-line diff-same">"name": "Alice",</div>
+                <div class="diff-line diff-removed">- "role": "admin",</div>
+                <div class="diff-line diff-added">+ "role": "user",</div>
+                <div class="diff-line diff-same">"email": "alice@example.com"</div>
+              </div>
+              <div class="diff-line diff-same">&#125;,</div>
+              <div class="diff-line diff-removed">- "permissions": ["read", "write", "delete"],</div>
+              <div class="diff-line diff-added">+ "permissions": ["read", "write"],</div>
+              <div class="diff-line diff-added">+ "timestamp": 1234567890,</div>
+            </div>
+            <div class="diff-line diff-same">&#125;</div>
+          </div>
+          <div style="color: #888;">&#125;</div>
+        </div>
+
+        <div style="margin-top: 16px; padding: 12px; background: rgba(255, 255, 0, 0.05); border-radius: 6px; border: 1px solid rgba(255, 255, 0, 0.2);">
+          <div style="font-size: 12px; color: #ffff00; font-weight: 600; margin-bottom: 8px;">💡 差异说明</div>
+          <div style="font-size: 12px; color: #888;">
+            <div>• "role" 字段从 "admin" 改为 "user" (行 7)</div>
+            <div>• "permissions" 数组移除了 "delete" (行 11)</div>
+            <div>• 新增 "timestamp" 字段 (行 12)</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Mockup 4: 右键菜单入口 -->
+    <div class="mockup-section">
+      <div class="mockup-title">
+        🖱️ Mockup 4: 右键菜单 - 对比入口
+      </div>
+      
+      <div style="background: #0a0a1a; border-radius: 8px; padding: 16px; position: relative;">
+        <p style="font-size: 13px; color: #888; margin-bottom: 16px;">
+          在请求列表中选中 2 个请求后，右键打开上下文菜单：
+        </p>
+        
+        <!-- 模拟右键菜单 -->
+        <div style="position: relative; display: inline-block;">
+          <div style="background: #1a1a2e; border-radius: 8px; padding: 8px; border: 1px solid #0f3460; min-width: 200px; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);">
+            <div style="padding: 8px 12px; font-size: 13px; color: #e0e0e0; cursor: pointer; border-radius: 4px; hover:background: #0f3460;">
+              📋 复制 cURL
+            </div>
+            <div style="padding: 8px 12px; font-size: 13px; color: #e0e0e0; cursor: pointer; border-radius: 4px;">
+              🔄 重发请求
+            </div>
+            <div style="height: 1px; background: #0f3460; margin: 4px 0;"></div>
+            <div style="padding: 8px 12px; font-size: 13px; color: #e94560; cursor: pointer; border-radius: 4px; background: rgba(233, 69, 96, 0.1); font-weight: 600;">
+              🆚 对比选中请求 (2)
+            </div>
+            <div style="padding: 8px 12px; font-size: 13px; color: #e0e0e0; cursor: pointer; border-radius: 4px;">
+              🔍 对比相似请求
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-top: 24px; padding: 12px; background: rgba(233, 69, 96, 0.05); border-radius: 6px; border: 1px solid rgba(233, 69, 96, 0.2);">
+          <div style="font-size: 12px; color: #e94560; font-weight: 600; margin-bottom: 8px;">交互说明</div>
+          <div style="font-size: 12px; color: #888;">
+            <div>1. 选中 2 个请求（复选框模式或 Ctrl+点击）</div>
+            <div>2. 右键 → "对比选中请求"</div>
+            <div>3. 自动打开 /diff 视图，展示对比结果</div>
+            <div>4. 支持交换请求顺序、导出报告</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Mockup 5: 响应体文本 Diff -->
+    <div class="mockup-section">
+      <div class="mockup-title">
+        📝 Mockup 5: 响应体文本 Diff (非 JSON)
+      </div>
+      
+      <div style="background: #0a0a1a; border-radius: 8px; padding: 16px;">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+          <div>
+            <h3 style="font-size: 14px; font-weight: 600; margin-bottom: 12px; color: #e94560;">请求 1 - 响应体 (HTML)</h3>
+            <div class="diff-view" style="max-height: 300px; overflow-y: auto; font-size: 12px;">
+              <div class="diff-line diff-same">1: &lt;html&gt;</div>
+              <div class="diff-line diff-same">2: &lt;head&gt;</div>
+              <div class="diff-line diff-removed">3: &lt;title&gt;旧标题&lt;/title&gt;</div>
+              <div class="diff-line diff-same">4: &lt;/head&gt;</div>
+              <div class="diff-line diff-same">5: &lt;body&gt;</div>
+              <div class="diff-line diff-same">6: &lt;h1&gt;欢迎&lt;/h1&gt;</div>
+              <div class="diff-line diff-same">7: &lt;/body&gt;</div>
+              <div class="diff-line diff-same">8: &lt;/html&gt;</div>
+            </div>
+          </div>
+
+          <div>
+            <h3 style="font-size: 14px; font-weight: 600; margin-bottom: 12px; color: #0096ff;">请求 2 - 响应体 (HTML)</h3>
+            <div class="diff-view" style="max-height: 300px; overflow-y: auto; font-size: 12px;">
+              <div class="diff-line diff-same">1: &lt;html&gt;</div>
+              <div class="diff-line diff-same">2: &lt;head&gt;</div>
+              <div class="diff-line diff-added">3: &lt;title&gt;新标题&lt;/title&gt;</div>
+              <div class="diff-line diff-same">4: &lt;/head&gt;</div>
+              <div class="diff-line diff-same">5: &lt;body&gt;</div>
+              <div class="diff-line diff-same">6: &lt;h1&gt;欢迎&lt;/h1&gt;</div>
+              <div class="diff-line diff-same">7: &lt;/body&gt;</div>
+              <div class="diff-line diff-same">8: &lt;/html&gt;</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 设计说明 -->
+    <div class="mockup-section">
+      <div class="mockup-title">
+        📋 设计说明
+      </div>
+      
+      <div style="font-size: 13px; line-height: 1.8; color: #e0e0e0;">
+        <h3 style="font-size: 15px; font-weight: 600; margin: 16px 0 8px; color: #e94560;">核心设计原则</h3>
+        <div style="padding-left: 16px;">
+          <div>1. <strong>三色标记</strong>: 绿色(新增) / 红色(删除) / 黄色(修改)，符合行业标准</div>
+          <div>2. <strong>并排对比</strong>: 左请求1 / 右请求2，方便逐行对照</div>
+          <div>3. <strong>结构化 Diff</strong>: JSON 使用 jsondiffpatch 进行结构化对比，而非文本 diff</div>
+          <div>4. <strong>概览优先</strong>: 第一个 Tab 展示差异统计，快速定位问题</div>
+        </div>
+
+        <h3 style="font-size: 15px; font-weight: 600; margin: 16px 0 8px; color: #e94560;">交互设计</h3>
+        <div style="padding-left: 16px;">
+          <div>1. <strong>选择方式</strong>: 右键菜单 / 复选框模式</div>
+          <div>2. <strong>Tab 切换</strong>: 概览 / 请求头 / 请求体 / 响应头 / 响应体</div>
+          <div>3. <strong>导出功能</strong>: HTML 报告 / Markdown / JSON delta</div>
+          <div>4. <strong>交换按钮</strong>: 快速切换请求1和请求2</div>
+        </div>
+
+        <h3 style="font-size: 15px; font-weight: 600; margin: 16px 0 8px; color: #e94560;">技术实现</h3>
+        <div style="padding-left: 16px;">
+          <div>1. <strong>Diff 算法</strong>: jsondiffpatch (JSON) + diff (文本)</div>
+          <div>2. <strong>状态管理</strong>: Pinia (diff-store.ts)</div>
+          <div>3. <strong>路由</strong>: /diff?id1=xxx&id2=xxx</div>
+          <div>4. <strong>性能优化</strong>: 大文件(>500KB)提示"过大，仅显示概览"</div>
+        </div>
+
+        <h3 style="font-size: 15px; font-weight: 600; margin: 16px 0 8px; color: #e94560;">下一步</h3>
+        <div style="padding-left: 16px;">
+          <div>1. ✅ Plan 文档已完成 (docs/plan-request-diff.md)</div>
+          <div>2. ✅ UI 设计稿已完成 (本文件)</div>
+          <div>3. ⏭️ 架构评审 (高见远)</div>
+          <div>4. ⏭️ 开始实现 (寇豆码)</div>
+          <div>5. ⏭️ 测试验证 (严过关)</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

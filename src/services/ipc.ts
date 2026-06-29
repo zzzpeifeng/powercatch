@@ -231,6 +231,11 @@ interface ElectronAPI {
     clearAll: () => Promise<{ success: boolean; error?: string }>
     importJar: (jar: CookieJar) => Promise<{ success: boolean; error?: string }>
   }
+  // ===== WebSocket 抓包 =====
+  webSocket: {
+    onMessageAdded: (callback: (message: any) => void) => () => void
+    onConnectionClosed: (callback: (data: { requestId: string; reason?: string }) => void) => () => void
+  }
 }
 
 declare global {
@@ -1048,6 +1053,21 @@ export const ipc = {
       const api = getElectronAPI()
       if (!api) return { success: false, error: 'Not in Electron environment' }
       return api.cookie.importJar(jar)
+    },
+  },
+
+  // ===== WebSocket 抓包 =====
+  webSocket: {
+    onMessageAdded: (callback: (message: any) => void): (() => void) => {
+      const api = getElectronAPI()
+      if (!api) return () => {}
+      return api.webSocket.onMessageAdded(callback)
+    },
+
+    onConnectionClosed: (callback: (data: { requestId: string; reason?: string }) => void): (() => void) => {
+      const api = getElectronAPI()
+      if (!api) return () => {}
+      return api.webSocket.onConnectionClosed(callback)
     },
   },
 }
