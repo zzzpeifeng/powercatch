@@ -10,6 +10,42 @@
 // ============================================================
 
 /**
+ * 代码证据
+ */
+export interface Evidence {
+  /** 文件路径 */
+  filePath: string
+  /** 行范围（如 "120-138"） */
+  lineRange: string
+  /** 代码片段（最多 200 字符） */
+  snippet: string
+  /** 为什么这是证据 */
+  reason: string
+}
+
+/**
+ * 项目技术栈信息
+ */
+export interface ProjectProfile {
+  /** 编程语言列表 */
+  languages: string[]
+  /** 框架列表 */
+  frameworks: string[]
+}
+
+/**
+ * 未解决项（Phase 1 找不到但应该找的内容）
+ */
+export interface UnresolvedItem {
+  /** 类型 */
+  type: 'header' | 'validation' | 'feature-flag' | 'error-mapping' | 'response' | 'external-call'
+  /** 描述（未找到什么） */
+  description: string
+  /** 影响（缺失会导致什么问题） */
+  impact: string
+}
+
+/**
  * 入口点信息
  */
 export interface EntryPoint {
@@ -118,6 +154,8 @@ export interface BusinessRule {
   action: string
   /** 触发场景描述 */
   triggerScenario: string
+  /** 代码证据（P0-1 新增） */
+  evidence?: Evidence
 }
 
 /**
@@ -134,6 +172,8 @@ export interface ErrorPath {
   file: string
   /** 所在行 */
   line: number
+  /** 代码证据（P0-1 新增） */
+  evidence?: Evidence
 }
 
 /**
@@ -150,6 +190,8 @@ export interface ExternalCall {
   file: string
   /** 所在行 */
   line: number
+  /** 代码证据（P0-1 新增） */
+  evidence?: Evidence
 }
 
 /**
@@ -157,6 +199,8 @@ export interface ExternalCall {
  * 这是 Phase 1 产生、Phase 2 消费的中间数据结构
  */
 export interface CodeExplorationResult {
+  /** 项目技术栈信息（P0-2 新增） */
+  projectProfile?: ProjectProfile
   /** 入口点信息 */
   entryPoint: EntryPoint
   /** 完整调用链（含分支信息） */
@@ -174,4 +218,10 @@ export interface CodeExplorationResult {
   errorPaths: ErrorPath[]
   /** 外部服务/DB 调用 */
   externalCalls: ExternalCall[]
+  /** 未解决项（P0-3 新增） */
+  unresolvedItems?: UnresolvedItem[]
+  /** JSON 解析状态（新增：complete=完整解析，partial=部分提取，failed=解析失败） */
+  parseStatus?: 'complete' | 'partial' | 'failed'
+  /** 解析警告信息（新增） */
+  parseWarnings?: string[]
 }

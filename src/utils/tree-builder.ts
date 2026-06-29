@@ -37,19 +37,38 @@ export function buildDomainTree(requests: CaptureRequest[], sortMode: DomainSort
 
   const domains: DomainNode[] = []
   for (const [host, children] of map) {
+    // 预计算时间戳，避免排序时反复 new Date
+    const timestamps = new Map<CaptureRequest, number>()
+    for (const r of children) {
+      timestamps.set(r, new Date(r.capturedAt).getTime())
+    }
     // children 按 capturedAt 降序（newest first）
-    children.sort((a, b) => new Date(b.capturedAt).getTime() - new Date(a.capturedAt).getTime())
+    children.sort((a, b) => timestamps.get(b)! - timestamps.get(a)!)
+
+    // 单次遍历完成所有统计
+    let hasError = false
+    let pendingCount = 0
+    let hasSelected = false
+    let hasChecked = false
+    for (const r of children) {
+      if (r.statusCode !== null && r.statusCode >= 400) hasError = true
+      if (r.statusCode === null) pendingCount++
+      if (r.selected) hasSelected = true
+      if (r.checked) hasChecked = true
+      // 提前退出：所有标志都已为 true 时不再遍历
+      if (hasError && pendingCount > 0 && hasSelected && hasChecked) break
+    }
 
     domains.push({
       type: 'domain',
       host,
       children,
       count: children.length,
-      hasError: children.some(r => r.statusCode !== null && r.statusCode >= 400),
-      pendingCount: children.filter(r => r.statusCode === null).length,
+      hasError,
+      pendingCount,
       latestCapturedAt: children[0]?.capturedAt || '',
-      hasSelected: children.some(r => r.selected),
-      hasChecked: children.some(r => r.checked),
+      hasSelected,
+      hasChecked,
     })
   }
 
@@ -65,9 +84,13 @@ export function buildDomainTree(requests: CaptureRequest[], sortMode: DomainSort
 export function sortDomains(domains: DomainNode[], mode: DomainSortMode): DomainNode[] {
   const sorted = [...domains]
   switch (mode) {
-    case 'latest':
-      sorted.sort((a, b) => new Date(b.latestCapturedAt).getTime() - new Date(a.latestCapturedAt).getTime())
+    case 'latest': {
+      // 预计算时间戳
+      const ts = new Map<DomainNode, number>()
+      for (const d of sorted) ts.set(d, new Date(d.latestCapturedAt).getTime())
+      sorted.sort((a, b) => ts.get(b)! - ts.get(a)!)
       break
+    }
     case 'count':
       sorted.sort((a, b) => b.count - a.count)
       break

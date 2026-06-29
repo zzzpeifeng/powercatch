@@ -78,18 +78,26 @@ export class AIAgentToolExecutor {
           break
 
         case 'read_file':
+          // 警告：read_file 不支持 offset/limit，会读取整个文件
+          if (args.offset !== undefined || args.limit !== undefined) {
+            console.warn(`[AIAgentToolExecutor] read_file 忽略 offset/limit 参数，将读取整个文件: ${args.path}`)
+          }
           result = await this.withTimeout(
             this.readFile(args.path),
             `read_file(${args.path})`
           )
           break
 
-        case 'search_code':
+        case 'search_code': {
+          // 兼容 filePattern（camelCase）和 file_pattern（snake_case）
+          const keyword = args.keyword
+          const filePattern = args.filePattern ?? args.file_pattern
           result = await this.withTimeout(
-            this.searchCode(args.keyword, args.filePattern),
-            `search_code(${args.keyword})`
+            this.searchCode(keyword, filePattern),
+            `search_code(${keyword})`
           )
           break
+        }
 
         case 'get_file_tree':
           result = await this.withTimeout(

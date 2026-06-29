@@ -14,7 +14,7 @@
  * 5. 生成最终分析报告
  */
 import type { BrowserWindow } from 'electron'
-import type { RouteMatch, AnalysisScenario } from '../../src/services/types'
+import type { RouteMatch, AnalysisScenario, ScenarioValidationWarning } from '../../src/services/types'
 import type { CodeExplorationResult } from './types'
 import OpenAI from 'openai'
 import { AIAgentToolExecutor, type ToolCallResult } from './ai-agent-tool-executor'
@@ -56,6 +56,28 @@ export interface AnalyzeResult {
   analysis: string
   /** 结构化场景列表 */
   scenarios: AnalysisScenario[]
+}
+
+/**
+ * 场景校验结果（P1-1 新增）
+ */
+interface ScenarioValidationResult {
+  /** 是否通过（无 error 级别警告） */
+  valid: boolean
+  /** 警告列表 */
+  warnings: ScenarioValidationWarning[]
+  /** 覆盖统计 */
+  coverage: {
+    requiredParamsTotal: number
+    requiredParamsCovered: number
+    constrainedParamsTotal: number
+    constrainedParamsCovered: number
+    businessRulesTotal: number
+    businessRulesCovered: number
+    errorPathsTotal: number
+    errorPathsCovered: number
+    unresolvedItemsTotal: number
+  }
 }
 
 /**
@@ -151,12 +173,15 @@ export class AIAnalyzeService {
     this.pushProgress('code-explorer', 'Phase 1: 开始探索代码...')
     const explorationResult = await this.phase1ExploreCode(clonePath, method, url, requestBody, requestHeaders)
 
+    // 质量检查：确保 Phase 1 结果可靠
+    this.assertExplorationReliable(explorationResult, request)
+
     // Phase 2: Test Case Generator
     this.pushProgress('test-generator', 'Phase 2: 开始生成测试用例...')
     const testResult = await this.phase2GenerateTests(method, url, requestBody, requestHeaders, explorationResult)
 
     // 组装结果
-    const analysisSummary = this.buildAnalysisSummary(explorationResult, testResult)
+    const analysisSummary = this.buildAnalysisSummary(explorationResult, testResult, request)
     const matches: RouteMatch[] = [{
       filePath: explorationResult.entryPoint.handlerFile,
       content: '',
@@ -173,6 +198,88 @@ export class AIAnalyzeService {
       analysis: analysisSummary,
       scenarios: testResult.scenarios,
     }
+  }
+
+  /**
+   * 质量检查：确保 Phase 1 结果可靠，不可靠时阻止 Phase 2
+   */
+  private assertExplorationReliable(
+    exploration: CodeExplorationResult,
+    request: AnalyzeRequest
+  ): void {
+    const requestPath = this.extractPathname(request.url)
+    const routePattern = exploration.entryPoint?.routePattern || ''
+
+    // 记录解析状态
+    if (exploration.parseStatus === 'partial') {
+      this.pushAgentThinking('[质量检查] Phase 1 输出为部分解析结果，正在校验入口可靠性...', 'explorer')
+      console.warn('[质量检查] Phase 1 parseStatus=partial, parseWarnings:', exploration.parseWarnings)
+    }
+
+    // 检查入口路径是否匹配
+    if (!this.routeLooksRelated(routePattern, requestPath)) {
+      const msg = `入口定位不可靠：原始路径 ${requestPath}，分析入口 ${routePattern || 'unknown'}`
+      console.error('[质量检查]', msg)
+      throw new Error(msg)
+    }
+
+    // 检查是否到达了终端节点
+    const reachedTerminal =
+      (exploration.externalCalls?.length ?? 0) > 0 ||
+      (exploration.errorPaths?.length ?? 0) > 0 ||
+      (exploration.businessRules?.length ?? 0) > 0
+
+    if (exploration.parseStatus === 'partial' && !reachedTerminal) {
+      const msg = 'Phase 1 结果为部分解析，且未提取到业务规则、错误路径或外部调用，停止生成测试场景。'
+      console.error('[质量检查]', msg)
+      throw new Error(msg)
+    }
+
+    console.log('[质量检查] 通过，入口:', routePattern, '终端节点:', reachedTerminal)
+  }
+
+  /**
+   * 从 URL 中提取 pathname
+   */
+  private extractPathname(urlOrPath: string): string {
+    try {
+      return new URL(urlOrPath).pathname
+    } catch {
+      return urlOrPath.split('?')[0]
+    }
+  }
+
+  /**
+   * 检查路由模式是否与请求路径相关
+   */
+  private routeLooksRelated(routePattern: string, requestPath: string): boolean {
+    if (!routePattern || !requestPath) return false
+    const normalize = (value: string) =>
+      value
+        .toLowerCase()
+        .replace(/^get\s+|^post\s+|^put\s+|^delete\s+|^patch\s+/i, '')
+        .replace(/:[^/]+/g, '')
+        .replace(/\{[^/]+\}/g, '')
+        .replace(/\/+/g, '/')
+        .replace(/\/$/, '')
+
+    const route = normalize(routePattern)
+    const path = normalize(requestPath)
+    return path.includes(route) || route.includes(path) || this.sharedPathTokenCount(route, path) >= 2
+  }
+
+  /**
+   * 计算两个路径的共享 token 数量
+   */
+  private sharedPathTokenCount(route: string, path: string): number {
+    const routeTokens = route.split('/').filter(Boolean)
+    const pathTokens = path.split('/').filter(Boolean)
+    let count = 0
+    for (let i = 0; i < Math.min(routeTokens.length, pathTokens.length); i++) {
+      if (routeTokens[i] === pathTokens[i]) count++
+      else break
+    }
+    return count
   }
 
   // ============================================================
@@ -554,6 +661,8 @@ export class AIAnalyzeService {
         businessRules: [],
         errorPaths: [],
         externalCalls: [],
+        parseStatus: 'partial',
+        parseWarnings: ['JSON 解析失败，使用正则提取部分字段，结果可能不完整'],
       }
 
       // 提取 entryPoint
@@ -609,6 +718,7 @@ export class AIAnalyzeService {
 
   /**
    * 从解析后的对象构建 CodeExplorationResult
+   * 保留 projectProfile、evidence、unresolvedItems 等新字段
    */
   private buildExplorationResult(parsed: any): CodeExplorationResult {
     if (!parsed.entryPoint) {
@@ -616,6 +726,7 @@ export class AIAnalyzeService {
     }
 
     return {
+      projectProfile: parsed.projectProfile || undefined,
       entryPoint: {
         handlerFile: parsed.entryPoint.handlerFile || '',
         handlerFunction: parsed.entryPoint.handlerFunction || '',
@@ -628,6 +739,9 @@ export class AIAnalyzeService {
       businessRules: parsed.businessRules || [],
       errorPaths: parsed.errorPaths || [],
       externalCalls: parsed.externalCalls || [],
+      unresolvedItems: parsed.unresolvedItems || undefined,
+      parseStatus: 'complete',
+      parseWarnings: [],
     }
   }
 
@@ -640,6 +754,7 @@ export class AIAnalyzeService {
     
     // 构建一个最小的 CodeExplorationResult
     const result: CodeExplorationResult = {
+      projectProfile: undefined,
       entryPoint: { handlerFile: '', handlerFunction: '', routePattern: '', framework: 'unknown' },
       fullCallChain: [],
       params: [],
@@ -647,6 +762,7 @@ export class AIAnalyzeService {
       businessRules: [],
       errorPaths: [],
       externalCalls: [],
+      unresolvedItems: undefined,
     }
 
     let hasUsefulData = false
@@ -811,7 +927,19 @@ export class AIAnalyzeService {
         }
       }
 
-      // 4. 全部失败
+      // 4. 尝试截断到最后一个完整场景
+      const truncated = this.truncateToLastCompleteScenario(jsonStr)
+      if (truncated) {
+        try {
+          const parsed = JSON.parse(truncated)
+          console.log('[parseScenariosResult] ✅ 截断后解析成功')
+          return this.buildScenariosResult(parsed)
+        } catch (truncateError: any) {
+          console.warn('[parseScenariosResult] ⚠️ 截断后仍然失败:', truncateError.message)
+        }
+      }
+
+      // 5. 全部失败
       const rawPreview = content.substring(0, 2000)
       const posInfo = this.findJsonErrorPosition(jsonStr, parseError.message)
       console.error(`[parseScenariosResult] ❌ JSON 解析失败（${posInfo}）:`, parseError.message)
@@ -821,18 +949,65 @@ export class AIAnalyzeService {
   }
 
   /**
+   * 当 JSON 被截断时，尝试截断到最后一个完整场景的 } 后面，再补全括号
+   */
+  private truncateToLastCompleteScenario(jsonStr: string): string | null {
+    try {
+      // 找到最后一个 "pythonAssertion": "..." 后面的 }
+      // 即找最后一个完整场景对象的结束位置
+      const lastBrace = jsonStr.lastIndexOf('}')
+      if (lastBrace < 0) return null
+
+      // 从后往前找，尝试在不同位置截断
+      for (let i = lastBrace; i > jsonStr.length / 2; i--) {
+        if (jsonStr[i] === '}') {
+          const candidate = jsonStr.substring(0, i + 1)
+          // 尝试补全：关闭 scenarios 数组和根对象
+          const closed = candidate + '\n  ],\n  "analysisSummary": ""\n}'
+          try {
+            JSON.parse(closed)
+            return closed
+          } catch {
+            // 继续往前找
+          }
+        }
+      }
+      return null
+    } catch {
+      return null
+    }
+  }
+
+  /**
    * 从解析后的对象构建 scenarios 结果
+   * 保留 sourceRefs（P0-6）和 validationWarnings（P1-3）
    */
   private buildScenariosResult(parsed: any): { scenarios: AnalysisScenario[]; analysisSummary: string } {
-    const scenarios: AnalysisScenario[] = (parsed.scenarios || []).map((s: any) => ({
-      scenarioName: s.scenarioName || '未知场景',
-      scenarioType: s.scenarioType || 'normal',
-      expectedStatusCode: s.expectedStatusCode || 200,
-      testData: s.testData || {},
-      callChain: s.callChain || [],
-      curlCommand: s.curlCommand || '',
-      pythonAssertion: s.pythonAssertion || '',
-    }))
+    const scenarios: AnalysisScenario[] = (parsed.scenarios || []).map((s: any) => {
+      const scenario: AnalysisScenario = {
+        scenarioName: s.scenarioName || '未知场景',
+        scenarioType: s.scenarioType || 'normal',
+        expectedStatusCode: s.expectedStatusCode || 200,
+        testData: s.testData || {},
+        callChain: s.callChain || [],
+        curlCommand: s.curlCommand || '',
+        pythonAssertion: s.pythonAssertion || '',
+        sourceRefs: s.sourceRefs || undefined,
+      }
+
+      // P1-3: 缺失字段记录 warning
+      const warnings: ScenarioValidationWarning[] = []
+      if (!s.scenarioType) warnings.push({ code: 'MISSING_SCENARIO_TYPE', message: '缺少 scenarioType', severity: 'warning' })
+      if (!s.expectedStatusCode) warnings.push({ code: 'MISSING_STATUS_CODE', message: '缺少 expectedStatusCode', severity: 'warning' })
+      if (!s.curlCommand) warnings.push({ code: 'MISSING_CURL', message: '缺少 curlCommand', severity: 'warning' })
+      if (!s.pythonAssertion) warnings.push({ code: 'MISSING_ASSERTION', message: '缺少 pythonAssertion', severity: 'warning' })
+      if (s.scenarioType !== 'normal' && (!s.sourceRefs || s.sourceRefs.length === 0)) {
+        warnings.push({ code: 'MISSING_SOURCE_REFS', message: '非 normal 场景缺少 sourceRefs', severity: 'warning' })
+      }
+      if (warnings.length > 0) scenario.validationWarnings = warnings
+
+      return scenario
+    })
 
     return {
       scenarios,
@@ -842,8 +1017,9 @@ export class AIAnalyzeService {
 
   /**
    * 构建分析摘要（合并 Phase 1 和 Phase 2 的结果）
+   * P1-4: 追加覆盖检查
    */
-  private buildAnalysisSummary(exploration: CodeExplorationResult, testResult: { scenarios: AnalysisScenario[]; analysisSummary: string }): string {
+  private buildAnalysisSummary(exploration: CodeExplorationResult, testResult: { scenarios: AnalysisScenario[]; analysisSummary: string }, request?: AnalyzeRequest): string {
     const ep = exploration.entryPoint
     let summary = `## 分析完成\n\n`
     summary += `**入口**: \`${ep.routePattern}\` → \`${ep.handlerFunction}()\`\n`
@@ -859,7 +1035,172 @@ export class AIAnalyzeService {
       summary += testResult.analysisSummary
     }
 
+    // P1-4: 追加覆盖检查（传入 request 以校验 curl URL）
+    const validation = this.validateScenarios(exploration, testResult.scenarios, request)
+    summary += `\n\n## 覆盖检查\n\n`
+    summary += `| 维度 | 已覆盖 | 总数 |\n|------|--------|------|\n`
+    summary += `| 必填参数 | ${validation.coverage.requiredParamsCovered} | ${validation.coverage.requiredParamsTotal} |\n`
+    summary += `| 受约束参数 | ${validation.coverage.constrainedParamsCovered} | ${validation.coverage.constrainedParamsTotal} |\n`
+    summary += `| 业务规则 | ${validation.coverage.businessRulesCovered} | ${validation.coverage.businessRulesTotal} |\n`
+    summary += `| 错误路径 | ${validation.coverage.errorPathsCovered} | ${validation.coverage.errorPathsTotal} |\n`
+    summary += `| 未解决项 | - | ${validation.coverage.unresolvedItemsTotal} |\n`
+
+    if (validation.warnings.length > 0) {
+      summary += `\n### 警告\n\n`
+      for (const w of validation.warnings) {
+        summary += `- **[${w.severity}]** ${w.message}\n`
+      }
+    }
+
     return summary
+  }
+
+  /**
+   * P1-2: 校验场景覆盖质量
+   */
+  private validateScenarios(exploration: CodeExplorationResult, scenarios: AnalysisScenario[], request?: AnalyzeRequest): ScenarioValidationResult {
+    const warnings: ScenarioValidationWarning[] = []
+
+    // 统计 required 参数覆盖
+    const requiredParams = exploration.params.filter(p => p.required)
+    const requiredParamsCovered = requiredParams.filter(p =>
+      scenarios.some(s =>
+        s.scenarioType === 'missing-required' &&
+        s.sourceRefs?.some(r => r.sourceId.includes(p.name))
+      )
+    ).length
+
+    // 统计受约束参数覆盖
+    const constrainedParams = exploration.params.filter(p =>
+      p.constraints && (p.constraints.min != null || p.constraints.max != null || p.constraints.pattern != null || (p.constraints.enum && p.constraints.enum.length > 0))
+    )
+    const constrainedParamsCovered = constrainedParams.filter(p =>
+      scenarios.some(s =>
+        (s.scenarioType === 'boundary' || s.scenarioType === 'format-error' || s.scenarioType === 'type-error') &&
+        s.sourceRefs?.some(r => r.sourceId.includes(p.name))
+      )
+    ).length
+
+    // 统计业务规则覆盖
+    const businessRulesCovered = exploration.businessRules.filter((_, idx) =>
+      scenarios.some(s =>
+        s.sourceRefs?.some(r => r.sourceType === 'businessRule' && r.sourceId.includes(`businessRules[${idx}]`))
+      )
+    ).length
+
+    // 统计错误路径覆盖
+    const errorPathsCovered = exploration.errorPaths.filter((_, idx) =>
+      scenarios.some(s =>
+        s.sourceRefs?.some(r => r.sourceType === 'errorPath' && r.sourceId.includes(`errorPaths[${idx}]`))
+      )
+    ).length
+
+    // 检查重复场景
+    const seen = new Set<string>()
+    for (const s of scenarios) {
+      const key = `${s.scenarioName}|${s.scenarioType}`
+      if (seen.has(key)) {
+        warnings.push({ code: 'DUPLICATE_SCENARIO', message: `重复场景: ${s.scenarioName}`, severity: 'warning' })
+      }
+      seen.add(key)
+    }
+
+    // 检查空 curl/assertion
+    for (const s of scenarios) {
+      if (!s.curlCommand) warnings.push({ code: 'EMPTY_CURL', message: `场景 "${s.scenarioName}" 缺少 curlCommand`, severity: 'warning', sourceId: s.scenarioName })
+      if (!s.pythonAssertion) warnings.push({ code: 'EMPTY_ASSERTION', message: `场景 "${s.scenarioName}" 缺少 pythonAssertion`, severity: 'warning', sourceId: s.scenarioName })
+    }
+
+    // 校验 curl URL/method（如果有 request）
+    if (request) {
+      for (const s of scenarios) {
+        const curlWarnings = this.validateScenarioCurl(s, request)
+        warnings.push(...curlWarnings)
+      }
+    }
+
+    return {
+      valid: warnings.filter(w => w.severity === 'error').length === 0,
+      warnings,
+      coverage: {
+        requiredParamsTotal: requiredParams.length,
+        requiredParamsCovered,
+        constrainedParamsTotal: constrainedParams.length,
+        constrainedParamsCovered,
+        businessRulesTotal: exploration.businessRules.length,
+        businessRulesCovered,
+        errorPathsTotal: exploration.errorPaths.length,
+        errorPathsCovered,
+        unresolvedItemsTotal: exploration.unresolvedItems?.length || 0,
+      },
+    }
+  }
+
+  /**
+   * 校验单个场景的 curl URL 和 method
+   */
+  private validateScenarioCurl(
+    scenario: AnalysisScenario,
+    request: AnalyzeRequest
+  ): ScenarioValidationWarning[] {
+    const warnings: ScenarioValidationWarning[] = []
+    const curl = scenario.curlCommand || ''
+    const curlUrl = this.extractUrlFromCurl(curl)
+    const curlMethod = this.extractMethodFromCurl(curl)
+
+    if (!curlUrl) {
+      warnings.push({
+        code: 'CURL_URL_MISSING',
+        severity: 'error',
+        message: `场景「${scenario.scenarioName}」缺少 curl URL`,
+      })
+      return warnings
+    }
+
+    const expectedMethod = request.method.toUpperCase()
+    if (curlMethod && curlMethod.toUpperCase() !== expectedMethod) {
+      warnings.push({
+        code: 'CURL_METHOD_MISMATCH',
+        severity: 'error',
+        message: `场景「${scenario.scenarioName}」curl method 为 ${curlMethod}，应为 ${expectedMethod}`,
+      })
+    }
+
+    try {
+      const expected = new URL(request.url)
+      const actual = new URL(curlUrl)
+      if (actual.origin !== expected.origin || actual.pathname !== expected.pathname) {
+        warnings.push({
+          code: 'CURL_URL_MISMATCH',
+          severity: 'error',
+          message: `场景「${scenario.scenarioName}」curl URL 为 ${actual.origin}${actual.pathname}，应为 ${expected.origin}${expected.pathname}`,
+        })
+      }
+    } catch {
+      warnings.push({
+        code: 'CURL_URL_INVALID',
+        severity: 'error',
+        message: `场景「${scenario.scenarioName}」curl URL 格式无效: ${curlUrl}`,
+      })
+    }
+
+    return warnings
+  }
+
+  /**
+   * 从 curl 命令中提取 URL
+   */
+  private extractUrlFromCurl(curl: string): string | null {
+    const match = curl.match(/curl\s+(?:[^'"]*\s+)*['"]([^'"]+)['"]/)
+    return match?.[1] || null
+  }
+
+  /**
+   * 从 curl 命令中提取 method
+   */
+  private extractMethodFromCurl(curl: string): string | null {
+    const match = curl.match(/(?:-X|--request)\s+([A-Za-z]+)/)
+    return match?.[1] || null
   }
 
   // ============================================================
@@ -892,7 +1233,7 @@ export class AIAnalyzeService {
         type: 'function',
         function: {
           name: 'read_file',
-          description: '读取指定文件的全部内容。用于查看文件代码。',
+          description: '读取指定文件的全部内容。只支持 path 参数，会读取整个文件；不要传 offset、limit、startLine、endLine。',
           parameters: {
             type: 'object',
             properties: {
@@ -909,13 +1250,13 @@ export class AIAnalyzeService {
         type: 'function',
         function: {
           name: 'search_code',
-          description: '在仓库中搜索包含指定关键字的代码文件。支持正则表达式。',
+          description: '在仓库中按字面量搜索包含指定关键字的代码文件。当前不支持正则表达式，请使用具体关键词，如 "RegisterRoutes"、"order/detail"、"Detail"。',
           parameters: {
             type: 'object',
             properties: {
               keyword: {
                 type: 'string',
-                description: '搜索关键字或正则表达式（如 "RegisterRoutes"、".GET("）',
+                description: '搜索关键字（字面量，不支持正则）。如 "RegisterRoutes"、"order/detail"、"Detail"',
               },
               file_pattern: {
                 type: 'string',
