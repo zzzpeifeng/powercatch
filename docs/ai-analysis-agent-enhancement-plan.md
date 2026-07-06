@@ -238,7 +238,7 @@ async analyzeWithAgent(request) {
 
 ## 八、待明确事项
 
-1. **超时值确认**：现状 Phase1 是 10 分钟软超时。本方案建议改为 Phase1/2 各 3 分钟 + 总 10 分钟硬中断。是否采纳？还是保留 10 分钟但改为硬 abort？
+1. **超时值确认** ✅ **已拍板（2026-07-06）**：采纳 Phase1/2 各 3 分钟（180_000ms）+ 总 10 分钟（600_000ms）**硬中断**（`signal` 透传每个 `openai.chat.completions.create(...)`），并移除现有 Phase1 软超时"强制输出 JSON"分支；工具硬上限 Phase1=15 / Phase2=10 同步生效。其余 4 条待明确项维持原议。
 2. **`get_struct_fields` 语言范围**：本次按 Go（扁平+一层嵌套）。是否要顺带支持 Java/Python？（建议留独立方向）
 3. **降级时是否推送部分 scenarios**：默认「推」+ warning banner（Phase1 OK + Phase2 兜底 → 仍出 scenarios）。需前端确认文案。
 4. **Phase 3.2（删旧 scenarioType）**：建议独立处理（v2.0 收尾），不混入本次。
