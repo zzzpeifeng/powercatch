@@ -6,7 +6,7 @@ import * as http from 'http'
 import * as https from 'https'
 import { IPC_CHANNELS, type BreakpointRule, type BreakpointResumePayload, type MapLocalRule, type MapRemoteRule, type AutoResponderRule, type RewriteRule, type DnsOverrideRule, type ReplayRequest, type ReplayResult, type Cookie, type CookieJar } from '../src/services/types'
 import * as sqlite from './db/sqlite'
-import { startProxy, stopProxy, getProxyStatus, getLocalIP, setDomainFilters, setDeviceAliases, setBreakpointRules as setProxyBreakpointRules, setMapLocalRules as setProxyMapLocalRules, setMapRemoteRules as setProxyMapRemoteRules, setAutoResponderRules, setRewriteRules as setProxyRewriteRules, setDnsOverrideRules as setProxyDnsOverrideRules, setCookieStore, abortAllPendingInterceptions, resolveBreakpointResume, rejectBreakpointResume } from './proxy/mitm-server'
+import { startProxy, stopProxy, getProxyStatus, getLocalIP, setDomainFilters, setDeviceAliases, setBreakpointRules as setProxyBreakpointRules, setMapLocalRules as setProxyMapLocalRules, setMapRemoteRules as setProxyMapRemoteRules, setAutoResponderRules, setRewriteRules as setProxyRewriteRules, setDnsOverrideRules as setProxyDnsOverrideRules, setCookieStore, abortAllPendingInterceptions, resolveBreakpointResume, rejectBreakpointResume, initThrottleIPC } from './proxy/mitm-server'
 import { generateCACert, isCAGenerated, getCertFilePath } from './proxy/ca-cert'
 import { setSystemProxy, clearSystemProxy, getSystemProxyStatus } from './proxy/system-proxy'
 import { executeCompare, testConnection, isCompareInProgress } from './services/ai-service'
@@ -1356,6 +1356,14 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     console.log(`[IPC] Loaded ${cookies.length} cookies into proxy`)
   } catch (error) {
     console.error('[IPC] Failed to load cookies:', error)
+  }
+
+  // 注册带宽限流（网络节流）IPC 处理器
+  try {
+    initThrottleIPC()
+    console.log('[IPC] 带宽限流 IPC 已注册')
+  } catch (error) {
+    console.error('[IPC] Failed to init throttle IPC:', error)
   }
 
   // 定期清理过期 Cookie（每天执行一次）

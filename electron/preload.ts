@@ -363,6 +363,11 @@ const electronAPI = {
   file: {
     select: () => ipcRenderer.invoke('file:select'),
   },
+
+  // 带宽限流（网络节流）
+  throttle: {
+    setConfig: (config: any) => ipcRenderer.invoke(IPC_CHANNELS.THROTTLE_SET_CONFIG, config),
+  },
 }
 
 // 暴露 API 到渲染进程

@@ -3,7 +3,7 @@
  * HTTP/HTTPS 中间人代理，解密流量并回传请求/响应数据
  */
 import { Proxy as HttpMitmProxy } from 'http-mitm-proxy'
-import { BrowserWindow, app } from 'electron'
+import { BrowserWindow, app, ipcMain } from 'electron'
 import { join } from 'path'
 import { getSslCaDir, ensureSslCaDir, cleanupOldCACerts, getCACertPath } from './ca-cert'
 import {
@@ -21,6 +21,7 @@ import {
   type RewriteRule,
   type DnsOverrideRule,
   type Cookie,
+  type ThrottleConfig,
 } from '../../src/services/types'
 import { parseSetCookieHeader, cookiesToHeader } from '../../src/utils/cookie-parser'
 import { networkInterfaces } from 'os'
@@ -28,6 +29,12 @@ import { SSLErrorClassifier, SSLErrorFormatter, type SSLErrorDetail } from '../s
 import { SSLErrorLogger } from '../services/ssl-logger'
 import { gunzipSync, inflateSync, brotliDecompressSync } from 'zlib'
 import { findMatchingRule } from '../../src/utils/breakpoint-matcher'
+import {
+  matchDomain,
+  shouldThrottle,
+  applyRequestDelay,
+  applyResponseDelay,
+} from './throttle-core'
 import { matchMapLocal } from '../../src/utils/map-local-matcher'
 import { matchMapRemote } from '../../src/utils/map-remote-matcher'
 import { matchAutoResponder } from '../../src/utils/auto-responder-matcher'
@@ -67,6 +74,31 @@ let dnsOverrideRules: DnsOverrideRule[] = []
 
 // Cookie 相关状态
 let cookieStore: Cookie[] = []
+// ===== 带宽限流（网络节流）状态（v1.0）=====
+let throttleConfig: ThrottleConfig = {
+	enabled: false,
+	preset: 'off',
+	requestDelay: 0,
+	responseDelay: 0,
+	domainFilter: [],
+	offlineMode: false,
+}
+
+/**
+ * 设置节流配置
+ * @param config 节流配置
+ */
+export function setThrottleConfig(config: ThrottleConfig): void {
+	throttleConfig = config
+	console.log('[Throttle] 配置已更新:', config)
+}
+
+// 节流判定与延迟逻辑已抽到 throttle-core.ts（纯函数，便于单测）：
+//   shouldThrottle(host, throttleConfig)
+//   applyRequestDelay(cb, throttleConfig)
+//   applyResponseDelay(cb, throttleConfig)
+// 域名匹配 matchDomain 同样来自 throttle-core（与现有 domainFilters 复用同一实现）
+
 const pendingInterceptions = new Map<string, {
   resolve: (modified: InterceptSession) => void
   reject: (reason: string) => void
@@ -124,26 +156,6 @@ function isPrivateIP(addr: string): boolean {
     return secondOctet >= 16 && secondOctet <= 31
   }
   return false
-}
-
-/**
- * 域名匹配逻辑（OR 匹配，支持 * 通配符 glob 风格）
- * 与 src/stores/request-store.ts 中的 filteredRequests 逻辑保持一致
- */
-function matchDomain(host: string, filters: string[]): boolean {
-  if (filters.length === 0) return true // 无过滤器时匹配所有
-
-  return filters.some((filter) => {
-    // 通配符匹配：支持 * 作为任意字符通配符
-    if (filter.includes('*')) {
-      const pattern = filter
-        .replace(/[.+?^${}()|[\]\\]/g, '\\$&') // 转义正则特殊字符（保留 *）
-        .replace(/\*/g, '.*')                   // * → 匹配任意字符
-      return new RegExp(`^${pattern}$`, 'i').test(host)
-    }
-    // 精确匹配
-    return host === filter
-  })
 }
 
 /**
@@ -702,6 +714,19 @@ export async function startProxy(port: number, win: BrowserWindow): Promise<bool
       const host = ctx.clientToProxyRequest.headers?.host || parseUrlHost(rawUrl)
       const method = (ctx.clientToProxyRequest.method || 'GET').toUpperCase() as HttpMethod
 
+      // ===== 带宽限流：请求延迟（上行）=====
+      // 包装 callback：第一次 forward 到 server 的调用被延迟；
+      // 后续调用（如断点内部多次 callback）直接放行，避免重复延迟。
+      if (shouldThrottle(host, throttleConfig)) {
+        const originalCallback = callback
+        let forwarded = false
+        callback = (...args: any[]) => {
+          if (forwarded) return originalCallback(...args)
+          forwarded = true
+          applyRequestDelay(() => originalCallback(...args), throttleConfig)
+        }
+      }
+
       // 检测 SSL 连接（HTTPS MITM 场景）
       const isSSL = ctx.isSSL === true ||
                     (ctx.clientToProxyRequest.socket as any)?.encrypted === true ||
@@ -1212,6 +1237,23 @@ export async function startProxy(port: number, win: BrowserWindow): Promise<bool
         console.log(`[WebSocket] 响应阶段：101 Switching Protocols，跳过正常响应处理`)
         return callback()
       }
+
+      // ===== 带宽限流检查（响应延迟 + 离线模式）=====
+      const host = ctx.clientToProxyRequest?.headers?.host || ctx._host || '';
+      if (shouldThrottle(host, throttleConfig)) {
+        // 离线模式：直接返回 503
+        if (throttleConfig.offlineMode) {
+          ctx.proxyToClientResponse.writeHead(503, { 'Content-Type': 'text/plain' });
+          ctx.proxyToClientResponse.end('Simulated offline mode');
+          return;
+        }
+
+        // 响应延迟
+        applyResponseDelay(() => {
+          callback();
+        }, throttleConfig);
+        return;
+      }
       
       // 调试日志：记录响应
       const url = ctx.clientToProxyRequest?.url || ctx._url || 'unknown'
@@ -1709,4 +1751,13 @@ export function getProxyStatus(): { status: ProxyStatus; port: number; localIp: 
     port: currentPort,
     localIp: getLocalIP(),
   }
+}
+
+/**
+ * 注册带宽限流 IPC 处理器
+ */
+export function initThrottleIPC(): void {
+  ipcMain.handle(IPC_CHANNELS.THROTTLE_SET_CONFIG, async (event, config: ThrottleConfig) => {
+    setThrottleConfig(config)
+  })
 }

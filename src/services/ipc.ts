@@ -33,6 +33,7 @@ import type {
   ReplayResult,
   Cookie,
   CookieJar,
+  ThrottleConfig,
 } from './types'
 
 /** Electron API 类型（由 preload.ts 暴露） */
@@ -235,6 +236,10 @@ interface ElectronAPI {
   webSocket: {
     onMessageAdded: (callback: (message: any) => void) => () => void
     onConnectionClosed: (callback: (data: { requestId: string; reason?: string }) => void) => () => void
+  }
+  // ===== 带宽限流（网络节流）=====
+  throttle: {
+    setConfig: (config: ThrottleConfig) => Promise<void>
   }
 }
 
@@ -1068,6 +1073,14 @@ export const ipc = {
       const api = getElectronAPI()
       if (!api) return () => {}
       return api.webSocket.onConnectionClosed(callback)
+    },
+  },
+  // ===== 带宽限流（网络节流）=====
+  throttle: {
+    setConfig: async (config: ThrottleConfig): Promise<void> => {
+      const api = getElectronAPI()
+      if (!api) return
+      return api.throttle.setConfig(config)
     },
   },
 }

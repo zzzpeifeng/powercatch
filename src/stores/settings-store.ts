@@ -3,8 +3,8 @@
  */
 import { defineStore } from 'pinia'
 import { ref, toRaw, watch } from 'vue'
-import type { AppSettings } from '../services/types'
-import { DEFAULT_PROMPT_V1, DEFAULT_PROMPT_V2 } from '../services/types'
+import type { AppSettings, ThrottleConfig } from '../services/types'
+import { DEFAULT_PROMPT_V1, DEFAULT_PROMPT_V2, THROTTLE_PRESETS } from '../services/types'
 import { ipc } from '../services/ipc'
 import { useDebounce } from '../composables/useDebounce'
 
@@ -44,6 +44,20 @@ export const useSettingsStore = defineStore('settings', () => {
   /** 主题设置：'light' | 'dark' | 'system' */
   const theme = ref<'light' | 'dark' | 'system'>('system')
 
+  // ===== 带宽限流（网络节流）状态 =====
+  /** 是否启用节流 */
+  const throttleEnabled = ref<boolean>(false)
+  /** 当前预设：off / 3g / 4g / 5g / slow / offline / custom */
+  const throttlePreset = ref<string>('off')
+  /** 请求延迟（上行，毫秒） */
+  const throttleRequestDelay = ref<number>(0)
+  /** 响应延迟（下行，毫秒） */
+  const throttleResponseDelay = ref<number>(0)
+  /** 域名过滤（空 = 全部） */
+  const throttleDomainFilter = ref<string[]>([])
+  /** 离线模式（返回 503） */
+  const throttleOfflineMode = ref<boolean>(false)
+
   /** 是否已加载 */
   const loaded = ref<boolean>(false)
 
@@ -67,6 +81,15 @@ export const useSettingsStore = defineStore('settings', () => {
     if (loaded.value) debouncedSave()
   })
 
+  // 带宽限流：任一节流配置变更时，防抖推送到代理并持久化
+  watch(
+    [throttleEnabled, throttlePreset, throttleRequestDelay, throttleResponseDelay, throttleDomainFilter, throttleOfflineMode],
+    () => {
+      if (loaded.value) updateThrottleConfig()
+    },
+    { deep: true },
+  )
+
   // ===== Actions =====
 
   /** 加载所有设置 */
@@ -87,8 +110,31 @@ export const useSettingsStore = defineStore('settings', () => {
         theme.value = settings.theme || 'system'
         // 立即应用主题（无需刷新）
         applyTheme()
+
+        // 加载带宽限流配置（独立 key，避免改动 AppSettings schema）
+        try {
+          const raw = await ipc.settings.get('throttle_config')
+          if (raw) {
+            const t = JSON.parse(raw) as ThrottleConfig
+            throttleEnabled.value = t.enabled
+            throttlePreset.value = t.preset
+            throttleRequestDelay.value = t.requestDelay
+            throttleResponseDelay.value = t.responseDelay
+            throttleDomainFilter.value = t.domainFilter || []
+            throttleOfflineMode.value = t.offlineMode || false
+          }
+        } catch (e) {
+          console.error('Failed to load throttle config:', e)
+        }
       }
       loaded.value = true
+
+      // 将已加载的节流配置推送到代理，确保代理启动即生效
+      try {
+        await updateThrottleConfig()
+      } catch (e) {
+        console.error('Failed to sync throttle config to proxy:', e)
+      }
     } catch (error) {
       console.error('Failed to load settings:', error)
     }
@@ -116,6 +162,58 @@ export const useSettingsStore = defineStore('settings', () => {
 
   /** 防抖保存 */
   const debouncedSave = useDebounce(saveSettings, 500)
+
+  // ===== 带宽限流（网络节流）=====
+
+  /** 构造纯 ThrottleConfig 对象 */
+  function buildThrottleConfig(): ThrottleConfig {
+    return {
+      enabled: throttleEnabled.value,
+      preset: throttlePreset.value as ThrottleConfig['preset'],
+      requestDelay: throttleRequestDelay.value,
+      responseDelay: throttleResponseDelay.value,
+      domainFilter: toRaw(throttleDomainFilter.value),
+      offlineMode: throttleOfflineMode.value,
+    }
+  }
+
+  /**
+   * 推送节流配置到代理（实时生效）并持久化到独立 setting key
+   */
+  async function updateThrottleConfig(): Promise<void> {
+    const config = buildThrottleConfig()
+    try {
+      await ipc.throttle.setConfig(config)
+    } catch (e) {
+      console.error('Failed to push throttle config:', e)
+    }
+    try {
+      await ipc.settings.set('throttle_config', JSON.stringify(config))
+    } catch (e) {
+      console.error('Failed to persist throttle config:', e)
+    }
+  }
+
+  /**
+   * 应用预设：填充延迟/离线模式并启用节流
+   * @param preset 预设 key
+   */
+  function applyThrottlePreset(preset: string): void {
+    const p = THROTTLE_PRESETS[preset]
+    if (!p) return
+    throttlePreset.value = preset
+    if (preset === 'off') {
+      throttleEnabled.value = false
+      throttleRequestDelay.value = 0
+      throttleResponseDelay.value = 0
+      throttleOfflineMode.value = false
+      return
+    }
+    throttleEnabled.value = true
+    throttleRequestDelay.value = p.requestDelay ?? 0
+    throttleResponseDelay.value = p.responseDelay ?? 0
+    throttleOfflineMode.value = p.offlineMode ?? false
+  }
 
   /** 保存域名过滤器（防抖） */
   function saveDomainFilters(filters: string[]): void {
@@ -209,6 +307,13 @@ export const useSettingsStore = defineStore('settings', () => {
     caCertGenerated,
     theme,
     loaded,
+    // 带宽限流状态
+    throttleEnabled,
+    throttlePreset,
+    throttleRequestDelay,
+    throttleResponseDelay,
+    throttleDomainFilter,
+    throttleOfflineMode,
     // Actions
     loadSettings,
     saveSettings,
@@ -220,6 +325,9 @@ export const useSettingsStore = defineStore('settings', () => {
     generateCACert,
     loadCAStatus,
     loadLocalIp,
+    // 带宽限流 Actions
+    updateThrottleConfig,
+    applyThrottlePreset,
     // Theme Actions
     applyTheme,
     setTheme,

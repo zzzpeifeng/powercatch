@@ -93,6 +93,28 @@ function removeDomain(index: number) {
   localSettings.value.domainFilters.splice(index, 1)
 }
 
+// ===== 网络节流（带宽限流）=====
+const newThrottleDomain = ref('')
+
+// 应用预设（覆盖手动延迟）
+function onThrottlePresetChange(e: Event) {
+  settingsStore.applyThrottlePreset((e.target as HTMLSelectElement).value)
+}
+
+// 添加节流域名
+function addThrottleDomain() {
+  const v = newThrottleDomain.value.trim()
+  if (v && !settingsStore.throttleDomainFilter.includes(v)) {
+    settingsStore.throttleDomainFilter.push(v)
+    newThrottleDomain.value = ''
+  }
+}
+
+// 删除节流域名
+function removeThrottleDomain(index: number) {
+  settingsStore.throttleDomainFilter.splice(index, 1)
+}
+
 // 生成证书下载页二维码
 async function generateCertQrCode() {
   const url = certDownloadUrl.value || `http://${localSettings.value.localIp}:8889/cert`
@@ -446,6 +468,86 @@ function prevStep() {
               class="input input-sm flex-1 min-w-[120px] border-none bg-transparent p-0 focus:ring-0 text-sm"
             />
           </div>
+        </div>
+
+        <!-- 网络节流（带宽限流） -->
+        <div class="card p-4">
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="text-sm font-semibold text-[var(--color-text)]">网络节流（带宽限流）</h3>
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" v-model="settingsStore.throttleEnabled" class="toggle" />
+              <span class="text-xs text-gray-500">{{ settingsStore.throttleEnabled ? '已开启' : '已关闭' }}</span>
+            </label>
+          </div>
+
+          <!-- 预设 -->
+          <div class="flex items-center gap-3 mb-3">
+            <label class="label w-24 shrink-0">预设场景</label>
+            <select
+              :value="settingsStore.throttlePreset"
+              @change="onThrottlePresetChange"
+              class="input input-sm flex-1"
+            >
+              <option value="off">关闭（无限制）</option>
+              <option value="3g">3G 网络（慢）</option>
+              <option value="4g">4G 网络</option>
+              <option value="5g">5G 网络（快）</option>
+              <option value="slow">极慢（2s+）</option>
+              <option value="offline">离线模式（503）</option>
+              <option value="custom">自定义</option>
+            </select>
+          </div>
+
+          <div class="flex items-center gap-3 mb-3">
+            <label class="label w-24 shrink-0">请求延迟(ms)</label>
+            <input
+              v-model.number="settingsStore.throttleRequestDelay"
+              type="number"
+              class="input input-sm w-36"
+              min="0"
+              :disabled="!settingsStore.throttleEnabled"
+            />
+          </div>
+          <div class="flex items-center gap-3 mb-3">
+            <label class="label w-24 shrink-0">响应延迟(ms)</label>
+            <input
+              v-model.number="settingsStore.throttleResponseDelay"
+              type="number"
+              class="input input-sm w-36"
+              min="0"
+              :disabled="!settingsStore.throttleEnabled"
+            />
+          </div>
+
+          <!-- 离线模式 -->
+          <div class="flex items-center gap-3 mb-3">
+            <label class="label w-24 shrink-0">离线模式</label>
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" v-model="settingsStore.throttleOfflineMode" class="toggle" :disabled="!settingsStore.throttleEnabled" />
+              <span class="text-xs text-gray-500">返回 503（模拟断网）</span>
+            </label>
+          </div>
+
+          <!-- 域名过滤 -->
+          <div class="mt-2 pt-3 border-t border-gray-100 dark:border-gray-700">
+            <label class="label mb-2">仅对以下域名生效（留空=全部）</label>
+            <div class="tag-input-container">
+              <div v-for="(domain, index) in settingsStore.throttleDomainFilter" :key="domain" class="tag-item">
+                <span>{{ domain }}</span>
+                <span class="tag-remove" @click="removeThrottleDomain(index)">×</span>
+              </div>
+              <input
+                v-model="newThrottleDomain"
+                @keyup.enter="addThrottleDomain"
+                placeholder="输入域名后回车添加"
+                class="input input-sm flex-1 min-w-[120px] border-none bg-transparent p-0 focus:ring-0 text-sm"
+              />
+            </div>
+          </div>
+
+          <p class="text-xs text-gray-400 mt-2">
+            💡 延迟立即生效；预设会覆盖手动延迟值。离线模式将直接中断匹配域名的请求。
+          </p>
         </div>
 
         <!-- AI 配置 -->
