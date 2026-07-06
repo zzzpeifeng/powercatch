@@ -3,8 +3,8 @@
  */
 import { defineStore } from 'pinia'
 import { ref, toRaw, watch } from 'vue'
-import type { AppSettings, ThrottleConfig } from '../services/types'
-import { DEFAULT_PROMPT_V1, DEFAULT_PROMPT_V2, THROTTLE_PRESETS } from '../services/types'
+import type { AppSettings, ThrottleConfig, PromptTemplate } from '../services/types'
+import { DEFAULT_PROMPT_V1, DEFAULT_PROMPT_V2, THROTTLE_PRESETS, BUILTIN_PROMPT_TEMPLATES } from '../services/types'
 import { ipc } from '../services/ipc'
 import { useDebounce } from '../composables/useDebounce'
 
@@ -31,6 +31,12 @@ export const useSettingsStore = defineStore('settings', () => {
 
   /** 当前选择的模板版本 */
   const promptVersion = ref<'v1' | 'v2'>('v1')
+
+  /** AI 对比 Prompt 模板库（内置 + 自定义） */
+  const promptTemplates = ref<PromptTemplate[]>(BUILTIN_PROMPT_TEMPLATES)
+
+  /** 当前选中的模板 id（内置为 'builtin-v1'/'builtin-v2'，自定义为随机串） */
+  const selectedTemplateId = ref<string>('builtin-v1')
 
   /** 域名过滤器 */
   const domainFilters = ref<string[]>([])
@@ -125,6 +131,21 @@ export const useSettingsStore = defineStore('settings', () => {
           }
         } catch (e) {
           console.error('Failed to load throttle config:', e)
+        }
+
+        // 加载 AI 对比模板库（独立 key，避免改动 AppSettings schema）
+        try {
+          const storedId = await ipc.settings.get('selected_template_id')
+          const rawTpl = await ipc.settings.get('prompt_templates')
+          if (rawTpl) {
+            const custom = JSON.parse(rawTpl) as PromptTemplate[]
+            promptTemplates.value = [...BUILTIN_PROMPT_TEMPLATES, ...custom.filter((t) => !t.builtin)]
+          }
+          selectedTemplateId.value =
+            storedId && promptTemplates.value.some((t) => t.id === storedId) ? storedId : 'builtin-v1'
+          syncActiveFromSelected()
+        } catch (e) {
+          console.error('Failed to load prompt templates:', e)
         }
       }
       loaded.value = true
@@ -228,11 +249,130 @@ export const useSettingsStore = defineStore('settings', () => {
     debouncedSave()
   }
 
-  /** 重置 Prompt 为默认模板 */
+  /**
+   * 核心不变量：将 aiPromptTemplate 同步为「当前选中模板的内容」。
+   * 主进程 compare handler 始终读取 settings.aiPromptTemplate，因此只需在此同步。
+   */
+  function syncActiveFromSelected(): void {
+    const tpl = promptTemplates.value.find((t) => t.id === selectedTemplateId.value)
+    aiPromptTemplate.value = tpl?.content ?? DEFAULT_PROMPT_V1
+  }
+
+  /** 仅持久化自定义模板（内置不重复存储） */
+  async function persistTemplates(): Promise<void> {
+    try {
+      const custom = promptTemplates.value.filter((t) => !t.builtin)
+      await ipc.settings.set('prompt_templates', JSON.stringify(custom))
+    } catch (e) {
+      console.error('Failed to persist prompt templates:', e)
+    }
+  }
+
+  /** 持久化当前选中模板 id */
+  async function persistSelectedId(): Promise<void> {
+    try {
+      await ipc.settings.set('selected_template_id', selectedTemplateId.value)
+    } catch (e) {
+      console.error('Failed to persist selected template id:', e)
+    }
+  }
+
+  /** 选择模板：切换选中并同步 aiPromptTemplate 与持久化 */
+  function selectTemplate(id: string): void {
+    if (!promptTemplates.value.some((t) => t.id === id)) return
+    selectedTemplateId.value = id
+    syncActiveFromSelected()
+    debouncedSave()
+    persistSelectedId()
+  }
+
+  /** 新建自定义模板，自动选中并同步，返回新模板 id */
+  function saveCustomTemplate(input: { name: string; content: string }): string {
+    const id = 'custom-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
+    const tpl: PromptTemplate = {
+      id,
+      name: input.name || '未命名模板',
+      content: input.content,
+      builtin: false,
+    }
+    promptTemplates.value = [...promptTemplates.value, tpl]
+    selectedTemplateId.value = id
+    syncActiveFromSelected()
+    persistTemplates()
+    persistSelectedId()
+    debouncedSave()
+    return id
+  }
+
+  /** 更新自定义模板（仅自定义生效） */
+  function updateCustomTemplate(id: string, patch: { name?: string; content?: string }): void {
+    const idx = promptTemplates.value.findIndex((t) => t.id === id)
+    if (idx === -1) return
+    if (promptTemplates.value[idx].builtin) return
+    const next = [...promptTemplates.value]
+    next[idx] = {
+      ...next[idx],
+      ...(patch.name !== undefined ? { name: patch.name } : {}),
+      ...(patch.content !== undefined ? { content: patch.content } : {}),
+    }
+    promptTemplates.value = next
+    const isSelected = selectedTemplateId.value === id
+    if (isSelected) syncActiveFromSelected()
+    persistTemplates()
+    if (isSelected) debouncedSave()
+  }
+
+  /** 删除模板：内置不可删；删除当前选中项时回退到 builtin-v1 */
+  function deleteTemplate(id: string): void {
+    const tpl = promptTemplates.value.find((t) => t.id === id)
+    if (!tpl || tpl.builtin) return
+    promptTemplates.value = promptTemplates.value.filter((t) => t.id !== id)
+    if (selectedTemplateId.value === id) {
+      selectedTemplateId.value = 'builtin-v1'
+      syncActiveFromSelected()
+      debouncedSave()
+    }
+    persistTemplates()
+    persistSelectedId()
+  }
+
+  /** 恢复仅内置默认模板 */
+  function resetTemplates(): void {
+    promptTemplates.value = [...BUILTIN_PROMPT_TEMPLATES]
+    selectedTemplateId.value = 'builtin-v1'
+    syncActiveFromSelected()
+    persistTemplates()
+    persistSelectedId()
+    debouncedSave()
+  }
+
+  /**
+   * 将编辑器内容写回模板库（供 SettingsView 保存时调用）。
+   * - 当前选中为内置：自动克隆为自定义副本并选中
+   * - 当前选中为自定义：直接更新其 content
+   */
+  function commitEditorToSelected(content: string): void {
+    const current = promptTemplates.value.find((t) => t.id === selectedTemplateId.value)
+    if (current && current.builtin) {
+      const id = 'custom-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
+      promptTemplates.value = [
+        ...promptTemplates.value,
+        { id, name: current.name + ' (副本)', content, builtin: false },
+      ]
+      selectedTemplateId.value = id
+      syncActiveFromSelected()
+    } else if (current) {
+      updateCustomTemplate(current.id, { content })
+    }
+    persistTemplates()
+    persistSelectedId()
+    debouncedSave()
+  }
+
+  /** 重置 Prompt 为默认模板（委托为选中对应内置模板，保持向后兼容） */
   function resetPrompt(version: 'v1' | 'v2' = 'v1'): void {
     promptVersion.value = version
-    aiPromptTemplate.value = version === 'v1' ? DEFAULT_PROMPT_V1 : DEFAULT_PROMPT_V2
-    debouncedSave()
+    selectTemplate(version === 'v1' ? 'builtin-v1' : 'builtin-v2')
   }
 
   /** 测试 AI 连接 */
@@ -302,6 +442,8 @@ export const useSettingsStore = defineStore('settings', () => {
     deviceAliases,
     aiPromptTemplate,
     promptVersion,
+    promptTemplates,
+    selectedTemplateId,
     domainFilters,
     localIp,
     caCertGenerated,
@@ -321,6 +463,12 @@ export const useSettingsStore = defineStore('settings', () => {
     saveDomainFilters,
     setDeviceAlias,
     resetPrompt,
+    selectTemplate,
+    saveCustomTemplate,
+    updateCustomTemplate,
+    deleteTemplate,
+    resetTemplates,
+    commitEditorToSelected,
     testConnection,
     generateCACert,
     loadCAStatus,

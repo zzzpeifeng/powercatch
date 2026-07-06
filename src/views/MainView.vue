@@ -57,6 +57,7 @@
       @toggle-session-manager="showSessionManager = !showSessionManager"
       @import-har="handleImportHar"
       @export-har="handleExportHar"
+      @open-template-manager="showTemplateManager = true"
     />
 
     <!-- 断点规则面板 -->
@@ -82,6 +83,9 @@
 
     <!-- 会话管理面板 -->
     <SessionManager v-if="showSessionManager" @close="showSessionManager = false" />
+
+    <!-- AI 对比模板管理弹窗 -->
+    <TemplateManager v-if="showTemplateManager" :visible="true" @close="showTemplateManager = false" />
 
     <!-- 主内容区：可拖拽上下分割 -->
     <div ref="containerRef" class="flex-1 flex flex-col overflow-hidden">
@@ -173,6 +177,7 @@ import CookieManager from '../components/CookieManager.vue'
 import RewriteRules from '../components/RewriteRules.vue'
 import DnsOverrideRules from '../components/DnsOverrideRules.vue'
 import SessionManager from '../components/SessionManager.vue'
+import TemplateManager from '../components/TemplateManager.vue'
 
 const router = useRouter()
 const requestStore = useRequestStore()
@@ -200,6 +205,7 @@ const showCookieManager = ref<boolean>(false)
 const showRewriteRules = ref<boolean>(false)
 const showDnsOverrideRules = ref<boolean>(false)
 const showSessionManager = ref<boolean>(false)
+const showTemplateManager = ref<boolean>(false)
 
 /** 当前键盘导航焦点在 displayRows 中的索引（group 模式专用，含域名头） */
 const navigationIndex = ref<number>(-1)

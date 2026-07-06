@@ -15,13 +15,20 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
+import { setActivePinia, createPinia } from 'pinia'
 import CompareResult from '../CompareResult.vue'
+import { useSettingsStore } from '../../stores/settings-store'
 import type {
   CaptureRequest,
   CompareResult as CompareResultType,
   DiffResult,
   LoadingStates,
 } from '../../services/types'
+
+// 全局：CompareResult 现依赖 settings store（Pinia），为所有用例提供独立 Pinia 实例，避免跨测试串扰。
+beforeEach(() => {
+  setActivePinia(createPinia())
+})
 
 // ===== Fixtures =====
 
@@ -278,11 +285,12 @@ describe('CompareResult.vue 降级徽标（改动 A）', () => {
     // 断言 1：徽标文本出现在文档中
     expect(wrapper.text()).toContain('降级结果')
 
-    // 徽标带 title 说明与 amber 样式类
-    const badge = wrapper.find('[title]')
-    expect(badge.exists()).toBe(true)
-    expect(badge.classes()).toContain('bg-amber-100')
-    expect(badge.classes()).toContain('text-amber-700')
+    // 徽标带 amber 样式类与「降级结果」文案（注意：标题栏新增的模板切换 <select> 也带 title，
+    // 因此改用「文案」定位降级徽标，避免误命中 select）
+    const badge = wrapper.findAll('span').find((el) => el.text().includes('降级结果'))
+    expect(badge).toBeTruthy()
+    expect(badge!.classes()).toContain('bg-amber-100')
+    expect(badge!.classes()).toContain('text-amber-700')
   })
 
   it('A-2 负向：compareResult.degraded 为 false 时不显示降级徽标', () => {
@@ -290,7 +298,7 @@ describe('CompareResult.vue 降级徽标（改动 A）', () => {
     wrapper = mountDefault({ compareResult: notDegraded })
 
     expect(wrapper.text()).not.toContain('降级结果')
-    expect(wrapper.find('[title]').exists()).toBe(false)
+    expect(wrapper.findAll('span').some((el) => el.text().includes('降级结果'))).toBe(false)
   })
 
   it('A-3 负向：compareResult 省略 degraded 字段时不显示降级徽标', () => {
@@ -298,6 +306,63 @@ describe('CompareResult.vue 降级徽标（改动 A）', () => {
     wrapper = mountDefault()
 
     expect(wrapper.text()).not.toContain('降级结果')
-    expect(wrapper.find('[title]').exists()).toBe(false)
+    expect(wrapper.findAll('span').some((el) => el.text().includes('降级结果'))).toBe(false)
+  })
+})
+
+// ===== 改动 B：标题栏模板快速切换下拉（从工具栏移入）=====
+describe('CompareResult.vue 标题栏模板快速切换（改动 B）', () => {
+  let wrapper: VueWrapper<any>
+
+  beforeEach(() => {
+    wrapper = mountDefault()
+  })
+
+  afterEach(() => {
+    if (wrapper) wrapper.unmount()
+  })
+
+  it('B-1 标题栏存在「AI 对比结果」标题与模板切换下拉', () => {
+    // 1. 标题存在
+    expect(wrapper.text()).toContain('AI 对比结果')
+
+    // 2. 下拉 select 存在且始终渲染（不依赖 compareResult / loadingStates）
+    const select = wrapper.find('select')
+    expect(select.exists()).toBe(true)
+    expect(select.isVisible()).toBe(true)
+  })
+
+  it('B-2 下拉选项数量 == settingsStore.promptTemplates.length 且至少 2', () => {
+    const store = useSettingsStore()
+    const options = wrapper.findAll('select option')
+    expect(options.length).toBe(store.promptTemplates.length)
+    expect(options.length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('B-3 下拉 value 绑定当前 selectedTemplateId（默认 builtin-v1）', () => {
+    const store = useSettingsStore()
+    const select = wrapper.find('select')
+    expect((select.element as HTMLSelectElement).value).toBe(store.selectedTemplateId)
+    expect(store.selectedTemplateId).toBe('builtin-v1')
+  })
+
+  it('B-4 切换行为：选中非默认模板后 store.selectedTemplateId 更新并回写 select', async () => {
+    const store = useSettingsStore()
+    const select = wrapper.find('select')
+
+    // 前置：默认选中 builtin-v1
+    expect(store.selectedTemplateId).toBe('builtin-v1')
+
+    // 模拟用户在下拉中切换到 builtin-v2
+    await select.setValue('builtin-v2')
+    await wrapper.vm.$nextTick()
+
+    // 1. store 选中态已切换（驱动主进程对比链路的核心不变量）
+    expect(store.selectedTemplateId).toBe('builtin-v2')
+    // 2. 主进程对比读取的 aiPromptTemplate 已同步为对应模板内容
+    const v2 = store.promptTemplates.find((t) => t.id === 'builtin-v2')
+    expect(store.aiPromptTemplate).toBe(v2?.content)
+    // 3. select 的 :value 绑定随 store 回写，UI 与 store 保持一致
+    expect((select.element as HTMLSelectElement).value).toBe('builtin-v2')
   })
 })

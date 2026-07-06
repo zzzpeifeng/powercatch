@@ -853,6 +853,24 @@ export const DEFAULT_PROMPT_V2 = `对比以下两个请求的结构化差异。
 只关注业务字段差异：金额、状态、数量、结构。
 输出格式：关键差异 | 精度差异 | 字段缺失 | 总结`
 
+/** AI 对比 Prompt 模板（模板库单元） */
+export interface PromptTemplate {
+  /** 唯一 id：内置为 'builtin-v1' | 'builtin-v2'，自定义为随机串 */
+  id: string
+  /** 显示名 */
+  name: string
+  /** 模板正文（含 {diff_result}/{path}/{device_a_name} 等占位符） */
+  content: string
+  /** 是否内置（内置不可删除，但可另存为自定义） */
+  builtin: boolean
+}
+
+/** 内置模板库（初始两个） */
+export const BUILTIN_PROMPT_TEMPLATES: PromptTemplate[] = [
+  { id: 'builtin-v1', name: '详细版 (V1)', content: DEFAULT_PROMPT_V1, builtin: true },
+  { id: 'builtin-v2', name: '精简版 (V2)', content: DEFAULT_PROMPT_V2, builtin: true },
+]
+
 // ===== WebSocket 抓包类型定义 =====
 
 /** WebSocket 消息方向 */

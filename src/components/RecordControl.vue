@@ -229,6 +229,15 @@
           </svg>
           <span class="flex-1">{{ loadingStates.comparing ? '对比中...' : 'AI 对比' }}</span>
         </button>
+        <button
+          class="dropdown-item"
+          @click="$emit('open-template-manager'); aiMenuRef?.close()"
+        >
+          <svg class="w-4 h-4 text-purple-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 20h9M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4 12.5-12.5z" />
+          </svg>
+          <span class="flex-1">AI对比Prompt管理</span>
+        </button>
       </DropdownMenu>
 
       <!-- 导出按钮（浅灰背景带细边框） -->
@@ -300,6 +309,7 @@ defineEmits<{
   (e: 'toggle-cookie-manager'): void
   (e: 'import-har'): void
   (e: 'export-har'): void
+  (e: 'open-template-manager'): void
 }>()
 
 const toolsMenuRef = ref<InstanceType<typeof DropdownMenu> | null>(null)

@@ -6,6 +6,17 @@
     >
       <div class="flex items-center gap-2">
         <span class="text-sm font-medium text-gray-700 dark:text-gray-300">AI 对比结果</span>
+        <!-- AI 对比模板快速切换（从工具栏移入，标题旁） -->
+        <select
+          class="h-7 text-xs rounded-md border border-gray-200 dark:border-gray-600/50 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 px-2"
+          :value="settingsStore.selectedTemplateId"
+          @change="settingsStore.selectTemplate(($event.target as HTMLSelectElement).value)"
+          title="切换 AI 对比模板"
+        >
+          <option v-for="t in settingsStore.promptTemplates" :key="t.id" :value="t.id">
+            {{ t.name }}{{ t.builtin ? '' : ' *' }}
+          </option>
+        </select>
         <span v-if="compareResult" class="text-xs text-gray-400 dark:text-gray-500">
           {{ compareResult.deviceA.name }} vs {{ compareResult.deviceB.name }}
         </span>
@@ -290,6 +301,7 @@
 import { computed, ref } from 'vue'
 import type { CompareResult, LoadingStates, CaptureRequest, DiffResult } from '../services/types'
 import { renderMarkdown } from '../utils/markdown'
+import { useSettingsStore } from '../stores/settings-store'
 
 const props = defineProps<{
   compareResult: CompareResult | null
@@ -304,6 +316,9 @@ defineEmits<{
   (e: 'export-result'): void
   (e: 'close'): void
 }>()
+
+/** 设置 store：AI 对比模板快速切换（从工具栏移入标题栏） */
+const settingsStore = useSettingsStore()
 
 /** 当前激活的 Tab */
 const activeTab = ref<'ai' | 'diff' | 'raw'>('ai')

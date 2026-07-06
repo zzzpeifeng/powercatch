@@ -186,6 +186,8 @@ async function handleSave() {
     settingsStore.proxyPort = localSettings.value.proxyPort
     settingsStore.domainFilters = [...localSettings.value.domainFilters]
     settingsStore.aiPromptTemplate = localSettings.value.aiPromptTemplate
+    // 同步编辑器内容到模板库（内置模板被编辑时自动克隆为自定义）
+    settingsStore.commitEditorToSelected(localSettings.value.aiPromptTemplate)
     settingsStore.localIp = localSettings.value.localIp
     settingsStore.caCertGenerated = localSettings.value.caCertGenerated
     
