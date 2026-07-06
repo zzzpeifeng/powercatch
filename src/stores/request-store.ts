@@ -10,12 +10,13 @@
  */
 import { defineStore } from 'pinia'
 import { ref, computed, reactive } from 'vue'
-import type { CaptureRequest, RequestUpdate, CompareResult, LoadingStates, ProxyStatus, DomainSortMode, DomainNode, FlatTreeNode, FilterState, CaptureSession } from '../services/types'
+import type { CaptureRequest, RequestUpdate, CompareResult, LoadingStates, ProxyStatus, DomainSortMode, DomainNode, FlatTreeNode, FilterState, CaptureSession, DiffResult } from '../services/types'
 import { ipc } from '../services/ipc'
 import { generateMatchKey } from '../utils/request-matcher'
 import { buildDomainTree, flattenTree, matchSearch } from '../utils/tree-builder'
 import { matchFilters } from '../utils/filter-engine'
 import { isGraphQLRequest, parseOperationName, parseOperationType } from '../utils/graphql-detector'
+import { computeDiff } from '../services/diff-engine'
 
 /** 最小批量刷新间隔（ms） */
 const FLUSH_INTERVAL_MIN = 50
@@ -75,6 +76,9 @@ export const useRequestStore = defineStore('request', () => {
 
   /** 流式对比文本 */
   const streamingText = ref<string>('')
+
+  /** 结构化 diff 结果（前端本地计算，独立于 AI） */
+  const diffResult = ref<DiffResult | null>(null)
 
   /** Loading 状态 */
   const loadingStates = reactive<LoadingStates>({
@@ -497,6 +501,7 @@ export const useRequestStore = defineStore('request', () => {
     checkedRequests.value = []
     compareResult.value = null
     streamingText.value = ''
+    diffResult.value = null
   }
 
   /** 删除单个请求 */
@@ -600,13 +605,20 @@ export const useRequestStore = defineStore('request', () => {
     loadingStates.comparing = true
     compareResult.value = null
     streamingText.value = ''
+    diffResult.value = null
 
     try {
       const [reqA, reqB] = checkedRequests.value
+      // 前端独立计算结构化 diff（无论 AI 是否成功都保证 Tab 可用）
+      diffResult.value = computeDiff(reqA, reqB)
       const result = await ipc.ai.compare(reqA, reqB)
 
       if (result.success && result.result) {
         compareResult.value = result.result
+        // 优先使用服务端返回的结构化 diff 作为单一数据源；AI 失败(result.result 为 null)时保留客户端兜底
+        if (result.result?.diffResult) {
+          diffResult.value = result.result.diffResult
+        }
       } else if (result.error) {
         throw new Error(result.error)
       }
@@ -960,6 +972,7 @@ export const useRequestStore = defineStore('request', () => {
     localIp,
     compareResult,
     streamingText,
+    diffResult,
     loadingStates,
     deviceAliases,
     viewMode,

@@ -1,7 +1,7 @@
 # PowerCatch 功能实现进度跟踪
 
 > 每完成一个功能，把 `[ ]` 改成 `[x]` 即可。  
-> 更新日期：2026-06-27 | 总计：32 项 | 已完成：17 | 进行中：0
+> 更新日期：2026-06-29 | 总计：32 项 | 已完成：18 | 进行中：0
 
 ---
 
@@ -71,9 +71,9 @@
   - 瀑布图展示DNS/TTFB/下载时间分布
   - `WaterfallView.vue` + `mitm-server.ts`
 
-- [ ] **#15 WebSocket 抓包** | 工作量:中 | 依赖:无
-  - 捕获WS/WSS消息（帧级别）
-  - `mitm-server.ts` + WS消息列表UI
+- [x] **#15 WebSocket 抓包** | 工作量:中 | 依赖:无 | ✅ 2026-06-29
+  - 捕获WS/WSS消息（帧级别），消息列表+详情+Hex查看器，过滤/搜索/统计
+  - `websocket-handler.ts`(新增) + `websocket-store.ts`(新增) + `WebSocketMessages.vue`(新增) + `HexViewer.vue`(新增) + `mitm-server.ts` + `types.ts` + `ipc.ts` + `preload.ts` + `RequestDetail.vue` + `RequestList.vue`
 
 - [x] **#16 DNS 覆盖** | 工作量:小 | 依赖:无 | ✅ 2026-06-27
   - 代理层域名指向自定义IP，不改hosts文件
@@ -145,4 +145,4 @@
 | 💡 中价值 | 7 | 3 | ███░░░░ 43% |
 | 🌟 锦上添花 | 8 | 3 | ███░░░░░ 38% |
 | 🛠️ 非功能 | 6 | 0 | ░░░░░░ 0% |
-| **合计** | **32** | **17** | **53%** |
+| **合计** | **32** | **18** | **56%** |

@@ -117,6 +117,9 @@
           :compare-result="requestStore.compareResult"
           :streaming-text="requestStore.streamingText"
           :loading-states="requestStore.loadingStates"
+          :request-a="requestStore.checkedRequests[0] ?? null"
+          :request-b="requestStore.checkedRequests[1] ?? null"
+          :diff-result="requestStore.diffResult"
           @export-result="showExportMenu = true"
           @close="requestStore.compareResult = null"
         />

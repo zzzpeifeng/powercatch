@@ -284,6 +284,10 @@ export interface CompareResult {
   deviceB: { name: string; ip: string }
   /** 是否正在流式输出 */
   isStreaming: boolean
+  /** 结构化差异结果（由 ai-service.executeCompare 计算并返回，供导出/复用） */
+  diffResult?: DiffResult
+  /** 是否为降级结果（AI 调用失败后的结构化差异兜底，UI 可据此显示提示） */
+  degraded?: boolean
 }
 
 /** 导出格式 */
@@ -752,6 +756,8 @@ export const IPC_CHANNELS = {
   // ===== WebSocket 抓包 =====
   WEBSOCKET_MESSAGE_ADDED: 'websocket:message-added',
   WEBSOCKET_CONNECTION_CLOSED: 'websocket:connection-closed',
+  // ===== 带宽限流（网络节流）=====
+  THROTTLE_SET_CONFIG: 'throttle:setConfig',
 } as const
 
 /** IPC 通道名称类型 */
@@ -775,20 +781,38 @@ export const TEMPLATE_VARIABLES: TemplateVariable[] = [
   { key: '{request_method}', description: '请求方法（GET/POST 等）' },
   { key: '{request_headers_a}', description: '设备 A 的请求头' },
   { key: '{request_headers_b}', description: '设备 B 的请求头' },
+  { key: '{diff_result}', description: '（推荐）diff 引擎算出的结构化差异文本，替代原始 body' },
+  { key: '{url_a}', description: '请求 A 的完整 URL' },
+  { key: '{url_b}', description: '请求 B 的完整 URL' },
+  { key: '{status_a}', description: '请求 A 的状态码' },
+  { key: '{status_b}', description: '请求 B 的状态码' },
+  { key: '{request_body_a}', description: '请求 A 的请求体' },
+  { key: '{request_body_b}', description: '请求 B 的请求体' },
+  { key: '{response_headers_a}', description: '请求 A 的响应头' },
+  { key: '{response_headers_b}', description: '请求 B 的响应头' },
 ]
 
-/** AI Prompt 默认模板 v1（详细版） */
-export const DEFAULT_PROMPT_V1 = `你是一个接口数据对比分析专家。请对比以下两个 JSON 响应数据的差异。
+/** AI Prompt 默认模板 v1（详细版，以 {diff_result} 为核心） */
+export const DEFAULT_PROMPT_V1 = `你是一个接口数据对比分析专家。请基于下方 diff 引擎算出的结构化差异，分析两次请求的差异。
 
 【请求路径】: {path}
 【设备 A】: {device_a_name} ({client_ip_a})
 【设备 B】: {device_b_name} ({client_ip_b})
 
-【设备 A 响应】:
-{response_a_json}
+【结构化差异（推荐主要依据）】:
+{diff_result}
 
-【设备 B 响应】:
-{response_b_json}
+说明：
+- 默认请基于 {diff_result} 中的 +（新增）/-（删除）/~（修改）标记分析差异。
+- 若 {diff_result} 显示"已回退原始报文"，说明 diff 引擎计算失败或响应体过大，可参考下列原始字段（仅在需要时）：
+  - 设备 A 响应体: {response_a_json}
+  - 设备 B 响应体: {response_b_json}
+  - 设备 A 请求体: {request_body_a}
+  - 设备 B 请求体: {request_body_b}
+  - 状态码: {status_a} / {status_b}
+  - URL: {url_a} / {url_b}
+  - 响应头: {response_headers_a} / {response_headers_b}
+  - 请求头: {request_headers_a} / {request_headers_b}
 
 对比规则：
 1. 以下字段属于动态字段，天然不同，无需关注差异：
@@ -813,12 +837,17 @@ export const DEFAULT_PROMPT_V1 = `你是一个接口数据对比分析专家。�
 
 使用中文输出。`
 
-/** AI Prompt 默认模板 v2（精简版） */
-export const DEFAULT_PROMPT_V2 = `对比以下两个 JSON 响应的差异。
+/** AI Prompt 默认模板 v2（精简版，以 {diff_result} 为核心） */
+export const DEFAULT_PROMPT_V2 = `对比以下两个请求的结构化差异。
 
 请求: {path}
-设备A ({device_a_name}): {response_a_json}
-设备B ({device_b_name}): {response_b_json}
+设备A ({device_a_name})
+设备B ({device_b_name})
+
+【结构化差异】:
+{diff_result}
+
+（若 diff_result 为空或显示"已回退原始报文"，可参考原始响应体：{response_a_json} / {response_b_json}）
 
 忽略所有 ID、时间戳、URL 等动态字段。
 只关注业务字段差异：金额、状态、数量、结构。
@@ -1320,3 +1349,34 @@ export interface DiffResult {
     changes?: Array<{ value: string; added?: boolean; removed?: boolean }>
   }
 }
+
+// ===== 带宽限流（网络节流）类型定义（v1.0）=====
+
+/** 网络节流配置（v1.0 - 仅延迟控制） */
+export interface ThrottleConfig {
+  /** 是否启用节流 */
+  enabled: boolean
+  /** 预设场景（覆盖手动配置） */
+  preset: 'off' | '3g' | '4g' | '5g' | 'slow' | 'offline' | 'custom'
+  /** 请求延迟 ms（上行） */
+  requestDelay: number
+  /** 响应延迟 ms（下行） */
+  responseDelay: number
+  /** 仅对指定域名生效（空=全部） */
+  domainFilter: string[]
+  /** 离线模式（v1.0 新增） */
+  offlineMode?: boolean
+}
+
+/** 预设场景配置（v1.0） */
+export const THROTTLE_PRESETS: Record<string, Partial<ThrottleConfig>> = {
+  off:    { requestDelay: 0, responseDelay: 0 },
+  '3g':    { requestDelay: 300, responseDelay: 500 },
+  '4g':    { requestDelay: 50, responseDelay: 100 },
+  '5g':    { requestDelay: 10, responseDelay: 20 },
+  slow:   { requestDelay: 1000, responseDelay: 2000 },
+  offline: { requestDelay: 0, responseDelay: 0, offlineMode: true },
+  custom: {},
+}
+
+// ===== 带宽限流类型导出结束 =====

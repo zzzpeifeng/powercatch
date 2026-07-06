@@ -3,7 +3,9 @@
  */
 import { dialog } from 'electron'
 import { writeFileSync } from 'fs'
-import type { CompareResult, CaptureRequest, ExportFormat } from '../../src/services/types'
+import type { CompareResult, CaptureRequest, ExportFormat, DiffResult } from '../../src/services/types'
+import { computeDiff } from '../../src/services/diff-engine'
+import { exportDiffAsHtml, exportDiffAsMarkdown } from '../../src/services/diff-export'
 
 /**
  * 生成 JSON 格式导出内容
@@ -11,7 +13,8 @@ import type { CompareResult, CaptureRequest, ExportFormat } from '../../src/serv
 function generateJson(
   compareResult: CompareResult,
   requestA: CaptureRequest,
-  requestB: CaptureRequest
+  requestB: CaptureRequest,
+  diff: DiffResult
 ): string {
   const data = {
     exportedAt: new Date().toISOString(),
@@ -22,6 +25,7 @@ function generateJson(
       deviceB: compareResult.deviceB,
       analysis: compareResult.analysis,
     },
+    diffResult: diff,
     requestA: {
       method: requestA.method,
       url: requestA.url,
@@ -56,7 +60,8 @@ function generateJson(
 function generateHtml(
   compareResult: CompareResult,
   requestA: CaptureRequest,
-  requestB: CaptureRequest
+  requestB: CaptureRequest,
+  diff: DiffResult
 ): string {
   const escapeHtml = (str: string): string =>
     str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
@@ -114,6 +119,11 @@ function generateHtml(
       <div class="analysis">${analysisHtml}</div>
     </div>
 
+    <div class="card">
+      <h2>结构化差异（DiffResult）</h2>
+      ${exportDiffAsHtml(requestA, requestB, diff)}
+    </div>
+
     <div class="flex">
       <div class="card">
         <h2>设备 A 响应 - ${escapeHtml(compareResult.deviceA.name)}</h2>
@@ -139,7 +149,8 @@ function generateHtml(
 function generateTxt(
   compareResult: CompareResult,
   requestA: CaptureRequest,
-  requestB: CaptureRequest
+  requestB: CaptureRequest,
+  diff: DiffResult
 ): string {
   const separator = '='.repeat(60)
   const subSeparator = '-'.repeat(40)
@@ -185,6 +196,12 @@ ${separator}
 
 ${bodyB}
 
+${subSeparator}
+结构化差异（DiffResult）
+${subSeparator}
+
+${exportDiffAsMarkdown(requestA, requestB, diff)}
+
 ${separator}
 报告结束
 ${separator}
@@ -210,19 +227,22 @@ export async function exportCompareResult(
     let defaultFilename: string
     let filters: Electron.FileFilter[]
 
+    // 结构化差异：优先用 AI 返回结果携带的 diffResult，否则本地重算
+    const diff = compareResult.diffResult ?? computeDiff(requestA, requestB)
+
     switch (format) {
       case 'json':
-        content = generateJson(compareResult, requestA, requestB)
+        content = generateJson(compareResult, requestA, requestB, diff)
         defaultFilename = `compare-${Date.now()}.json`
         filters = [{ name: 'JSON', extensions: ['json'] }]
         break
       case 'html':
-        content = generateHtml(compareResult, requestA, requestB)
+        content = generateHtml(compareResult, requestA, requestB, diff)
         defaultFilename = `compare-${Date.now()}.html`
         filters = [{ name: 'HTML', extensions: ['html'] }]
         break
       case 'txt':
-        content = generateTxt(compareResult, requestA, requestB)
+        content = generateTxt(compareResult, requestA, requestB, diff)
         defaultFilename = `compare-${Date.now()}.txt`
         filters = [{ name: 'Text', extensions: ['txt'] }]
         break

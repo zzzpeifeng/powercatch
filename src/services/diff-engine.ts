@@ -413,3 +413,93 @@ export function computeDiff(req1: CaptureRequest, req2: CaptureRequest): DiffRes
     responseBody: resBody as DiffResult['responseBody'],
   }
 }
+
+/**
+ * 将 DiffResult 序列化为紧凑文本，用于注入 AI Prompt
+ * @param diff computeDiff() 的产出
+ * @param maxDeltas 单维度最多保留的 delta 条数（超出截断，保证 token 预算）
+ * @returns 紧凑文本
+ */
+export function serializeDiffForPrompt(diff: DiffResult, maxDeltas = 200): string {
+  const lines: string[] = []
+
+  // 1. 概览行
+  const { overview } = diff
+  lines.push(`[概览] 相同: ${overview.same.join(', ') || '无'} | 不同: ${overview.different.join(', ') || '无'}`)
+  lines.push(`[统计] 请求头(+${overview.stats.requestHeaders.added}/-${overview.stats.requestHeaders.removed}/~${overview.stats.requestHeaders.modified}) ` +
+             `响应头(+${overview.stats.responseHeaders.added}/-${overview.stats.responseHeaders.removed}/~${overview.stats.responseHeaders.modified}) ` +
+             `请求体变更${overview.stats.requestBody.changes} 响应体变更${overview.stats.responseBody.changes}`)
+
+  // 2. 请求头差异
+  lines.push(...formatHeaderDiff('请求头', diff.requestHeaders))
+  // 3. 响应头差异
+  lines.push(...formatHeaderDiff('响应头', diff.responseHeaders))
+
+  // 4. 请求体差异
+  lines.push(...formatBodyDiff('请求体', diff.requestBody, maxDeltas))
+  // 5. 响应体差异
+  lines.push(...formatBodyDiff('响应体', diff.responseBody, maxDeltas))
+
+  return lines.join('\n')
+}
+
+/**
+ * 格式化 Header 差异为可读文本行
+ */
+function formatHeaderDiff(label: string, h: HeaderDiffResult): string[] {
+  const out: string[] = []
+  const added = Object.entries(h.added).map(([k, v]) => `+ ${k}: ${v}`)
+  const removed = Object.entries(h.removed).map(([k, v]) => `- ${k}: ${v}`)
+  const modified = h.modified.map((m) => `~ ${m.key}: ${m.old} → ${m.new}`)
+  if (added.length || removed.length || modified.length) {
+    out.push(`[${label}差异]`)
+    out.push(...added, ...removed, ...modified)
+  }
+  return out
+}
+
+/**
+ * 格式化 Body 差异为可读文本行（支持 json / text / binary / empty）
+ */
+function formatBodyDiff(label: string, b: DiffResult['requestBody'], max: number): string[] {
+  const out: string[] = []
+  if (b.type === 'empty') return out
+  if (b.type === 'binary') { out.push(`[${label}] 二进制内容，无法结构化对比`); return out }
+  if (b.type === 'json' && b.delta) {
+    out.push(`[${label} JSON差异]`)
+    // 单值 JSON.stringify 可能极长，截断避免撑爆 prompt
+    const trunc = (v: any): string => {
+      const s = JSON.stringify(v)
+      return s.length > 500 ? s.slice(0, 500) + '…(已截断)' : s
+    }
+    ;(b.delta as JsonDelta[]).slice(0, max).forEach((d: JsonDelta) => {
+      if (d.type === 'added') out.push(`+ ${d.path}: ${trunc(d.newValue)}`)
+      else if (d.type === 'removed') out.push(`- ${d.path}: ${trunc(d.oldValue)}`)
+      else out.push(`~ ${d.path}: ${trunc(d.oldValue)} → ${trunc(d.newValue)}`)
+    })
+    if (b.delta.length > max) out.push(`... 其余 ${b.delta.length - max} 处差异已省略`)
+  }
+  if (b.type === 'text' && b.changes) {
+    out.push(`[${label} 文本差异]`)
+    // 以"变更块"为单位截断，保证 removed/added 替换对完整
+    const relevant = b.changes.filter((c) => c.added || c.removed)
+    const blocks: Array<{ removed?: string; added?: string }> = []
+    for (let i = 0; i < relevant.length; i++) {
+      const c = relevant[i]
+      if (c.removed && relevant[i + 1]?.added) {
+        blocks.push({ removed: c.value, added: relevant[i + 1].value })
+        i++ // 跳过紧随的 added，避免拆对
+      } else if (c.removed) {
+        blocks.push({ removed: c.value })
+      } else {
+        blocks.push({ added: c.value })
+      }
+    }
+    blocks.slice(0, max).forEach((blk) => {
+      if (blk.removed) out.push(`- ${blk.removed}`)
+      if (blk.added) out.push(`+ ${blk.added}`)
+    })
+    if (blocks.length > max) out.push(`... 其余 ${blocks.length - max} 处变更块已省略`)
+  }
+  return out
+}
