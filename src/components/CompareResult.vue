@@ -21,6 +21,12 @@
           {{ compareResult.deviceA.name }} vs {{ compareResult.deviceB.name }}
         </span>
         <span
+          v-if="effectiveIgnoreCount"
+          class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 text-xs cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+          title="当前生效的对比忽略规则（内置智能忽略 + 手动规则），点击前往设置页管理"
+          @click="goToIgnoreRulesSettings"
+        >忽略 {{ effectiveIgnoreCount }} 项</span>
+        <span
           v-if="compareResult?.degraded"
           class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 text-xs"
           title="AI 调用失败，已回退为结构化差异概览，点击「对比」可重试获取完整分析。"
@@ -299,9 +305,11 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import type { CompareResult, LoadingStates, CaptureRequest, DiffResult } from '../services/types'
 import { renderMarkdown } from '../utils/markdown'
 import { useSettingsStore } from '../stores/settings-store'
+import { mergeIgnoreRules } from '../services/diff-engine'
 
 const props = defineProps<{
   compareResult: CompareResult | null
@@ -319,6 +327,19 @@ defineEmits<{
 
 /** 设置 store：AI 对比模板快速切换（从工具栏移入标题栏） */
 const settingsStore = useSettingsStore()
+
+/** 路由（用于「忽略 N 项」徽标点击跳转设置页） */
+const router = useRouter()
+
+/** 点击「忽略 N 项」徽标前往设置页管理对比忽略规则 */
+function goToIgnoreRulesSettings(): void {
+  router?.push('/settings')
+}
+
+/** 有效忽略规则数 = 用户规则 + （启用时内置名单长度），用于「忽略 N 项」徽标 */
+const effectiveIgnoreCount = computed<number>(() =>
+  mergeIgnoreRules(settingsStore.compareIgnoreRules, settingsStore.compareUseBuiltinIgnore).length,
+)
 
 /** 当前激活的 Tab */
 const activeTab = ref<'ai' | 'diff' | 'raw'>('ai')

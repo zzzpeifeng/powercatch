@@ -116,7 +116,7 @@ describe('Tier2 - fillPromptTemplate 向后兼容', () => {
     const template = '差异如下：\n{diff_result}'
 
     // 仅传 2 个参数（旧调用方式）
-    const prompt = fillPromptTemplate(template, req)
+    const prompt = fillPromptTemplate(template, req, undefined, undefined, true)
 
     expect(prompt).not.toContain('{diff_result}')
     expect(prompt).toContain('[概览]')
@@ -131,7 +131,7 @@ describe('Tier2 - computeStructuredDiff', () => {
       { statusCode: 500, requestHeaders: { 'content-type': 'application/json', 'x-trace': 'bbb' } },
     )
 
-    const diff = computeStructuredDiff(req)
+    const diff = computeStructuredDiff(req, undefined, true)
 
     expect(diff.overview.different.length).toBeGreaterThan(0)
     expect(diff.overview.different).toContain('Status Code')
@@ -147,7 +147,7 @@ describe('Tier2 - computeStructuredDiff', () => {
       { responseBody: bigBody },
     )
 
-    expect(() => computeStructuredDiff(req)).toThrow(/too large/i)
+    expect(() => computeStructuredDiff(req, undefined, true)).toThrow(/too large/i)
   })
 })
 
@@ -179,7 +179,7 @@ describe('Tier2 - fillPromptTemplate 使用 precomputedDiff（executeCompare 内
       { statusCode: 500 },
     )
 
-    const prompt = fillPromptTemplate('差异：\n{diff_result}', req, marker)
+    const prompt = fillPromptTemplate('差异：\n{diff_result}', req, marker, undefined, true)
 
     // 标记出现 => 用的是传入的 precomputedDiff，而不是重新 computeDiff
     expect(prompt).toContain('__PRECOMPUTED_DIFF_MARKER__')

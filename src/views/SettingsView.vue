@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue'
+import { ref, onMounted, watch, computed } from 'vue'
 import { ipc } from '../services/ipc'
 import { useSettingsStore } from '../stores/settings-store'
 import { useRequestStore } from '../stores/request-store'
@@ -30,6 +30,20 @@ const localSettings = ref<AppSettings>({
 const savedStatus = ref<'idle' | 'saving' | 'saved' | 'error'>('idle')
 let saveTimer: ReturnType<typeof setTimeout> | null = null
 const newDomain = ref('')
+/** 对比忽略规则（textarea 单行一条） */
+const compareIgnoreRulesText = ref('')
+/** 启用内置智能忽略（常见易变字段）开关：双向绑定到 settings store（缺省开启） */
+const compareUseBuiltinIgnore = computed({
+  get: () => settingsStore.compareUseBuiltinIgnore,
+  set: (v: boolean) => settingsStore.setCompareUseBuiltinIgnore(v),
+})
+/** 从 textarea 解析出规则数组（去空、去首尾空白） */
+const parsedIgnoreRules = computed<string[]>(() =>
+  compareIgnoreRulesText.value
+    .split('\n')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0),
+)
 const showApiKey = ref(false)
 
 // 证书安装相关
@@ -146,6 +160,8 @@ onMounted(async () => {
   // 数据库里的 caCertGenerated 可能过期（证书已生成但 DB 标志位未更新）
   await settingsStore.loadCAStatus()
   localSettings.value.caCertGenerated = settingsStore.caCertGenerated
+  // 对比忽略规则（textarea 单行一条）
+  compareIgnoreRulesText.value = settingsStore.compareIgnoreRules.join('\n')
 
   const status = await ipc.proxy.status()
   if (status.certUrl) {
@@ -190,7 +206,10 @@ async function handleSave() {
     settingsStore.commitEditorToSelected(localSettings.value.aiPromptTemplate)
     settingsStore.localIp = localSettings.value.localIp
     settingsStore.caCertGenerated = localSettings.value.caCertGenerated
-    
+
+    // 对比忽略规则（改动时写回）
+    await settingsStore.setCompareIgnoreRules(parsedIgnoreRules.value)
+
     // 保存
     await settingsStore.saveSettings()
     
@@ -599,6 +618,40 @@ function prevStep() {
               <label class="label mb-2 block">AI 对比 Prompt 模板</label>
               <PromptEditor v-model="localSettings.aiPromptTemplate" />
             </div>
+          </div>
+        </div>
+
+        <!-- 对比忽略规则 -->
+        <div class="card p-4">
+          <h3 class="text-sm font-semibold mb-3 text-[var(--color-text)]">对比忽略规则</h3>
+          <p class="text-xs text-gray-400 mb-2">
+            配置需要跳过的动态/噪声字段，结构化差异与 AI 分析均会忽略这些字段（每行一条）。
+            含 <code class="text-[var(--color-danger)] bg-gray-100 dark:bg-gray-800 px-1 rounded">.</code> 视为 JSON body 路径（如 <code class="text-[var(--color-danger)] bg-gray-100 dark:bg-gray-800 px-1 rounded">data.timestamp</code>），否则视为 Header 名或 Query 参数名（大小写不敏感，如 <code class="text-[var(--color-danger)] bg-gray-100 dark:bg-gray-800 px-1 rounded">X-Request-Id</code>）。
+          </p>
+          <textarea
+            v-model="compareIgnoreRulesText"
+            rows="5"
+            placeholder="X-Request-Id&#10;Authorization&#10;data.timestamp&#10;user.token"
+            class="input w-full font-mono text-xs py-2"
+          ></textarea>
+          <p v-if="compareIgnoreRulesText.trim()" class="text-xs text-gray-400 mt-2">
+            已配置 {{ parsedIgnoreRules.length }} 条规则
+          </p>
+        </div>
+
+        <!-- 启用内置智能忽略 -->
+        <div class="card p-4">
+          <div class="flex items-center justify-between gap-4">
+            <div class="flex-1 min-w-0">
+              <h3 class="text-sm font-semibold mb-1 text-[var(--color-text)]">启用内置智能忽略（常见易变字段）</h3>
+              <p class="text-xs text-gray-400">
+                自动忽略 <code class="text-[var(--color-danger)] bg-gray-100 dark:bg-gray-800 px-1 rounded">timestamp</code>、<code class="text-[var(--color-danger)] bg-gray-100 dark:bg-gray-800 px-1 rounded">signature</code>、<code class="text-[var(--color-danger)] bg-gray-100 dark:bg-gray-800 px-1 rounded">token</code> 等易变字段，关闭则仅用手动规则。
+              </p>
+            </div>
+            <label class="flex items-center gap-2 cursor-pointer shrink-0">
+              <input type="checkbox" v-model="compareUseBuiltinIgnore" class="toggle" />
+              <span class="text-xs text-gray-500">{{ compareUseBuiltinIgnore ? '已开启' : '已关闭' }}</span>
+            </label>
           </div>
         </div>
 

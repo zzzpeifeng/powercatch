@@ -5,7 +5,7 @@
 import OpenAI from 'openai'
 import type { CompareRequest, CompareResult, DiffResult, TemplateVariable } from '../../src/services/types'
 import { TEMPLATE_VARIABLES } from '../../src/services/types'
-import { computeDiff, serializeDiffForPrompt } from '../../src/services/diff-engine'
+import { computeDiff, serializeDiffForPrompt, applyIgnoreRules, mergeIgnoreRules } from '../../src/services/diff-engine'
 
 /**
  * AI 对比 System Prompt（兼容结构化差异与原始报文回退两种措辞）
@@ -47,6 +47,8 @@ export function isCompareInProgress(): boolean {
  * 填充 Prompt 模板变量
  * @param template 模板字符串
  * @param request 对比请求参数
+ * @param precomputedDiff 预计算的结构化差异（可选，避免重复计算）
+ * @param ignoreRules 对比忽略规则（可选）；非空时在计算 diff 前剔除命中字段，并在 Prompt 末尾追加提示
  * @returns 填充后的 Prompt
  */
 /**
@@ -55,10 +57,19 @@ export function isCompareInProgress(): boolean {
  * @param request 对比请求参数
  * @returns 填充后的 Prompt
  */
-export function fillPromptTemplate(template: string, request: CompareRequest, precomputedDiff?: DiffResult): string {
+export function fillPromptTemplate(
+  template: string,
+  request: CompareRequest,
+  precomputedDiff?: DiffResult,
+  ignoreRules?: string[],
+  useBuiltinIgnore?: boolean,
+): string {
   const { requestA, requestB } = request
 
-  // 前置 diff：计算结构化差异并序列化
+  // 合并「用户规则」与「内置启发式名单」得到 effective rules，贯穿 diff 与附录
+  const effectiveRules = mergeIgnoreRules(ignoreRules ?? [], useBuiltinIgnore ?? true)
+
+  // 前置 diff：计算结构化差异并序列化（应用 effective rules 剔除命中字段）
   let diffText = ''
   try {
     // 大请求体/响应体（>1MB）仍可能触发 diffJsonRecursive 纯递归栈溢出，提前跳过递归 diff
@@ -67,7 +78,7 @@ export function fillPromptTemplate(template: string, request: CompareRequest, pr
     if (tooLarge) {
       throw new Error('body too large (>1MB) for recursive diff, fallback to raw')
     }
-    const diff = precomputedDiff ?? computeStructuredDiff(request)
+    const diff = precomputedDiff ?? computeStructuredDiff(request, ignoreRules, useBuiltinIgnore)
     diffText = serializeDiffForPrompt(diff, 200)
   } catch (e) {
     console.warn('[AI Service] diff 计算失败，回退原始 body 截断:', e)
@@ -110,20 +121,45 @@ export function fillPromptTemplate(template: string, request: CompareRequest, pr
     result = result.split(key).join(value)
   }
 
-  return result
+  // 追加忽略字段提示段（基于 effective rules，不破坏任何变量替换，仅追加在末尾）
+  const appendix = buildIgnoreRulesAppendix(effectiveRules)
+  return appendix ? result + appendix : result
+}
+
+/**
+ * Prompt 注入用：忽略字段提示段头
+ */
+const IGNORE_RULES_HEADER =
+  '【忽略字段】对比时请忽略以下字段，不要将其作为差异点报告（仅当字段名/路径匹配时）：'
+
+/**
+ * 构造忽略字段追加段（仅当 rules 非空返回非空字符串）。
+ * 用于在主进程对比链路向 Prompt 末尾追加「请忽略这些字段」提示。
+ * @param rules 忽略规则列表
+ * @returns 追加段文本（含前后空行）；为空时返回 ''
+ */
+export function buildIgnoreRulesAppendix(rules: string[] | undefined): string {
+  if (!rules || rules.length === 0) return ''
+  const list = rules.map((r) => `- ${r}`).join('\n')
+  return `\n\n${IGNORE_RULES_HEADER}\n${list}`
 }
 
 /**
  * 计算结构化差异（供 Prompt 注入与结果返回复用，单一数据源）
  * @throws 当任意 body >1MB 触发递归 diff 风险时抛出（调用方兜底）
  */
-export function computeStructuredDiff(request: CompareRequest): DiffResult {
+export function computeStructuredDiff(request: CompareRequest, ignoreRules?: string[], useBuiltinIgnore?: boolean): DiffResult {
   const bodies = [request.requestA.requestBody, request.requestB.requestBody, request.requestA.responseBody, request.requestB.responseBody]
   const tooLarge = bodies.some((b) => (b || '').length > 1_000_000)
   if (tooLarge) {
     throw new Error('body too large (>1MB) for recursive diff, fallback to raw')
   }
-  return computeDiff(request.requestA, request.requestB)
+  // 合并「用户规则」与「内置启发式名单」得到 effective rules，再应用
+  const effectiveRules = mergeIgnoreRules(ignoreRules ?? [], useBuiltinIgnore ?? true)
+  // 应用对比忽略规则：剔除双方命中的 Header / Query 参数 / JSON body 路径后再 diff
+  const a = effectiveRules.length ? applyIgnoreRules(request.requestA, effectiveRules) : request.requestA
+  const b = effectiveRules.length ? applyIgnoreRules(request.requestB, effectiveRules) : request.requestB
+  return computeDiff(a, b)
 }
 
 /**
@@ -151,11 +187,21 @@ interface CompareCacheEntry {
 const compareCache = new Map<string, CompareCacheEntry>()
 
 /**
+ * 解析 useBuiltinIgnore（缺省 true，与设置默认值一致）
+ * @param request 对比请求
+ * @returns 是否启用内置启发式名单
+ */
+function resolveUseBuiltin(request: CompareRequest): boolean {
+  return request.useBuiltinIgnore ?? true
+}
+
+/**
  * 稳定缓存 key：模型 + 模板 + 请求 A/B 关键身份（避免序列化超大 body）
+ * 纳入 compareIgnoreRules 与 useBuiltinIgnore，避免开启/关闭内置名单命中同一缓存。
  * @param request 对比请求
  * @returns 稳定 key 字符串
  */
-function cacheKey(request: CompareRequest): string {
+export function cacheKey(request: CompareRequest): string {
   const sig = (r: any) => ({
     m: r.method, p: r.path, u: r.url, s: r.statusCode,
     c: r.clientIp, d: r.deviceName,
@@ -163,7 +209,14 @@ function cacheKey(request: CompareRequest): string {
     rbl: (r.requestBody || '').length, rbs: (r.requestBody || '').slice(0, 200),
     abl: (r.responseBody || '').length, abs: (r.responseBody || '').slice(0, 200),
   })
-  const raw = JSON.stringify({ m: request.modelName, t: request.promptTemplate, a: sig(request.requestA), b: sig(request.requestB) })
+  const raw = JSON.stringify({
+    m: request.modelName,
+    t: request.promptTemplate,
+    i: request.compareIgnoreRules ?? [],
+    ub: resolveUseBuiltin(request),
+    a: sig(request.requestA),
+    b: sig(request.requestB),
+  })
   let h = 0
   for (let i = 0; i < raw.length; i++) h = (Math.imul(31, h) + raw.charCodeAt(i)) | 0
   return `cmp:${h}`
@@ -298,14 +351,15 @@ export async function executeCompare(
 
   isComparing = true
   try {
-    // 2) 计算结构化 diff（单一数据源，先于 AI 与重试）
+    // 2) 计算结构化 diff（单一数据源，先于 AI 与重试；应用对比忽略规则剔除命中字段）
+    const useBuiltin = resolveUseBuiltin(request)
     let structuredDiff: DiffResult
     try {
-      structuredDiff = computeStructuredDiff(request)
+      structuredDiff = computeStructuredDiff(request, request.compareIgnoreRules, useBuiltin)
     } catch {
       structuredDiff = EMPTY_DIFF
     }
-    const prompt = fillPromptTemplate(request.promptTemplate, request, structuredDiff)
+    const prompt = fillPromptTemplate(request.promptTemplate, request, structuredDiff, request.compareIgnoreRules, useBuiltin)
 
     // 3) 重试 + 降级
     let lastError: any = null

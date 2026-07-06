@@ -152,6 +152,10 @@ export interface AppSettings {
     cloneDir?: string
     repoUrlHistory?: string[]
   }
+  /** 对比忽略规则（Compare Ignore Rules）：字段名/路径列表，结构化 diff 与 AI 分析均跳过这些字段（默认 []） */
+  compareIgnoreRules?: string[]
+  /** 是否启用「内置智能忽略」（内置确定性启发式名单），默认 true（缺省语义开启） */
+  compareUseBuiltinIgnore?: boolean
 }
 
 /** 仓库配置（AI 代码分析） */
@@ -268,6 +272,10 @@ export interface CompareRequest {
   modelName: string
   apiUrl: string
   apiKey: string
+  /** 对比忽略规则（Compare Ignore Rules）：字段名/路径列表，结构化 diff 与 AI 分析均跳过这些字段 */
+  compareIgnoreRules?: string[]
+  /** 是否启用「内置智能忽略」（内置启发式名单），默认 true；与 ignoreRules 合并后一起生效 */
+  useBuiltinIgnore?: boolean
 }
 
 /** AI 对比结果 */

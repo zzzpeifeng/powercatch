@@ -4,6 +4,71 @@
  */
 import type { CaptureRequest, DiffResult, HttpHeaders } from './types'
 
+/**
+ * 内置确定性启发式忽略名单（Built-in Heuristic Ignore Rules）
+ * 零成本、零延迟：覆盖常见易变 / 噪声字段，默认开启（设置可关闭）。
+ *
+ * 规则格式约定（与用户手动规则一致）：
+ *   - 不含 '.' → 视为 Header 名 / Query 参数名（大小写不敏感）；
+ *   - 含 '*.` 前缀 → 视为 JSON body 通配路径（末段命中即剔除，任意父路径）；
+ *   - 含 '.' 且非 '*.` 前缀 → 视为 JSON body 精确路径（点号表示法）。
+ *
+ * 分类（当前共 38 条：18 条 Header/Query 名（大小写不敏感）+ 20 条 `*.` 前缀 JSON 通配路径）：
+ *   1. Header / Query 名（不含点，大小写不敏感）：易变 / 噪声头与签名类字段。
+ *   2. JSON body 通配路径（*. 前缀）：任意父路径下命中的易变叶子字段。
+ *
+ * 注意：刻意不包含 authorization、set-cookie 等"可能影响真实差异判定"的字段，
+ *       如需忽略请由用户在手动规则中自行添加，避免掩盖真实差异。
+ */
+export const BUILTIN_IGNORE_RULES: readonly string[] = [
+  // ===== 1. Header / Query 名（不含点，大小写不敏感）=====
+  // —— 时间类 ——
+  'timestamp',
+  'date',
+  'x-timestamp',
+  'last-modified',
+  'expires',
+  // —— 请求 / 链路追踪类 ——
+  'x-request-id',
+  'x-trace-id',
+  'x-correlation-id',
+  'etag',
+  'x-powered-by',
+  // —— 签名 / 防重放 / 凭证类（噪声高，通常被安全头携带，非业务差异）——
+  'x-nonce',
+  'x-signature',
+  'x-sign',
+  'x-csrf-token',
+  'signature',
+  'sign',
+  'nonce',
+  'token',
+
+  // ===== 2. JSON body 通配路径（*. 前缀：任意父路径下末段命中即剔除）=====
+  // —— 时间类 ——
+  '*.timestamp',
+  '*.createdAt',
+  '*.updatedAt',
+  '*.createTime',
+  '*.updateTime',
+  '*.expireAt',
+  '*.expiresAt',
+  '*.expireTime',
+  '*.dateTime',
+  '*.time',
+  // —— 易变 ID / 追踪类 ——
+  '*.token',
+  '*.accessToken',
+  '*.refreshToken',
+  '*.sign',
+  '*.signature',
+  '*.nonce',
+  '*.nonceStr',
+  '*.requestId',
+  '*.traceId',
+  '*.sessionId',
+]
+
 /** Headers 对比结果 */
 export interface HeaderDiffResult {
   added: Record<string, string>
@@ -502,4 +567,206 @@ function formatBodyDiff(label: string, b: DiffResult['requestBody'], max: number
     if (blocks.length > max) out.push(`... 其余 ${blocks.length - max} 处变更块已省略`)
   }
   return out
+}
+
+// ===== 对比忽略规则（Compare Ignore Rules）=====
+//
+// 规则格式约定（简单可文档化，不做复杂通配）：
+//   - 含小数点 '.' → 视为 JSON body 路径（点号表示法），如 'data.timestamp'、'user.token'
+//   - 不含 '.'   → 视为 Header 名 或 Query 参数名（大小写不敏感匹配），如 'X-Request-Id'、'Authorization'、'signature'
+//
+// 命中的字段将从「请求头 / 响应头 / URL 查询参数 / JSON body 路径」中剔除后再参与 diff。
+
+/**
+ * 合并「用户手动规则」与「内置启发式名单」。
+ * - useBuiltin=true 时并入 BUILTIN_IGNORE_RULES（去重，用户规则优先保留在前）。
+ * - useBuiltin=false 时仅返回用户规则（去空、去重）。
+ *
+ * @param userRules 用户手动规则
+ * @param useBuiltin 是否并入内置名单
+ * @returns 合并去重后的规则数组（无副作用）
+ */
+export function mergeIgnoreRules(userRules: string[], useBuiltin: boolean): string[] {
+  const user = Array.isArray(userRules) ? userRules : []
+  const sources: string[] = useBuiltin ? [...user, ...BUILTIN_IGNORE_RULES] : [...user]
+  const seen = new Set<string>()
+  const merged: string[] = []
+  for (const r of sources) {
+    if (!r) continue
+    if (seen.has(r)) continue
+    seen.add(r)
+    merged.push(r)
+  }
+  return merged
+}
+
+/**
+ * 对单个 CaptureRequest 应用忽略规则，返回剔除命中字段后的新请求（不修改入参）。
+ *
+ * 命中范围：
+ *   1) Header 名（请求头 + 响应头，大小写不敏感）
+ *   2) URL 查询参数名（大小写不敏感）
+ *   3) JSON body 路径：
+ *      - 精确路径（含 '.' 且非 '*.` 前缀）→ 点号表示法，仅剔除该全路径叶子；
+ *      - 通配路径（以 '*.` 开头）→ 路径末段等于 '*.` 之后部分，任意父路径下均剔除。
+ *
+ * @param request 原始请求（不会被修改）
+ * @param rules 忽略规则列表
+ * @returns 应用规则后的新请求；rules 为空时直接返回原对象（零开销）
+ */
+export function applyIgnoreRules(request: CaptureRequest, rules: string[]): CaptureRequest {
+  if (!rules || rules.length === 0) return request
+
+  // 规则分类：
+  //   - 不含 '.' → Header / Query 名（大小写不敏感）
+  //   - 含 '.' 且以 '*.` 开头 → JSON body 通配路径（末段命中）
+  //   - 含 '.' 且非 '*.` 前缀 → JSON body 精确路径
+  const headerRules = rules.filter((r) => !r.includes('.')).map((r) => r.toLowerCase())
+  const exactPathRules = rules.filter((r) => r.includes('.') && !r.startsWith('*.'))
+  const wildcardPathRules = rules.filter((r) => r.startsWith('*.')).map((r) => r.slice(2))
+
+  // 深拷贝，避免污染原始请求（原始请求仍需用于持久化/原始报文展示）
+  const clone: CaptureRequest = JSON.parse(JSON.stringify(request)) as CaptureRequest
+
+  // 1) Header 剔除（请求头 + 响应头，大小写不敏感）
+  if (headerRules.length > 0) {
+    clone.requestHeaders = stripHeaders(clone.requestHeaders, headerRules)
+    clone.responseHeaders = stripHeaders(clone.responseHeaders, headerRules)
+  }
+
+  // 2) Query 参数剔除（URL query string，大小写不敏感）
+  if (headerRules.length > 0) {
+    clone.url = stripQueryParams(clone.url, headerRules)
+  }
+
+  // 3) JSON body 路径剔除（请求体 + 响应体）：精确路径 + 通配路径
+  if (exactPathRules.length > 0) {
+    clone.requestBody = stripJsonPath(clone.requestBody, exactPathRules)
+    clone.responseBody = stripJsonPath(clone.responseBody, exactPathRules)
+  }
+  if (wildcardPathRules.length > 0) {
+    clone.requestBody = stripJsonPathWildcard(clone.requestBody, wildcardPathRules)
+    clone.responseBody = stripJsonPathWildcard(clone.responseBody, wildcardPathRules)
+  }
+
+  return clone
+}
+
+/**
+ * 剔除命中的 Header（大小写不敏感）
+ */
+function stripHeaders(headers: HttpHeaders, lowerRules: string[]): HttpHeaders {
+  const out: HttpHeaders = {}
+  for (const [key, val] of Object.entries(headers)) {
+    if (val === undefined) continue
+    if (lowerRules.includes(key.toLowerCase())) continue // 命中忽略规则，剔除
+    out[key] = val
+  }
+  return out
+}
+
+/**
+ * 从 URL 查询参数中剔除命中的参数（大小写不敏感），保留其余部分与 '?' 结构
+ */
+function stripQueryParams(url: string, lowerRules: string[]): string {
+  if (!url.includes('?')) return url
+  const [base, query] = url.split('?')
+  const params = new URLSearchParams(query)
+  for (const key of Array.from(params.keys())) {
+    if (lowerRules.includes(key.toLowerCase())) {
+      params.delete(key)
+    }
+  }
+  const newQuery = params.toString()
+  return newQuery ? `${base}?${newQuery}` : base
+}
+
+/**
+ * 从 JSON body 中按点号路径剔除命中叶子字段，并重新序列化。
+ * 非 JSON body / 路径不存在时原样返回。
+ */
+function stripJsonPath(body: string, pathRules: string[]): string {
+  if (!body) return body
+  let parsed: any
+  try {
+    parsed = JSON.parse(body)
+  } catch {
+    return body // 非 JSON，跳过路径剔除
+  }
+  if (parsed === null || typeof parsed !== 'object') return body
+
+  for (const rule of pathRules) {
+    const segments = rule.split('.')
+    let cur: any = parsed
+    let ok = true
+    // 逐段导航到父级
+    for (let i = 0; i < segments.length - 1; i++) {
+      const seg = segments[i]
+      if (cur && typeof cur === 'object' && !Array.isArray(cur) && seg in cur) {
+        cur = cur[seg]
+      } else {
+        ok = false
+        break
+      }
+    }
+    if (!ok || !cur || typeof cur !== 'object' || Array.isArray(cur)) continue
+    const leaf = segments[segments.length - 1]
+    if (leaf in cur) {
+      delete cur[leaf]
+    }
+  }
+
+  return JSON.stringify(parsed)
+}
+
+/**
+ * 从 JSON body 中按「通配末段」剔除命中叶子字段（任意父路径均可），并重新序列化。
+ * 规则形如 '*.timestamp' → 匹配任意层级下 key 为 'timestamp' 的字段并删除。
+ * 非 JSON body / 无有效末段时原样返回。
+ *
+ * @param body JSON body 字符串
+ * @param leafKeys 通配末段 key 列表（已去掉 '*.` 前缀）
+ */
+function stripJsonPathWildcard(body: string, leafKeys: string[]): string {
+  if (!body) return body
+  const targets = leafKeys.filter((k) => k.length > 0)
+  if (targets.length === 0) return body
+  let parsed: any
+  try {
+    parsed = JSON.parse(body)
+  } catch {
+    return body // 非 JSON，跳过路径剔除
+  }
+  if (parsed === null || typeof parsed !== 'object') return body
+
+  for (const key of targets) {
+    deleteByLeafKey(parsed, key)
+  }
+  return JSON.stringify(parsed)
+}
+
+/**
+ * 递归删除对象（含数组）中所有 key 等于 target 的属性（任意层级、任意父路径）。
+ * JSON key 大小写敏感，按原样匹配。
+ *
+ * @param obj 待处理对象
+ * @param target 目标叶子 key
+ */
+function deleteByLeafKey(obj: any, target: string): void {
+  if (obj === null || typeof obj !== 'object') return
+  if (Array.isArray(obj)) {
+    for (const item of obj) deleteByLeafKey(item, target)
+    return
+  }
+  // 先删除当前层匹配键
+  if (Object.prototype.hasOwnProperty.call(obj, target)) {
+    delete obj[target]
+  }
+  // 再递归子对象（已删除的键不会出现在剩余遍历中）
+  for (const key of Object.keys(obj)) {
+    const value = obj[key]
+    if (value && typeof value === 'object') {
+      deleteByLeafKey(value, target)
+    }
+  }
 }

@@ -301,6 +301,29 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       // 获取设置
       const settings = sqlite.getAllSettings()
 
+      // 读取对比忽略规则（独立 key 存储，与 aiPromptTemplate 同源）
+      let compareIgnoreRules: string[] = []
+      try {
+        const rawRules = sqlite.getSetting('compare_ignore_rules')
+        if (rawRules) {
+          const parsed = JSON.parse(rawRules)
+          if (Array.isArray(parsed)) compareIgnoreRules = parsed as string[]
+        }
+      } catch (e) {
+        console.error('[IPC] 读取对比忽略规则失败:', e)
+      }
+
+      // 读取「启用内置智能忽略」开关（独立 key 存储，缺省 true）
+      let compareUseBuiltinIgnore = true
+      try {
+        const rawBuiltin = sqlite.getSetting('compare_use_builtin_ignore')
+        if (rawBuiltin !== null && rawBuiltin !== undefined && rawBuiltin !== '') {
+          compareUseBuiltinIgnore = JSON.parse(rawBuiltin) === true
+        }
+      } catch (e) {
+        console.error('[IPC] 读取对比内置忽略开关失败:', e)
+      }
+
       if (!settings.apiKey) {
         return { success: false, error: '请先在设置页面配置 API Key。' }
       }
@@ -317,6 +340,10 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
             modelName: settings.modelName,
             apiUrl: settings.apiUrl,
             apiKey: settings.apiKey,
+            // 对比忽略规则：结构化 diff 与 AI 分析均跳过这些字段（不破坏 aiPromptTemplate 机制）
+            compareIgnoreRules,
+            // 内置启发式忽略名单开关（缺省 true，与设置默认值一致）
+            useBuiltinIgnore: compareUseBuiltinIgnore,
           },
           // 流式 token 回调
           (chunk: string) => {

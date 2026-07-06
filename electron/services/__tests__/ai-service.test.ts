@@ -63,7 +63,7 @@ describe('fillPromptTemplate - diff_result 打通', () => {
       { responseBody: `{"shared":"${rawMarker}","price":120}` },
     )
     const template = '差异如下：\n{diff_result}'
-    const prompt = fillPromptTemplate(template, req)
+    const prompt = fillPromptTemplate(template, req, undefined, undefined, true)
 
     expect(prompt).toContain('[概览]')
     // 原始大 body 不应整体出现（useDiffResult 时旧 body 变量置空，且 diff 仅含 delta）
@@ -78,7 +78,7 @@ describe('fillPromptTemplate - diff_result 打通', () => {
       { responseBody: '{"price":120}' },
     )
     const template = 'A: {response_a_json}\nB: {response_b_json}'
-    const prompt = fillPromptTemplate(template, req)
+    const prompt = fillPromptTemplate(template, req, undefined, undefined, true)
 
     expect(prompt).toContain(rawBody)
     expect(prompt).not.toContain('[概览]')
@@ -91,7 +91,7 @@ describe('fillPromptTemplate - diff_result 打通', () => {
       { responseBody: bigBody },
     )
     const template = '差异：\n{diff_result}'
-    const prompt = fillPromptTemplate(template, req)
+    const prompt = fillPromptTemplate(template, req, undefined, undefined, true)
 
     expect(prompt).toContain('已回退原始报文')
     // 回退内容为原始 body 前 4000 字符
@@ -107,7 +107,7 @@ describe('fillPromptTemplate - diff_result 打通', () => {
       { responseBody: binary },
     )
     const template = '差异：\n{diff_result}'
-    const prompt = fillPromptTemplate(template, req)
+    const prompt = fillPromptTemplate(template, req, undefined, undefined, true)
 
     expect(prompt).toContain('二进制内容，无法结构化对比')
   })
@@ -125,7 +125,7 @@ describe('fillPromptTemplate - 降本量化验证（Plan §6 缺口1）', () => 
       { responseBody: bodyB },
     )
     const template = '分析：\n{diff_result}'
-    const prompt = fillPromptTemplate(template, req)
+    const prompt = fillPromptTemplate(template, req, undefined, undefined, true)
 
     const totalBodyLen = bodyA.length + bodyB.length
     // 断言 (a)：prompt 长度远小于两份 responseBody 之和（<10%，压缩 90%+ 降本生效）
@@ -144,7 +144,7 @@ describe('fillPromptTemplate - QA 补充覆盖（回归防护）', () => {
     )
     // 模拟漏洞4 并存场景：模板同时引用 {diff_result} 与 {response_a_json}
     const template = '差异：\n{diff_result}\n[A原始响应体]{response_a_json}[/A原始响应体]'
-    const prompt = fillPromptTemplate(template, req)
+    const prompt = fillPromptTemplate(template, req, undefined, undefined, true)
 
     // diff_result 仍正常注入结构化差异
     expect(prompt).toContain('[概览]')
@@ -162,7 +162,7 @@ describe('fillPromptTemplate - QA 补充覆盖（回归防护）', () => {
     )
     // 注意：responseBody 很小，仅 requestBody 超限，验证阈值覆盖了 requestBody
     const template = '差异：\n{diff_result}'
-    const prompt = fillPromptTemplate(template, req)
+    const prompt = fillPromptTemplate(template, req, undefined, undefined, true)
 
     expect(prompt).toContain('已回退原始报文')
     // 回退内容仅含 responseBody 前 4000 字符，不应包含完整 1MB requestBody

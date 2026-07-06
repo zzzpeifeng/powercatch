@@ -47,6 +47,12 @@ export const useSettingsStore = defineStore('settings', () => {
   /** CA 证书是否已生成 */
   const caCertGenerated = ref<boolean>(false)
 
+  /** 对比忽略规则（Compare Ignore Rules）：字段名/路径列表，结构化 diff 与 AI 分析均跳过这些字段 */
+  const compareIgnoreRules = ref<string[]>([])
+
+  /** 是否启用「内置智能忽略」（内置确定性启发式名单），默认 true（缺省语义开启） */
+  const compareUseBuiltinIgnore = ref<boolean>(true)
+
   /** 主题设置：'light' | 'dark' | 'system' */
   const theme = ref<'light' | 'dark' | 'system'>('system')
 
@@ -147,6 +153,27 @@ export const useSettingsStore = defineStore('settings', () => {
         } catch (e) {
           console.error('Failed to load prompt templates:', e)
         }
+
+        // 加载对比忽略规则（独立 key，避免改动 AppSettings schema）
+        try {
+          const rawRules = await ipc.settings.get('compare_ignore_rules')
+          if (rawRules) {
+            const parsed = JSON.parse(rawRules) as string[]
+            if (Array.isArray(parsed)) compareIgnoreRules.value = parsed
+          }
+        } catch (e) {
+          console.error('Failed to load compare ignore rules:', e)
+        }
+
+        // 加载「启用内置智能忽略」开关（独立 key，缺省 true）
+        try {
+          const rawBuiltin = await ipc.settings.get('compare_use_builtin_ignore')
+          if (rawBuiltin !== null && rawBuiltin !== undefined && rawBuiltin !== '') {
+            compareUseBuiltinIgnore.value = JSON.parse(rawBuiltin) === true
+          }
+        } catch (e) {
+          console.error('Failed to load compare use builtin ignore:', e)
+        }
       }
       loaded.value = true
 
@@ -240,6 +267,34 @@ export const useSettingsStore = defineStore('settings', () => {
   function saveDomainFilters(filters: string[]): void {
     domainFilters.value = filters
     ipc.settings.set('domain_filters', JSON.stringify(filters))
+  }
+
+  /**
+   * 设置并持久化「对比忽略规则」。仅在用户主动保存设置时调用（仅在改动时写回，避免无谓写盘）。
+   * 不改动 aiPromptTemplate / selectedTemplateId / PromptTemplate 机制——忽略规则是独立设置。
+   * @param rules 规则列表（每行一条，可空数组）
+   */
+  async function setCompareIgnoreRules(rules: string[]): Promise<void> {
+    compareIgnoreRules.value = Array.isArray(rules) ? rules : []
+    try {
+      await ipc.settings.set('compare_ignore_rules', JSON.stringify(compareIgnoreRules.value))
+    } catch (e) {
+      console.error('Failed to persist compare ignore rules:', e)
+    }
+  }
+
+  /**
+   * 设置并持久化「启用内置智能忽略」开关。仅在用户主动切换时调用（仅在改动时写回，避免无谓写盘）。
+   * 不改动 aiPromptTemplate / selectedTemplateId / PromptTemplate 机制——内置名单是独立设置。
+   * @param value 是否启用内置启发式忽略名单
+   */
+  async function setCompareUseBuiltinIgnore(value: boolean): Promise<void> {
+    compareUseBuiltinIgnore.value = value === true
+    try {
+      await ipc.settings.set('compare_use_builtin_ignore', JSON.stringify(compareUseBuiltinIgnore.value))
+    } catch (e) {
+      console.error('Failed to persist compare use builtin ignore:', e)
+    }
   }
 
   /** 设置设备别名 */
@@ -449,6 +504,10 @@ export const useSettingsStore = defineStore('settings', () => {
     caCertGenerated,
     theme,
     loaded,
+    // 对比忽略规则
+    compareIgnoreRules,
+    // 内置智能忽略开关
+    compareUseBuiltinIgnore,
     // 带宽限流状态
     throttleEnabled,
     throttlePreset,
@@ -461,6 +520,8 @@ export const useSettingsStore = defineStore('settings', () => {
     saveSettings,
     debouncedSave,
     saveDomainFilters,
+    setCompareIgnoreRules,
+    setCompareUseBuiltinIgnore,
     setDeviceAlias,
     resetPrompt,
     selectTemplate,
