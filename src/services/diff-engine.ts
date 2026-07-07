@@ -653,6 +653,29 @@ export function applyIgnoreRules(request: CaptureRequest, rules: string[]): Capt
 }
 
 /**
+ * 由结构化差异条目推导「忽略规则」字符串（供 UI「一键加忽略」使用）。
+ *
+ * 规则命名空间约定（与 applyIgnoreRules 一致）：
+ *   - category 为 'header' 或 'query' → 返回 name（大小写保持原样；
+ *     applyIgnoreRules 内部按小写匹配，故任意写法均可正确命中）
+ *   - category 为 'body' → 返回 path（JSON body 点号路径，如 data.timestamp / user.token）
+ *
+ * @param entry 差异条目：header/query 用 name，body 用 path
+ * @returns 忽略规则字符串；无法推导时返回空串（调用方应过滤）
+ */
+export function buildIgnoreRuleFromDiffEntry(entry: {
+  category: 'header' | 'query' | 'body'
+  name?: string
+  path?: string
+}): string {
+  if (entry.category === 'body') {
+    return entry.path?.trim() ?? ''
+  }
+  // header / query：名称原样返回（匹配大小写不敏感）
+  return entry.name?.trim() ?? ''
+}
+
+/**
  * 剔除命中的 Header（大小写不敏感）
  */
 function stripHeaders(headers: HttpHeaders, lowerRules: string[]): HttpHeaders {

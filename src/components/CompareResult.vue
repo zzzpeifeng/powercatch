@@ -55,18 +55,18 @@
       </div>
     </div>
 
-    <!-- 概览条：same/different chips + 变更统计徽章（仅当 diffResult 存在时显示） -->
+    <!-- 概览条：same/different chips + 变更统计徽章（基于本地重算的 displayDiff） -->
     <div
-      v-if="diffResult"
+      v-if="displayDiff"
       class="flex flex-wrap items-center gap-x-2 gap-y-1.5 px-4 py-2 border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-xs shrink-0"
     >
       <span
-        v-for="item in diffResult.overview.same"
+        v-for="item in displayDiff.overview.same"
         :key="'same-' + item"
         class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300"
       >✓ {{ item }}</span>
       <span
-        v-for="item in diffResult.overview.different"
+        v-for="item in displayDiff.overview.different"
         :key="'diff-' + item"
         class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300"
       >~ {{ item }}</span>
@@ -75,21 +75,21 @@
 
       <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 font-mono">
         请求头
-        <span class="text-green-600 dark:text-green-400">+{{ diffResult.overview.stats.requestHeaders.added }}</span>
-        <span class="text-amber-600 dark:text-amber-400">~{{ diffResult.overview.stats.requestHeaders.modified }}</span>
-        <span class="text-red-600 dark:text-red-400">-{{ diffResult.overview.stats.requestHeaders.removed }}</span>
+        <span class="text-green-600 dark:text-green-400">+{{ displayDiff.overview.stats.requestHeaders.added }}</span>
+        <span class="text-amber-600 dark:text-amber-400">~{{ displayDiff.overview.stats.requestHeaders.modified }}</span>
+        <span class="text-red-600 dark:text-red-400">-{{ displayDiff.overview.stats.requestHeaders.removed }}</span>
       </span>
       <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 font-mono">
         响应头
-        <span class="text-green-600 dark:text-green-400">+{{ diffResult.overview.stats.responseHeaders.added }}</span>
-        <span class="text-amber-600 dark:text-amber-400">~{{ diffResult.overview.stats.responseHeaders.modified }}</span>
-        <span class="text-red-600 dark:text-red-400">-{{ diffResult.overview.stats.responseHeaders.removed }}</span>
+        <span class="text-green-600 dark:text-green-400">+{{ displayDiff.overview.stats.responseHeaders.added }}</span>
+        <span class="text-amber-600 dark:text-amber-400">~{{ displayDiff.overview.stats.responseHeaders.modified }}</span>
+        <span class="text-red-600 dark:text-red-400">-{{ displayDiff.overview.stats.responseHeaders.removed }}</span>
       </span>
       <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 font-mono">
-        请求体 <span class="text-gray-800 dark:text-gray-100">{{ diffResult.overview.stats.requestBody.changes }}</span>
+        请求体 <span class="text-gray-800 dark:text-gray-100">{{ displayDiff.overview.stats.requestBody.changes }}</span>
       </span>
       <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 font-mono">
-        响应体 <span class="text-gray-800 dark:text-gray-100">{{ diffResult.overview.stats.responseBody.changes }}</span>
+        响应体 <span class="text-gray-800 dark:text-gray-100">{{ displayDiff.overview.stats.responseBody.changes }}</span>
       </span>
 
       <span class="ml-auto inline-flex items-center px-2 py-0.5 rounded bg-amber-600 text-white font-medium">
@@ -128,15 +128,24 @@
         </div>
       </template>
 
-      <!-- ====== Tab 2: 结构化差异（DiffResult 可视化） ====== -->
+      <!-- ====== Tab 2: 结构化差异（DiffResult 可视化，支持一键加忽略） ====== -->
       <template v-else-if="activeTab === 'diff'">
         <!-- 无结构化差异数据 -->
-        <div v-if="!diffResult" class="flex flex-col items-center justify-center h-full text-gray-400 dark:text-gray-500 gap-2 select-none">
+        <div v-if="!displayDiff" class="flex flex-col items-center justify-center h-full text-gray-400 dark:text-gray-500 gap-2 select-none">
           <span class="text-2xl">🔍</span>
           <span class="text-sm">暂无结构化差异数据</span>
         </div>
 
         <div v-else class="flex flex-col gap-4">
+          <!-- 内联反馈：最近加入的忽略规则 -->
+          <div
+            v-if="lastIgnored"
+            class="flex items-center gap-2 px-3 py-1.5 rounded bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-300 text-xs"
+          >
+            <span>已加入忽略规则：<code class="font-mono">{{ lastIgnored }}</code>（AI 分析需重新对比生效）</span>
+            <button class="ml-auto text-amber-600 dark:text-amber-400 hover:underline shrink-0" @click="lastIgnored = ''">✕</button>
+          </div>
+
           <!-- 概览：same / different 列表 -->
           <div class="card p-3">
             <h4 class="text-xs font-semibold mb-2 text-[var(--color-text)]">概览</h4>
@@ -144,27 +153,27 @@
               <div class="text-[11px] text-gray-400 dark:text-gray-500 mb-1">相同维度</div>
               <div class="flex flex-wrap gap-1.5">
                 <span
-                  v-for="item in diffResult.overview.same"
+                  v-for="item in displayDiff.overview.same"
                   :key="'ov-s-' + item"
                   class="px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300 text-xs"
                 >✓ {{ item }}</span>
-                <span v-if="!diffResult.overview.same.length" class="text-xs text-gray-400 dark:text-gray-500">无</span>
+                <span v-if="!displayDiff.overview.same.length" class="text-xs text-gray-400 dark:text-gray-500">无</span>
               </div>
             </div>
             <div>
               <div class="text-[11px] text-gray-400 dark:text-gray-500 mb-1">不同维度</div>
               <div class="flex flex-wrap gap-1.5">
                 <span
-                  v-for="item in diffResult.overview.different"
+                  v-for="item in displayDiff.overview.different"
                   :key="'ov-d-' + item"
                   class="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 text-xs"
                 >~ {{ item }}</span>
-                <span v-if="!diffResult.overview.different.length" class="text-xs text-green-600 dark:text-green-400">✓ 无差异</span>
+                <span v-if="!displayDiff.overview.different.length" class="text-xs text-green-600 dark:text-green-400">✓ 无差异</span>
               </div>
             </div>
           </div>
 
-          <!-- 请求头 / 响应头差异：added / removed / modified -->
+          <!-- 请求头 / 响应头差异：added / removed / modified（每行可一键加忽略） -->
           <div v-for="section in headerSections" :key="section.title" class="card p-3">
             <h4 class="text-xs font-semibold mb-2 text-[var(--color-text)]">{{ section.title }}</h4>
             <div v-if="isEmptyHeader(section.data)" class="text-xs text-gray-400 dark:text-gray-500">无差异</div>
@@ -174,31 +183,50 @@
                 <div
                   v-for="(val, key) in section.data.added"
                   :key="'a-' + key"
-                  class="diff-added text-xs py-0.5 break-all"
-                >{{ key }}: {{ val }}</div>
+                  class="group flex items-center gap-2 diff-added text-xs py-0.5 break-all"
+                >
+                  <span class="flex-1">{{ key }}: {{ val }}</span>
+                  <button
+                    class="opacity-0 group-hover:opacity-100 shrink-0 text-[11px] px-1.5 py-0.5 rounded border border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-opacity"
+                    title="加入忽略规则"
+                    @click="onIgnoreHeader(key)"
+                  >忽略</button>
+                </div>
               </div>
               <div v-if="Object.keys(section.data.removed).length" class="mb-2">
                 <div class="text-[11px] text-red-600 dark:text-red-400 mb-1">- 删除</div>
                 <div
                   v-for="(val, key) in section.data.removed"
                   :key="'r-' + key"
-                  class="diff-removed text-xs py-0.5 break-all"
-                >{{ key }}: {{ val }}</div>
+                  class="group flex items-center gap-2 diff-removed text-xs py-0.5 break-all"
+                >
+                  <span class="flex-1">{{ key }}: {{ val }}</span>
+                  <button
+                    class="opacity-0 group-hover:opacity-100 shrink-0 text-[11px] px-1.5 py-0.5 rounded border border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-opacity"
+                    title="加入忽略规则"
+                    @click="onIgnoreHeader(key)"
+                  >忽略</button>
+                </div>
               </div>
               <div v-if="section.data.modified.length" class="mb-2">
                 <div class="text-[11px] text-amber-600 dark:text-amber-400 mb-1">~ 修改</div>
                 <div
                   v-for="m in section.data.modified"
                   :key="'m-' + m.key"
-                  class="diff-changed text-xs py-0.5 break-all"
+                  class="group flex items-center gap-2 diff-changed text-xs py-0.5 break-all"
                 >
-                  <span class="diff-key">{{ m.key }}</span>: {{ m.old }} → {{ m.new }}
+                  <span class="flex-1"><span class="diff-key">{{ m.key }}</span>: {{ m.old }} → {{ m.new }}</span>
+                  <button
+                    class="opacity-0 group-hover:opacity-100 shrink-0 text-[11px] px-1.5 py-0.5 rounded border border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-opacity"
+                    title="加入忽略规则"
+                    @click="onIgnoreHeader(m.key)"
+                  >忽略</button>
                 </div>
               </div>
             </template>
           </div>
 
-          <!-- 请求体 / 响应体差异：changes 或 delta -->
+          <!-- 请求体 / 响应体差异：changes 或 delta（JSON delta 每行可一键加忽略） -->
           <div v-for="section in bodySections" :key="section.title" class="card p-3">
             <h4 class="text-xs font-semibold mb-2 text-[var(--color-text)]">
               {{ section.title }}
@@ -210,10 +238,15 @@
               <div
                 v-for="(d, i) in section.data.delta"
                 :key="'j-' + i"
-                class="text-xs font-mono py-0.5 break-all"
+                class="group flex items-center gap-2 text-xs font-mono py-0.5 break-all"
                 :class="deltaClass(d.type)"
               >
-                <span class="font-bold">{{ deltaSign(d.type) }}</span> {{ d.path }}: {{ formatDeltaValue(d) }}
+                <span class="flex-1"><span class="font-bold">{{ deltaSign(d.type) }}</span> {{ d.path }}: {{ formatDeltaValue(d) }}</span>
+                <button
+                  class="opacity-0 group-hover:opacity-100 shrink-0 text-[11px] px-1.5 py-0.5 rounded border border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-opacity"
+                  title="加入忽略规则"
+                  @click="onIgnoreBodyPath(d.path)"
+                >忽略</button>
               </div>
             </div>
             <div v-else-if="section.data.changes && section.data.changes.length" class="flex flex-col gap-0">
@@ -304,12 +337,17 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import type { CompareResult, LoadingStates, CaptureRequest, DiffResult } from '../services/types'
 import { renderMarkdown } from '../utils/markdown'
 import { useSettingsStore } from '../stores/settings-store'
-import { mergeIgnoreRules } from '../services/diff-engine'
+import {
+  computeDiff,
+  applyIgnoreRules,
+  mergeIgnoreRules,
+  buildIgnoreRuleFromDiffEntry,
+} from '../services/diff-engine'
 
 const props = defineProps<{
   compareResult: CompareResult | null
@@ -341,6 +379,51 @@ const effectiveIgnoreCount = computed<number>(() =>
   mergeIgnoreRules(settingsStore.compareIgnoreRules, settingsStore.compareUseBuiltinIgnore).length,
 )
 
+/** 本地重算的结构化差异（点击「忽略」后即时剔除，不触发 AI / IPC） */
+const displayDiff = ref<DiffResult | null>(props.diffResult)
+/** 最近一次加入的忽略规则（内联反馈） */
+const lastIgnored = ref<string>('')
+
+/** 用当前生效忽略规则对 A/B 重算结构化差异 */
+function recomputeDisplayDiff(): void {
+  const a = props.requestA
+  const b = props.requestB
+  if (!a || !b) return
+  const effective = mergeIgnoreRules(settingsStore.compareIgnoreRules, settingsStore.compareUseBuiltinIgnore)
+  const ra = applyIgnoreRules(a, effective)
+  const rb = applyIgnoreRules(b, effective)
+  displayDiff.value = computeDiff(ra, rb)
+}
+
+/** 将某 Header/Query 名加入忽略规则并重算 */
+async function onIgnoreHeader(key: string): Promise<void> {
+  const rule = buildIgnoreRuleFromDiffEntry({ category: 'header', name: key })
+  if (!rule) return
+  const next = Array.from(new Set([...settingsStore.compareIgnoreRules, rule]))
+  await settingsStore.setCompareIgnoreRules(next)
+  recomputeDisplayDiff()
+  lastIgnored.value = rule
+}
+
+/** 将某 JSON body 路径加入忽略规则并重算 */
+async function onIgnoreBodyPath(path: string): Promise<void> {
+  const rule = buildIgnoreRuleFromDiffEntry({ category: 'body', path })
+  if (!rule) return
+  const next = Array.from(new Set([...settingsStore.compareIgnoreRules, rule]))
+  await settingsStore.setCompareIgnoreRules(next)
+  recomputeDisplayDiff()
+  lastIgnored.value = rule
+}
+
+/** 新对比结果 / 请求变化到来时，重置本地重算状态 */
+watch(
+  () => [props.diffResult, props.requestA, props.requestB],
+  () => {
+    displayDiff.value = props.diffResult
+    lastIgnored.value = ''
+  },
+)
+
 /** 当前激活的 Tab */
 const activeTab = ref<'ai' | 'diff' | 'raw'>('ai')
 
@@ -358,9 +441,9 @@ const formattedContent = computed(() => {
   return renderMarkdown(text)
 })
 
-/** 概览条汇总徽章：四项变更计数之和 */
+/** 概览条汇总徽章：四项变更计数之和（基于本地重算 displayDiff） */
 const totalDiffCount = computed<number>(() => {
-  const d = props.diffResult
+  const d = displayDiff.value
   if (!d) return 0
   const s = d.overview.stats
   return (
@@ -375,21 +458,21 @@ const totalDiffCount = computed<number>(() => {
   )
 })
 
-/** 请求头 / 响应头 差异区块（结构化，便于 v-for 渲染） */
+/** 请求头 / 响应头 差异区块（基于本地重算 displayDiff） */
 const headerSections = computed(() => {
-  if (!props.diffResult) return []
+  if (!displayDiff.value) return []
   return [
-    { title: '请求头差异', data: props.diffResult.requestHeaders },
-    { title: '响应头差异', data: props.diffResult.responseHeaders },
+    { title: '请求头差异', data: displayDiff.value.requestHeaders },
+    { title: '响应头差异', data: displayDiff.value.responseHeaders },
   ]
 })
 
-/** 请求体 / 响应体 差异区块 */
+/** 请求体 / 响应体 差异区块（基于本地重算 displayDiff） */
 const bodySections = computed(() => {
-  if (!props.diffResult) return []
+  if (!displayDiff.value) return []
   return [
-    { title: '请求体差异', data: props.diffResult.requestBody },
-    { title: '响应体差异', data: props.diffResult.responseBody },
+    { title: '请求体差异', data: displayDiff.value.requestBody },
+    { title: '响应体差异', data: displayDiff.value.responseBody },
   ]
 })
 

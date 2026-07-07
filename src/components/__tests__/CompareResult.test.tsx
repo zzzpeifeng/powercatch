@@ -14,7 +14,7 @@
  *   6. 边界 - 无原始请求
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mount, type VueWrapper } from '@vue/test-utils'
+import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
 import CompareResult from '../CompareResult.vue'
 import { useSettingsStore } from '../../stores/settings-store'
@@ -364,5 +364,50 @@ describe('CompareResult.vue 标题栏模板快速切换（改动 B）', () => {
     expect(store.aiPromptTemplate).toBe(v2?.content)
     // 3. select 的 :value 绑定随 store 回写，UI 与 store 保持一致
     expect((select.element as HTMLSelectElement).value).toBe('builtin-v2')
+  })
+})
+
+// ===== 改动 C：一键加忽略规则（Click-to-Ignore）=====
+describe('CompareResult.vue 一键加忽略（改动 C）', () => {
+  let wrapper: VueWrapper<any>
+
+  beforeEach(() => {
+    wrapper = mountDefault()
+  })
+
+  afterEach(() => {
+    if (wrapper) wrapper.unmount()
+  })
+
+  it('C-1 结构化差异 Tab 的 header 差异行提供「忽略」按钮', async () => {
+    await clickTab(wrapper, 1)
+    // added(X-New) + removed(X-Old) + modified(X-Token) 各一个 = 3
+    const ignoreBtns = wrapper.findAll('button[title="加入忽略规则"]')
+    expect(ignoreBtns.length).toBe(3)
+  })
+
+  it('C-2 点击 header modified 的「忽略」→ 规则入库 + 本地重算剔除差异 + 内联反馈', async () => {
+    await clickTab(wrapper, 1)
+    const store = useSettingsStore()
+
+    // 前置：点击前该 modified 差异可见
+    expect(wrapper.text()).toContain('X-Token: aaa → bbb')
+    const before = store.compareIgnoreRules.slice()
+
+    // modified 行为第 3 个忽略按钮（added/removed/modified 顺序）
+    const ignoreBtns = wrapper.findAll('button[title="加入忽略规则"]')
+    await ignoreBtns[2].trigger('click')
+    await flushPromises()
+    await wrapper.vm.$nextTick()
+
+    // 1. 规则已加入用户忽略列表（去重）
+    expect(store.compareIgnoreRules).toContain('X-Token')
+    expect(store.compareIgnoreRules.length).toBe(before.length + 1)
+
+    // 2. 本地重算后该 header 差异从视图消失
+    expect(wrapper.text()).not.toContain('X-Token: aaa → bbb')
+
+    // 3. 内联反馈提示出现
+    expect(wrapper.text()).toContain('已加入忽略规则：X-Token')
   })
 })
