@@ -27,6 +27,11 @@
           @click="goToIgnoreRulesSettings"
         >忽略 {{ effectiveIgnoreCount }} 项</span>
         <span
+          v-if="loadingSuggestions"
+          class="inline-flex items-center gap-1 text-xs text-gray-400 dark:text-gray-500 animate-pulse"
+          title="正在分析可忽略的易变字段"
+        >智能忽略分析中...</span>
+        <span
           v-if="compareResult?.degraded"
           class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 text-xs"
           title="AI 调用失败，已回退为结构化差异概览，点击「对比」可重试获取完整分析。"
@@ -333,15 +338,26 @@
         </div>
       </template>
     </div>
+
+    <!-- AI 智能忽略建议弹窗（对比完成后自动弹出，列出可忽略字段供勾选） -->
+    <IgnoreSuggestionsModal
+      v-if="showSuggestionsModal"
+      :suggestions="suggestions"
+      :loading="loadingSuggestions"
+      @confirm="onApplySuggestions"
+      @cancel="onCancelSuggestions"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import type { CompareResult, LoadingStates, CaptureRequest, DiffResult } from '../services/types'
+import type { CompareResult, LoadingStates, CaptureRequest, DiffResult, IgnoreSuggestion } from '../services/types'
 import { renderMarkdown } from '../utils/markdown'
 import { useSettingsStore } from '../stores/settings-store'
+import { ipc } from '../services/ipc'
+import IgnoreSuggestionsModal from './IgnoreSuggestionsModal.vue'
 import {
   computeDiff,
   applyIgnoreRules,
@@ -361,6 +377,7 @@ const props = defineProps<{
 defineEmits<{
   (e: 'export-result'): void
   (e: 'close'): void
+  (e: 'recompare'): void
 }>()
 
 /** 设置 store：AI 对比模板快速切换（从工具栏移入标题栏） */
@@ -374,9 +391,9 @@ function goToIgnoreRulesSettings(): void {
   router?.push('/settings')
 }
 
-/** 有效忽略规则数 = 用户规则 + （启用时内置名单长度），用于「忽略 N 项」徽标 */
+/** 有效忽略规则数 = 用户手动规则数（内置名单已弃用，改为 AI 弹窗建议），用于「忽略 N 项」徽标 */
 const effectiveIgnoreCount = computed<number>(() =>
-  mergeIgnoreRules(settingsStore.compareIgnoreRules, settingsStore.compareUseBuiltinIgnore).length,
+  mergeIgnoreRules(settingsStore.compareIgnoreRules).length,
 )
 
 /** 本地重算的结构化差异（点击「忽略」后即时剔除，不触发 AI / IPC） */
@@ -384,12 +401,66 @@ const displayDiff = ref<DiffResult | null>(props.diffResult)
 /** 最近一次加入的忽略规则（内联反馈） */
 const lastIgnored = ref<string>('')
 
+// ===== AI「智能忽略」建议弹窗相关状态 =====
+/** 当前待展示的忽略建议（仅含「不在已有规则中的新项」） */
+const suggestions = ref<IgnoreSuggestion[]>([])
+/** 是否展示忽略建议弹窗 */
+const showSuggestionsModal = ref<boolean>(false)
+/** 正在请求 AI 忽略建议 */
+const loadingSuggestions = ref<boolean>(false)
+/** 请求失败的轻量提示（不阻断主流程，仅用于控制台排查） */
+const suggestionsError = ref<string>('')
+/** 已为该对比对请求过建议的 key，避免重复弹窗 / 无限循环 */
+const lastSuggestionKey = ref<string>('')
+
+/** 生成当前对比对唯一标识（用于去重自动弹窗） */
+function requestKey(): string {
+  const a = props.requestA
+  const b = props.requestB
+  if (!a || !b) return ''
+  return `${a.id ?? ''}|${b.id ?? ''}`
+}
+
+/**
+ * 对比完成后自动请求 AI 忽略建议；仅当存在「已有规则之外的新项」时才弹窗。
+ * 静默失败：未配置 API Key / 模型异常等都不应打断对比结果展示。
+ */
+async function fetchIgnoreSuggestions(): Promise<void> {
+  if (!props.requestA || !props.requestB) return
+  loadingSuggestions.value = true
+  suggestionsError.value = ''
+  try {
+    const res = await ipc.ai.ignoreSuggestions(props.requestA, props.requestB)
+    if (!res.success || !res.suggestions) {
+      // 静默失败：后端返回非成功或缺少 suggestions（如未配置 API Key）
+      return
+    }
+    const existing = new Set(settingsStore.compareIgnoreRules)
+    const newOnes = res.suggestions.filter((s) => {
+      const rule = buildIgnoreRuleFromDiffEntry({ category: s.category, name: s.name, path: s.path })
+      return !!rule && !existing.has(rule)
+    })
+    if (newOnes.length > 0) {
+      suggestions.value = newOnes
+      // 先确保 loading 关闭，再显示弹窗，避免弹窗渲染首帧残留 loading 态
+      // 导致「应用选中」按钮被 disabled、用户感知为卡住/忙碌。
+      loadingSuggestions.value = false
+      showSuggestionsModal.value = true
+    }
+  } catch (e) {
+    suggestionsError.value = e instanceof Error ? e.message : String(e)
+    console.warn('[CompareResult] 获取 AI 忽略建议失败（已忽略）:', suggestionsError.value)
+  } finally {
+    loadingSuggestions.value = false
+  }
+}
+
 /** 用当前生效忽略规则对 A/B 重算结构化差异 */
 function recomputeDisplayDiff(): void {
   const a = props.requestA
   const b = props.requestB
   if (!a || !b) return
-  const effective = mergeIgnoreRules(settingsStore.compareIgnoreRules, settingsStore.compareUseBuiltinIgnore)
+  const effective = mergeIgnoreRules(settingsStore.compareIgnoreRules)
   const ra = applyIgnoreRules(a, effective)
   const rb = applyIgnoreRules(b, effective)
   displayDiff.value = computeDiff(ra, rb)
@@ -415,12 +486,39 @@ async function onIgnoreBodyPath(path: string): Promise<void> {
   lastIgnored.value = rule
 }
 
-/** 新对比结果 / 请求变化到来时，重置本地重算状态 */
+/**
+ * 应用用户在弹窗中勾选的忽略建议：追加到对比忽略规则（去重）并触发重新对比。
+ * AI 分析需重新对比才能应用新规则（本地展示已由 recomputeDisplayDiff 即时更新）。
+ */
+async function onApplySuggestions(selected: IgnoreSuggestion[]): Promise<void> {
+  showSuggestionsModal.value = false
+  if (!selected.length) return
+  const rules = selected
+    .map((s) => buildIgnoreRuleFromDiffEntry({ category: s.category, name: s.name, path: s.path }))
+    .filter((r): r is string => !!r)
+  const next = Array.from(new Set([...settingsStore.compareIgnoreRules, ...rules]))
+  await settingsStore.setCompareIgnoreRules(next)
+  // 通知父组件（MainView）重新对比以让 AI 分析应用新规则
+  emit('recompare')
+}
+
+/** 关闭弹窗（不应用任何规则） */
+function onCancelSuggestions(): void {
+  showSuggestionsModal.value = false
+}
+
+/** 新对比结果 / 请求变化到来时，重置本地重算状态；并自动触发 AI 忽略建议（仅新问题对） */
 watch(
   () => [props.diffResult, props.requestA, props.requestB],
-  () => {
+  async () => {
     displayDiff.value = props.diffResult
     lastIgnored.value = ''
+    // 仅在「新对比对 + diffResult 就绪」时自动请求 AI 忽略建议，避免重复弹窗 / 无限循环
+    const key = requestKey()
+    if (props.diffResult && key && key !== lastSuggestionKey.value) {
+      lastSuggestionKey.value = key
+      await fetchIgnoreSuggestions()
+    }
   },
 )
 

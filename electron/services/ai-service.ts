@@ -3,7 +3,7 @@
  * 支持 OpenAI 兼容接口（GPT/Claude/国产大模型）
  */
 import OpenAI from 'openai'
-import type { CompareRequest, CompareResult, DiffResult, TemplateVariable } from '../../src/services/types'
+import type { CaptureRequest, CompareRequest, CompareResult, DiffResult, IgnoreSuggestion, TemplateVariable } from '../../src/services/types'
 import { TEMPLATE_VARIABLES } from '../../src/services/types'
 import { computeDiff, serializeDiffForPrompt, applyIgnoreRules, mergeIgnoreRules } from '../../src/services/diff-engine'
 
@@ -62,12 +62,11 @@ export function fillPromptTemplate(
   request: CompareRequest,
   precomputedDiff?: DiffResult,
   ignoreRules?: string[],
-  useBuiltinIgnore?: boolean,
 ): string {
   const { requestA, requestB } = request
 
   // 合并「用户规则」与「内置启发式名单」得到 effective rules，贯穿 diff 与附录
-  const effectiveRules = mergeIgnoreRules(ignoreRules ?? [], useBuiltinIgnore ?? true)
+  const effectiveRules = mergeIgnoreRules(ignoreRules ?? [])
 
   // 前置 diff：计算结构化差异并序列化（应用 effective rules 剔除命中字段）
   let diffText = ''
@@ -78,7 +77,7 @@ export function fillPromptTemplate(
     if (tooLarge) {
       throw new Error('body too large (>1MB) for recursive diff, fallback to raw')
     }
-    const diff = precomputedDiff ?? computeStructuredDiff(request, ignoreRules, useBuiltinIgnore)
+    const diff = precomputedDiff ?? computeStructuredDiff(request, ignoreRules)
     diffText = serializeDiffForPrompt(diff, 200)
   } catch (e) {
     console.warn('[AI Service] diff 计算失败，回退原始 body 截断:', e)
@@ -148,14 +147,14 @@ export function buildIgnoreRulesAppendix(rules: string[] | undefined): string {
  * 计算结构化差异（供 Prompt 注入与结果返回复用，单一数据源）
  * @throws 当任意 body >1MB 触发递归 diff 风险时抛出（调用方兜底）
  */
-export function computeStructuredDiff(request: CompareRequest, ignoreRules?: string[], useBuiltinIgnore?: boolean): DiffResult {
+export function computeStructuredDiff(request: CompareRequest, ignoreRules?: string[]): DiffResult {
   const bodies = [request.requestA.requestBody, request.requestB.requestBody, request.requestA.responseBody, request.requestB.responseBody]
   const tooLarge = bodies.some((b) => (b || '').length > 1_000_000)
   if (tooLarge) {
     throw new Error('body too large (>1MB) for recursive diff, fallback to raw')
   }
   // 合并「用户规则」与「内置启发式名单」得到 effective rules，再应用
-  const effectiveRules = mergeIgnoreRules(ignoreRules ?? [], useBuiltinIgnore ?? true)
+  const effectiveRules = mergeIgnoreRules(ignoreRules ?? [])
   // 应用对比忽略规则：剔除双方命中的 Header / Query 参数 / JSON body 路径后再 diff
   const a = effectiveRules.length ? applyIgnoreRules(request.requestA, effectiveRules) : request.requestA
   const b = effectiveRules.length ? applyIgnoreRules(request.requestB, effectiveRules) : request.requestB
@@ -187,17 +186,8 @@ interface CompareCacheEntry {
 const compareCache = new Map<string, CompareCacheEntry>()
 
 /**
- * 解析 useBuiltinIgnore（缺省 true，与设置默认值一致）
- * @param request 对比请求
- * @returns 是否启用内置启发式名单
- */
-function resolveUseBuiltin(request: CompareRequest): boolean {
-  return request.useBuiltinIgnore ?? true
-}
-
-/**
  * 稳定缓存 key：模型 + 模板 + 请求 A/B 关键身份（避免序列化超大 body）
- * 纳入 compareIgnoreRules 与 useBuiltinIgnore，避免开启/关闭内置名单命中同一缓存。
+ * 纳入 compareIgnoreRules 与 useBuiltinIgnore（历史兼容字段，已不再用于自动合并内置名单）。
  * @param request 对比请求
  * @returns 稳定 key 字符串
  */
@@ -213,7 +203,7 @@ export function cacheKey(request: CompareRequest): string {
     m: request.modelName,
     t: request.promptTemplate,
     i: request.compareIgnoreRules ?? [],
-    ub: resolveUseBuiltin(request),
+    ub: request.useBuiltinIgnore ?? false,
     a: sig(request.requestA),
     b: sig(request.requestB),
   })
@@ -352,14 +342,13 @@ export async function executeCompare(
   isComparing = true
   try {
     // 2) 计算结构化 diff（单一数据源，先于 AI 与重试；应用对比忽略规则剔除命中字段）
-    const useBuiltin = resolveUseBuiltin(request)
     let structuredDiff: DiffResult
     try {
-      structuredDiff = computeStructuredDiff(request, request.compareIgnoreRules, useBuiltin)
+      structuredDiff = computeStructuredDiff(request, request.compareIgnoreRules)
     } catch {
       structuredDiff = EMPTY_DIFF
     }
-    const prompt = fillPromptTemplate(request.promptTemplate, request, structuredDiff, request.compareIgnoreRules, useBuiltin)
+    const prompt = fillPromptTemplate(request.promptTemplate, request, structuredDiff, request.compareIgnoreRules)
 
     // 3) 重试 + 降级
     let lastError: any = null
@@ -455,4 +444,159 @@ export async function testConnection(
  */
 export function getTemplateVariables(): TemplateVariable[] {
   return TEMPLATE_VARIABLES
+}
+
+/**
+ * AI「智能忽略」建议分析的 System Prompt
+ * 要求模型只输出结构化的可忽略字段 JSON，不输出任何多余说明。
+ */
+const IGNORE_SUGGESTIONS_SYSTEM_PROMPT = `你是一个接口对比的"噪声字段"识别专家。
+给定两次请求/响应的关键差异信息，请找出那些"易变、非业务相关、不应被视为真实差异"的字段，给出忽略建议：
+- header：请求/响应头名（如 x-request-id、date、etag 等），用 name 字段
+- query：URL 查询参数名（如 signature、timestamp 等），用 name 字段
+- body：JSON 响应体中的路径（点号表示法，如 data.timestamp、user.token），用 path 字段
+只输出 JSON，格式严格为：
+{"suggestions":[{"category":"header"|"query"|"body","name"?:"字段名","path"?:"json.路径","reason":"为什么建议忽略"}]}
+不要输出任何额外说明文字。若没有明显可忽略字段，返回 {"suggestions":[]}。`
+
+/** AI 忽略建议分析超时（毫秒） */
+const IGNORE_SUGGESTIONS_TIMEOUT_MS = 60_000
+
+/**
+ * 构造 AI「智能忽略」建议分析的 Prompt（聚焦头/Query/响应体等易变字段信息）
+ * @param requestA 请求 A
+ * @param requestB 请求 B
+ * @returns 拼接好的用户 Prompt
+ */
+function buildIgnoreSuggestionsPrompt(requestA: CaptureRequest, requestB: CaptureRequest): string {
+  const queryOf = (url: string): string => {
+    try {
+      const q = new URL(url).search
+      return q || '(无)'
+    } catch {
+      return '(无)'
+    }
+  }
+  return [
+    `请求方法：A=${requestA.method}，B=${requestB.method}`,
+    `URL：A=${requestA.url}`,
+    `状态码：A=${requestA.statusCode ?? ''}，B=${requestB.statusCode ?? ''}`,
+    `查询参数 A：${queryOf(requestA.url)}`,
+    `查询参数 B：${queryOf(requestB.url)}`,
+    `请求头 A：${JSON.stringify(requestA.requestHeaders)}`,
+    `请求头 B：${JSON.stringify(requestB.requestHeaders)}`,
+    `响应头 A：${JSON.stringify(requestA.responseHeaders)}`,
+    `响应头 B：${JSON.stringify(requestB.responseHeaders)}`,
+    `响应体 A（前 4000 字符）：${(requestA.responseBody || '').slice(0, 4000)}`,
+    `响应体 B（前 4000 字符）：${(requestB.responseBody || '').slice(0, 4000)}`,
+  ].join('\n')
+}
+
+/**
+ * 将模型返回的 JSON 文本稳健解析为 IgnoreSuggestion[]。
+ * - 支持标准 JSON 与「被额外说明文字包裹的 JSON 块」两种形态
+ * - 过滤非法 category / 缺失 name(path) 的条目
+ * - 任何解析失败都返回 []（绝不上抛，保证调用方拿到空数组兜底）
+ * @param content 模型原始输出
+ * @returns 忽略建议列表（已校验字段完整性）
+ */
+function parseIgnoreSuggestions(content: string): IgnoreSuggestion[] {
+  const text = (content || '').trim()
+  if (!text) return []
+
+  let parsed: any = undefined
+  try {
+    parsed = JSON.parse(text)
+  } catch {
+    // 退化：从文本中提取第一个 {...} 块再解析
+    const start = text.indexOf('{')
+    const end = text.lastIndexOf('}')
+    if (start === -1 || end === -1 || end <= start) return []
+    try {
+      parsed = JSON.parse(text.slice(start, end + 1))
+    } catch {
+      return []
+    }
+  }
+
+  const list = Array.isArray(parsed) ? parsed : parsed?.suggestions
+  if (!Array.isArray(list)) return []
+
+  const out: IgnoreSuggestion[] = []
+  for (const item of list) {
+    if (!item || typeof item !== 'object') continue
+    const category = item.category
+    if (category !== 'header' && category !== 'query' && category !== 'body') continue
+
+    let name: string | undefined
+    let path: string | undefined
+    if (category === 'body') {
+      path = typeof item.path === 'string' ? item.path.trim() : undefined
+      if (!path) continue
+    } else {
+      name = typeof item.name === 'string' ? item.name.trim() : undefined
+      if (!name) continue
+    }
+    const reason = typeof item.reason === 'string' ? item.reason.trim() : ''
+    out.push({
+      category,
+      name,
+      path,
+      reason: reason || '模型建议忽略该字段（易变/噪声字段，非业务差异）',
+    })
+  }
+  return out
+}
+
+/**
+ * 分析对比结果，给出可忽略字段建议（AI「智能忽略」弹窗数据源）。
+ * 非流式、带 JSON 结构化输出与 ~60s 超时；结果稳健解析，失败/异常/超时均返回 []。
+ *
+ * 注意：本函数只负责产出"建议"，去重与"只在有新增项时弹窗"由前端（CompareResult.vue）
+ * 基于 settingsStore.compareIgnoreRules 完成，避免在后端耦合用户已有规则。
+ *
+ * @param requestA 请求 A
+ * @param requestB 请求 B
+ * @param aiConfig AI 配置（apiUrl / apiKey / modelName）
+ * @returns 忽略建议列表（按 header / query / body 分类，每项含 reason）
+ */
+export async function analyzeIgnoreSuggestions(
+  requestA: CaptureRequest,
+  requestB: CaptureRequest,
+  aiConfig: { apiUrl: string; apiKey: string; modelName: string },
+): Promise<IgnoreSuggestion[]> {
+  // 超时保护：~60s；无论成功失败都清除定时器，避免测试 / 长会话中悬挂的 pending timer 拖住事件循环
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`AI 忽略建议分析超时（${IGNORE_SUGGESTIONS_TIMEOUT_MS / 1000} 秒）`)),
+      IGNORE_SUGGESTIONS_TIMEOUT_MS,
+    )
+  })
+
+  const prompt = buildIgnoreSuggestionsPrompt(requestA, requestB)
+
+  const call = async (): Promise<IgnoreSuggestion[]> => {
+    const client = new OpenAI({ baseURL: aiConfig.apiUrl, apiKey: aiConfig.apiKey, timeout: IGNORE_SUGGESTIONS_TIMEOUT_MS })
+    const res = await client.chat.completions.create({
+      model: aiConfig.modelName,
+      messages: [
+        { role: 'system', content: IGNORE_SUGGESTIONS_SYSTEM_PROMPT },
+        { role: 'user', content: prompt },
+      ],
+      response_format: { type: 'json_object' },
+      temperature: 0.1,
+    })
+    const content = res.choices?.[0]?.message?.content ?? ''
+    return parseIgnoreSuggestions(content)
+  }
+
+  try {
+    return await Promise.race([call(), timeout])
+  } catch (err) {
+    console.error('[AI Service] 忽略建议分析失败，返回空列表:', (err as Error)?.message || err)
+    return []
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
 }

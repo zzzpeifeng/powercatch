@@ -32,11 +32,6 @@ let saveTimer: ReturnType<typeof setTimeout> | null = null
 const newDomain = ref('')
 /** 对比忽略规则（textarea 单行一条） */
 const compareIgnoreRulesText = ref('')
-/** 启用内置智能忽略（常见易变字段）开关：双向绑定到 settings store（缺省开启） */
-const compareUseBuiltinIgnore = computed({
-  get: () => settingsStore.compareUseBuiltinIgnore,
-  set: (v: boolean) => settingsStore.setCompareUseBuiltinIgnore(v),
-})
 /** 从 textarea 解析出规则数组（去空、去首尾空白） */
 const parsedIgnoreRules = computed<string[]>(() =>
   compareIgnoreRulesText.value
@@ -637,22 +632,6 @@ function prevStep() {
           <p v-if="compareIgnoreRulesText.trim()" class="text-xs text-gray-400 mt-2">
             已配置 {{ parsedIgnoreRules.length }} 条规则
           </p>
-        </div>
-
-        <!-- 启用内置智能忽略 -->
-        <div class="card p-4">
-          <div class="flex items-center justify-between gap-4">
-            <div class="flex-1 min-w-0">
-              <h3 class="text-sm font-semibold mb-1 text-[var(--color-text)]">启用内置智能忽略（常见易变字段）</h3>
-              <p class="text-xs text-gray-400">
-                自动忽略 <code class="text-[var(--color-danger)] bg-gray-100 dark:bg-gray-800 px-1 rounded">timestamp</code>、<code class="text-[var(--color-danger)] bg-gray-100 dark:bg-gray-800 px-1 rounded">signature</code>、<code class="text-[var(--color-danger)] bg-gray-100 dark:bg-gray-800 px-1 rounded">token</code> 等易变字段，关闭则仅用手动规则。
-              </p>
-            </div>
-            <label class="flex items-center gap-2 cursor-pointer shrink-0">
-              <input type="checkbox" v-model="compareUseBuiltinIgnore" class="toggle" />
-              <span class="text-xs text-gray-500">{{ compareUseBuiltinIgnore ? '已开启' : '已关闭' }}</span>
-            </label>
-          </div>
         </div>
 
         <!-- 显示设置 -->

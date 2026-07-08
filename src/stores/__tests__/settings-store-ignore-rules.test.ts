@@ -86,32 +86,3 @@ describe('settings-store 对比忽略规则', () => {
     expect(mockSettings.set).toHaveBeenCalledWith('compare_ignore_rules', '[]')
   })
 })
-
-describe('settings-store 内置智能忽略开关', () => {
-  it('1. loadSettings（缺省）：key 不存在时 compareUseBuiltinIgnore 默认 true', async () => {
-    mockSettings.get.mockResolvedValue(null)
-    await store.loadSettings()
-    expect(store.compareUseBuiltinIgnore).toBe(true)
-  })
-
-  it('2. loadSettings（显式 false）：正确解析为 false', async () => {
-    mockSettings.get.mockImplementation((key: string) => {
-      if (key === 'compare_use_builtin_ignore') return Promise.resolve(JSON.stringify(false))
-      return Promise.resolve(null)
-    })
-    await store.loadSettings()
-    expect(store.compareUseBuiltinIgnore).toBe(false)
-  })
-
-  it('3. setCompareUseBuiltinIgnore（true）：持久化到 compare_use_builtin_ignore key', async () => {
-    await store.setCompareUseBuiltinIgnore(true)
-    expect(store.compareUseBuiltinIgnore).toBe(true)
-    expect(mockSettings.set).toHaveBeenCalledWith('compare_use_builtin_ignore', JSON.stringify(true))
-  })
-
-  it('4. setCompareUseBuiltinIgnore（false）：持久化到 compare_use_builtin_ignore key', async () => {
-    await store.setCompareUseBuiltinIgnore(false)
-    expect(store.compareUseBuiltinIgnore).toBe(false)
-    expect(mockSettings.set).toHaveBeenCalledWith('compare_use_builtin_ignore', JSON.stringify(false))
-  })
-})

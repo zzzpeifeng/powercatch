@@ -5,69 +5,10 @@
 import type { CaptureRequest, DiffResult, HttpHeaders } from './types'
 
 /**
- * 内置确定性启发式忽略名单（Built-in Heuristic Ignore Rules）
- * 零成本、零延迟：覆盖常见易变 / 噪声字段，默认开启（设置可关闭）。
- *
- * 规则格式约定（与用户手动规则一致）：
- *   - 不含 '.' → 视为 Header 名 / Query 参数名（大小写不敏感）；
- *   - 含 '*.` 前缀 → 视为 JSON body 通配路径（末段命中即剔除，任意父路径）；
- *   - 含 '.' 且非 '*.` 前缀 → 视为 JSON body 精确路径（点号表示法）。
- *
- * 分类（当前共 38 条：18 条 Header/Query 名（大小写不敏感）+ 20 条 `*.` 前缀 JSON 通配路径）：
- *   1. Header / Query 名（不含点，大小写不敏感）：易变 / 噪声头与签名类字段。
- *   2. JSON body 通配路径（*. 前缀）：任意父路径下命中的易变叶子字段。
- *
- * 注意：刻意不包含 authorization、set-cookie 等"可能影响真实差异判定"的字段，
- *       如需忽略请由用户在手动规则中自行添加，避免掩盖真实差异。
+ * 对比忽略规则（仅用户手动配置的规则有效）。
+ * 原「内置确定性启发式忽略名单（BUILTIN_IGNORE_RULES）」已移除：
+ * 改为对比完成后由 AI 分析并弹窗建议（见 IgnoreSuggestionsModal），不再自动应用静态名单。
  */
-export const BUILTIN_IGNORE_RULES: readonly string[] = [
-  // ===== 1. Header / Query 名（不含点，大小写不敏感）=====
-  // —— 时间类 ——
-  'timestamp',
-  'date',
-  'x-timestamp',
-  'last-modified',
-  'expires',
-  // —— 请求 / 链路追踪类 ——
-  'x-request-id',
-  'x-trace-id',
-  'x-correlation-id',
-  'etag',
-  'x-powered-by',
-  // —— 签名 / 防重放 / 凭证类（噪声高，通常被安全头携带，非业务差异）——
-  'x-nonce',
-  'x-signature',
-  'x-sign',
-  'x-csrf-token',
-  'signature',
-  'sign',
-  'nonce',
-  'token',
-
-  // ===== 2. JSON body 通配路径（*. 前缀：任意父路径下末段命中即剔除）=====
-  // —— 时间类 ——
-  '*.timestamp',
-  '*.createdAt',
-  '*.updatedAt',
-  '*.createTime',
-  '*.updateTime',
-  '*.expireAt',
-  '*.expiresAt',
-  '*.expireTime',
-  '*.dateTime',
-  '*.time',
-  // —— 易变 ID / 追踪类 ——
-  '*.token',
-  '*.accessToken',
-  '*.refreshToken',
-  '*.sign',
-  '*.signature',
-  '*.nonce',
-  '*.nonceStr',
-  '*.requestId',
-  '*.traceId',
-  '*.sessionId',
-]
 
 /** Headers 对比结果 */
 export interface HeaderDiffResult {
@@ -578,20 +519,19 @@ function formatBodyDiff(label: string, b: DiffResult['requestBody'], max: number
 // 命中的字段将从「请求头 / 响应头 / URL 查询参数 / JSON body 路径」中剔除后再参与 diff。
 
 /**
- * 合并「用户手动规则」与「内置启发式名单」。
- * - useBuiltin=true 时并入 BUILTIN_IGNORE_RULES（去重，用户规则优先保留在前）。
- * - useBuiltin=false 时仅返回用户规则（去空、去重）。
+ * 规整「用户手动规则」：去空、去重，保留原有顺序。
+ *
+ * 说明：原「内置启发式名单（BUILTIN_IGNORE_RULES）」已移除，改为对比后由 AI 弹窗建议
+ * （见 IgnoreSuggestionsModal），故此处仅处理用户手动配置的规则。
  *
  * @param userRules 用户手动规则
- * @param useBuiltin 是否并入内置名单
- * @returns 合并去重后的规则数组（无副作用）
+ * @returns 去空、去重后的规则数组（无副作用）
  */
-export function mergeIgnoreRules(userRules: string[], useBuiltin: boolean): string[] {
+export function mergeIgnoreRules(userRules: string[]): string[] {
   const user = Array.isArray(userRules) ? userRules : []
-  const sources: string[] = useBuiltin ? [...user, ...BUILTIN_IGNORE_RULES] : [...user]
   const seen = new Set<string>()
   const merged: string[] = []
-  for (const r of sources) {
+  for (const r of user) {
     if (!r) continue
     if (seen.has(r)) continue
     seen.add(r)

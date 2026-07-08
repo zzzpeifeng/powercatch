@@ -126,6 +126,7 @@
           :diff-result="requestStore.diffResult"
           @export-result="showExportMenu = true"
           @close="requestStore.compareResult = null"
+          @recompare="handleCompare"
         />
       </div>
     </div>

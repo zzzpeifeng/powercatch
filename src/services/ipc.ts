@@ -9,6 +9,7 @@ import type {
   ProxyInfo,
   AppSettings,
   CompareResult,
+  IgnoreSuggestion,
   ExportFormat,
   Toast,
   ProxyOperationResult,
@@ -338,6 +339,15 @@ export const ipc = {
       const plainA = JSON.parse(JSON.stringify(requestA))
       const plainB = JSON.parse(JSON.stringify(requestB))
       return api.ai.compare(plainA, plainB)
+    },
+
+    ignoreSuggestions: async (requestA: CaptureRequest, requestB: CaptureRequest): Promise<{ success: boolean; suggestions?: IgnoreSuggestion[]; error?: string }> => {
+      const api = getElectronAPI()
+      if (!api) return { success: false, error: 'Not in Electron environment' }
+      // 防止 request 对象是 Vue reactive Proxy，先深拷贝成普通对象
+      const plainA = JSON.parse(JSON.stringify(requestA))
+      const plainB = JSON.parse(JSON.stringify(requestB))
+      return api.ai.ignoreSuggestions(plainA, plainB) as Promise<{ success: boolean; suggestions?: IgnoreSuggestion[]; error?: string }>
     },
 
     onStreamChunk: (callback: (chunk: string) => void): (() => void) => {

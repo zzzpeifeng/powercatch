@@ -154,8 +154,6 @@ export interface AppSettings {
   }
   /** 对比忽略规则（Compare Ignore Rules）：字段名/路径列表，结构化 diff 与 AI 分析均跳过这些字段（默认 []） */
   compareIgnoreRules?: string[]
-  /** 是否启用「内置智能忽略」（内置确定性启发式名单），默认 true（缺省语义开启） */
-  compareUseBuiltinIgnore?: boolean
 }
 
 /** 仓库配置（AI 代码分析） */
@@ -621,6 +619,7 @@ export const IPC_CHANNELS = {
   AI_STREAM_CHUNK: 'ai:stream-chunk',
   AI_STREAM_END: 'ai:stream-end',
   AI_TEST_CONNECTION: 'ai:test-connection',
+  AI_IGNORE_SUGGESTIONS: 'ai:ignore-suggestions',
 
   // 导出
   EXPORT_FILE: 'export:file',
@@ -770,6 +769,21 @@ export const IPC_CHANNELS = {
 
 /** IPC 通道名称类型 */
 export type IpcChannel = typeof IPC_CHANNELS[keyof typeof IPC_CHANNELS]
+
+/**
+ * AI 对比「智能忽略」建议条目
+ * 由后端在对比完成后调用大模型分析得出，用于弹窗让用户勾选需要忽略的字段。
+ */
+export interface IgnoreSuggestion {
+  /** 忽略类别：header 请求/响应头名；query 查询参数名；body JSON 路径 */
+  category: 'header' | 'query' | 'body'
+  /** header / query 类别时的字段名（大小写保持原样，applyIgnoreRules 内部按小写匹配） */
+  name?: string
+  /** body 类别时的 JSON 路径（点号表示法，如 data.timestamp / user.token） */
+  path?: string
+  /** 建议忽略的原因（展示给用户） */
+  reason: string
+}
 
 /** 模板变量定义 */
 export interface TemplateVariable {

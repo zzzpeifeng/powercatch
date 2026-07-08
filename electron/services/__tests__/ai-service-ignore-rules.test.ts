@@ -103,23 +103,23 @@ describe('computeStructuredDiff 忽略规则生效（结构化 diff 跳过命中
   })
 })
 
-describe('mergeIgnoreRules 注入 prompt 附录', () => {
-  it('useBuiltinIgnore=true：附录含内置规则（如 *.timestamp / x-request-id）', () => {
+describe('mergeIgnoreRules 注入 prompt 附录（移除内置名单后）', () => {
+  it('仅注入用户规则：不再自动追加内置名单（*.timestamp / x-request-id 不再出现）', () => {
     const req = makeRequest()
     const template = '差异如下：\n{diff_result}'
     const prompt = fillPromptTemplate(template, req, undefined, ['X-Request-Id'], true)
     expect(prompt).toContain('【忽略字段】')
     expect(prompt).toContain('- X-Request-Id')
-    expect(prompt).toContain('- *.timestamp')
-    expect(prompt).toContain('- x-request-id')
+    // 内置启发式名单已弃用，改为对比后 AI 弹窗建议，故不再自动追加
+    expect(prompt).not.toContain('- *.timestamp')
+    expect(prompt).not.toContain('- x-request-id')
   })
 
-  it('useBuiltinIgnore=false：附录仅含用户规则，不含内置', () => {
+  it('空用户规则：不追加任何【忽略字段】段', () => {
     const req = makeRequest()
     const template = '差异如下：\n{diff_result}'
-    const prompt = fillPromptTemplate(template, req, undefined, ['X-Request-Id'], false)
-    expect(prompt).toContain('- X-Request-Id')
-    expect(prompt).not.toContain('- *.timestamp')
+    const prompt = fillPromptTemplate(template, req, undefined, [], false)
+    expect(prompt).not.toContain('【忽略字段】')
   })
 })
 

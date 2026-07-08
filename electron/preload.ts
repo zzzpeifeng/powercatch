@@ -40,6 +40,8 @@ const electronAPI = {
   ai: {
     compare: (requestA: any, requestB: any) =>
       ipcRenderer.invoke(IPC_CHANNELS.AI_COMPARE, { requestA, requestB }),
+    ignoreSuggestions: (requestA: any, requestB: any) =>
+      ipcRenderer.invoke(IPC_CHANNELS.AI_IGNORE_SUGGESTIONS, { requestA, requestB }),
     onStreamChunk: (callback: (chunk: string) => void) => {
       const handler = (_event: any, chunk: string) => callback(chunk)
       ipcRenderer.on(IPC_CHANNELS.AI_STREAM_CHUNK, handler)

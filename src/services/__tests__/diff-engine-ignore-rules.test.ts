@@ -12,7 +12,7 @@
  *   4. 空规则：原样返回，不修改入参（零开销）
  */
 import { describe, it, expect } from 'vitest'
-import { applyIgnoreRules, BUILTIN_IGNORE_RULES, mergeIgnoreRules } from '../diff-engine'
+import { applyIgnoreRules, mergeIgnoreRules } from '../diff-engine'
 import type { CaptureRequest } from '../../services/types'
 
 function makeRequest(overrides: Partial<CaptureRequest> = {}): CaptureRequest {
@@ -100,45 +100,27 @@ describe('applyIgnoreRules', () => {
   })
 })
 
-// ===== 内置启发式忽略名单 & 合并 =====
-
-describe('BUILTIN_IGNORE_RULES', () => {
-  it('非空且分类合理：含 JSON 通配 *.timestamp 与 Header 名 x-request-id', () => {
-    const list = [...BUILTIN_IGNORE_RULES]
-    expect(list.length).toBeGreaterThan(0)
-    expect(list).toContain('*.timestamp')
-    expect(list).toContain('x-request-id')
-    // Header / Query 名（不含 '*.` 前缀）不应含 '.'（大小写不敏感约定）
-    expect(list.filter((r) => !r.startsWith('*.') && r.includes('.'))).toHaveLength(0)
-  })
-})
+// ===== 合并（内置启发式名单已移除，仅处理用户规则） =====
 
 describe('mergeIgnoreRules', () => {
-  it('useBuiltin=true：合并用户规则与内置名单并去重', () => {
-    const merged = mergeIgnoreRules(['X-Request-Id', 'data.timestamp'], true)
-    expect(merged).toContain('X-Request-Id')
-    expect(merged).toContain('data.timestamp')
-    expect(merged).toContain('*.timestamp')
-    expect(merged).toContain('x-request-id')
-    // 用户与内置重复的 x-request-id 只出现一次
-    expect(merged.filter((r) => r === 'x-request-id')).toHaveLength(1)
-  })
-
-  it('useBuiltin=false：仅返回用户规则', () => {
-    const merged = mergeIgnoreRules(['X-Request-Id', 'data.timestamp'], false)
+  it('去重并保持原有顺序', () => {
+    const merged = mergeIgnoreRules(['X-Request-Id', 'data.timestamp', 'X-Request-Id'])
+    expect(merged).toHaveLength(2)
     expect(merged).toEqual(['X-Request-Id', 'data.timestamp'])
+  })
+
+  it('空 / undefined / null userRules 不报错，返回 []', () => {
+    expect(mergeIgnoreRules(undefined as unknown as string[])).toEqual([])
+    expect(mergeIgnoreRules(null as unknown as string[])).toEqual([])
+    expect(mergeIgnoreRules([])).toEqual([])
+  })
+
+  it('内置名单已移除：不再自动追加 *.timestamp / x-request-id 等内置规则', () => {
+    const merged = mergeIgnoreRules(['X-Request-Id'])
+    expect(merged).toContain('X-Request-Id')
+    expect(merged).toHaveLength(1)
     expect(merged).not.toContain('*.timestamp')
-  })
-
-  it('useBuiltin=true 且用户规则为空：等价于内置名单', () => {
-    const merged = mergeIgnoreRules([], true)
-    expect(merged).toContain('*.timestamp')
-    expect(merged.length).toBe(BUILTIN_IGNORE_RULES.length)
-  })
-
-  it('空/undefined userRules 不报错', () => {
-    expect(mergeIgnoreRules(undefined as unknown as string[], true).length).toBe(BUILTIN_IGNORE_RULES.length)
-    expect(mergeIgnoreRules(null as unknown as string[], false)).toEqual([])
+    expect(merged).not.toContain('x-request-id')
   })
 })
 
