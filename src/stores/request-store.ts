@@ -10,10 +10,10 @@
  */
 import { defineStore } from 'pinia'
 import { ref, computed, reactive } from 'vue'
-import type { CaptureRequest, RequestUpdate, CompareResult, LoadingStates, ProxyStatus, DomainSortMode, DomainNode, FlatTreeNode, FilterState, CaptureSession, DiffResult } from '../services/types'
+import type { CaptureRequest, RequestUpdate, CompareResult, LoadingStates, ProxyStatus, DomainSortMode, DomainNode, FlatTreeNode, PathNode, ViewMode, FilterState, CaptureSession, DiffResult } from '../services/types'
 import { ipc } from '../services/ipc'
 import { generateMatchKey } from '../utils/request-matcher'
-import { buildDomainTree, flattenTree, matchSearch } from '../utils/tree-builder'
+import { buildDomainTree, flattenTree, matchSearch, buildPathTree, flattenPathTree, getPathKey } from '../utils/tree-builder'
 import { matchFilters } from '../utils/filter-engine'
 import { isGraphQLRequest, parseOperationName, parseOperationType } from '../utils/graphql-detector'
 import { computeDiff } from '../services/diff-engine'
@@ -91,14 +91,17 @@ export const useRequestStore = defineStore('request', () => {
   /** 设备别名 */
   const deviceAliases = ref<Record<string, string>>({})
 
-  /** 视图模式：list（列表）或 group（分组） */
-  const viewMode = ref<'list' | 'group'>('group')
+  /** 视图模式：list（列表）/ group（域名分组）/ tree（树状路径），默认 tree（决策#1） */
+  const viewMode = ref<ViewMode>('tree')
 
   /** 搜索关键词（从 RequestList 迁移到 Store，供树形 computed 使用） */
   const searchQuery = ref<string>('')
 
-  /** 折叠的域名集合（存"已折叠"，默认展开） */
+  /** 折叠的域名集合（存"已折叠"，默认展开）— group 模式使用 */
   const collapsedDomains = ref<Set<string>>(loadCollapsedDomains())
+
+  /** 树模式展开状态（存"已展开"，默认空=全折叠，决策#2）— v1 不持久化（U4） */
+  const expandedPathKeys = ref<Set<string>>(new Set())
 
   /** 域名排序模式（默认「首次出现」：新增请求不改变根域名相对顺序） */
   const domainSortMode = ref<DomainSortMode>('firstSeen')
@@ -377,7 +380,18 @@ export const useRequestStore = defineStore('request', () => {
     return flattenTree(groupedTreeRequests.value, collapsedDomains.value, searchQuery.value)
   })
 
-  /** 统一显示行（list 模式包装为 FlatTreeNode，group 模式用 flatTreeRows） */
+  /** tree 模式：按 host 分组 → path 递归建路径树（域名根按 domainSortMode 排序） */
+  const pathTreeRequests = computed<PathNode[]>(() => {
+    return buildPathTree(filteredRequests.value, domainSortMode.value)
+  })
+
+  /** tree 模式展平行：非搜索态按 expandedPathKeys 展开；搜索态聚焦式呈现（决策#7） */
+  const flatPathRows = computed<FlatTreeNode[]>(() => {
+    const searching = searchQuery.value.trim().length > 0
+    return flattenPathTree(pathTreeRequests.value, expandedPathKeys.value, searchQuery.value, searching)
+  })
+
+  /** 统一显示行（按 viewMode 三态分发：list / group / tree） */
   const displayRows = computed<FlatTreeNode[]>(() => {
     if (viewMode.value === 'list') {
       const query = searchQuery.value.trim().toLowerCase()
@@ -390,6 +404,9 @@ export const useRequestStore = defineStore('request', () => {
         depth: 0,
         request: req,
       }))
+    }
+    if (viewMode.value === 'tree') {
+      return flatPathRows.value
     }
     return flatTreeRows.value
   })
@@ -721,13 +738,15 @@ export const useRequestStore = defineStore('request', () => {
     }
   }
 
-  /** 切换视图模式 */
+  /** 切换视图模式（list → group → tree → list 循环） */
   function toggleViewMode(): void {
-    viewMode.value = viewMode.value === 'list' ? 'group' : 'list'
+    const order: ViewMode[] = ['list', 'group', 'tree']
+    const idx = order.indexOf(viewMode.value)
+    viewMode.value = order[(idx + 1) % order.length]
   }
 
   /** 设置视图模式（Tab 切换用） */
-  function setViewMode(mode: 'list' | 'group'): void {
+  function setViewMode(mode: ViewMode): void {
     viewMode.value = mode
   }
 
@@ -769,6 +788,44 @@ export const useRequestStore = defineStore('request', () => {
     }
     collapsedDomains.value = all
     saveCollapsedDomains(all)
+  }
+
+  // ===== 树模式（tree）展开/折叠 Actions =====
+
+  /** 切换树节点展开/折叠（domain 根或 intermediate 路径段） */
+  function togglePathExpand(key: string): void {
+    const next = new Set(expandedPathKeys.value)
+    if (next.has(key)) next.delete(key)
+    else next.add(key)
+    expandedPathKeys.value = next
+  }
+
+  /** 树节点是否展开 */
+  function isPathExpanded(key: string): boolean {
+    return expandedPathKeys.value.has(key)
+  }
+
+  /** 收集所有可展开节点（domain 根 + 全部 intermediate）的 pathKey */
+  function collectAllPathKeys(): string[] {
+    const keys: string[] = []
+    function walk(node: PathNode): void {
+      if (node.kind === 'domain' || node.kind === 'intermediate') {
+        keys.push(node.pathKey)
+      }
+      for (const child of node.children) walk(child)
+    }
+    for (const root of pathTreeRequests.value) walk(root)
+    return keys
+  }
+
+  /** 展开树中所有节点（含中间节点，U7） */
+  function expandAllPaths(): void {
+    expandedPathKeys.value = new Set(collectAllPathKeys())
+  }
+
+  /** 折叠树中所有节点（回到全折叠，U7） */
+  function collapseAllPaths(): void {
+    expandedPathKeys.value = new Set()
   }
 
   // ===== 高级过滤 Actions =====
@@ -978,6 +1035,7 @@ export const useRequestStore = defineStore('request', () => {
     viewMode,
     searchQuery,
     collapsedDomains,
+    expandedPathKeys,
     domainSortMode,
     // ===== 新增 State =====
     filterState,
@@ -992,6 +1050,8 @@ export const useRequestStore = defineStore('request', () => {
     canCompare,
     groupedTreeRequests,
     flatTreeRows,
+    pathTreeRequests,
+    flatPathRows,
     displayRows,
     getDeviceName,
     // ===== 新增 Computed =====
@@ -1025,6 +1085,10 @@ export const useRequestStore = defineStore('request', () => {
     setDomainSortMode,
     expandAllDomains,
     collapseAllDomains,
+    togglePathExpand,
+    isPathExpanded,
+    expandAllPaths,
+    collapseAllPaths,
     /** 手动刷新缓冲（调试用） */
     flushPending,
     /** 销毁 store（清理定时器） */

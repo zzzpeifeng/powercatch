@@ -2,11 +2,12 @@
   <div class="flex-1 flex flex-col border-r border-gray-200 dark:border-gray-700" style="min-width: 380px; max-width: 42%;">
     <!-- 搜索筛选 -->
     <div class="p-2 border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 flex items-center gap-1.5">
+      <ViewModeSwitcher />
       <input
         :value="searchQuery"
         @input="store.setSearchQuery(($event.target as HTMLInputElement).value)"
         class="input input-sm text-xs flex-1"
-        :placeholder="viewMode === 'group' ? '搜索域名、路径、状态码...' : '搜索路径、状态码...'"
+        :placeholder="viewMode === 'list' ? '搜索路径、状态码...' : '搜索域名、路径、状态码、方法...'"
       />
       <!-- 过滤按钮 -->
       <button
@@ -25,9 +26,9 @@
           class="ml-0.5 px-1 py-px text-[9px] rounded-full bg-blue-500 dark:bg-blue-400 text-white leading-none"
         >{{ activeFilterCount }}</span>
       </button>
-      <!-- 域名排序下拉菜单（仅 group 模式显示） -->
+      <!-- 域名排序下拉菜单（group / tree 模式显示，仅作用于域名根，决策#4） -->
       <select
-        v-if="viewMode === 'group'"
+        v-if="viewMode === 'group' || viewMode === 'tree'"
         :value="domainSortMode"
         @change="store.setDomainSortMode(($event.target as HTMLSelectElement).value as DomainSortMode)"
         class="select select-xs text-xs bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded px-1.5 py-0.5 text-gray-600 dark:text-gray-300 cursor-pointer"
@@ -37,6 +38,20 @@
         <option value="alphabetical">字母序</option>
         <option value="firstSeen">首次出现</option>
       </select>
+
+      <!-- 树模式：展开全部 / 折叠全部（U7，含中间节点） -->
+      <template v-if="viewMode === 'tree'">
+        <button
+          class="px-1.5 py-0.5 text-[11px] rounded border border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:border-gray-300 dark:hover:border-gray-500 shrink-0"
+          title="展开全部（含中间节点）"
+          @click="store.expandAllPaths()"
+        >展开</button>
+        <button
+          class="px-1.5 py-0.5 text-[11px] rounded border border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:border-gray-300 dark:hover:border-gray-500 shrink-0"
+          title="折叠全部"
+          @click="store.collapseAllPaths()"
+        >折叠</button>
+      </template>
     </div>
 
     <!-- 过滤面板（展开态） -->
@@ -50,16 +65,16 @@
       ref="scrollerRef"
       class="flex-1 request-list-scroller"
       :items="displayRows"
-      :item-size="48"
+      :item-size="40"
       key-field="key"
       v-slot="{ item }"
       @scroll="onScroll"
     >
-      <!-- 域名节点行（group 模式） -->
+      <!-- 域名根行（group + tree 共用） -->
       <div
-        v-if="item.type === 'domain'"
+        v-if="item.type === 'domain' || item.nodeKind === 'domain'"
         class="scroller-item domain-row flex items-center gap-1.5 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50"
-        @click="store.toggleDomainExpand(item.host!)"
+        @click="item.nodeKind === 'domain' ? store.togglePathExpand(item.pathKey!) : store.toggleDomainExpand(item.host!)"
       >
         <span class="text-xs text-gray-400 w-3 shrink-0">{{ item.expanded ? '▼' : '▶' }}</span>
         <span class="text-xs shrink-0">🌐</span>
@@ -72,10 +87,81 @@
         <span v-if="item.hasChecked" class="w-1 h-6 bg-primary-500 rounded-full shrink-0"></span>
       </div>
 
-      <!-- 请求行（两种模式共用） -->
+      <!-- 中间路径段行（tree 模式） -->
+      <div
+        v-else-if="item.nodeKind === 'intermediate'"
+        class="scroller-item row-intermediate flex items-center gap-0.5 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 group leading-tight"
+        :style="{ paddingLeft: (item.depth * 12 + 20) + 'px' }"
+        @click="store.togglePathExpand(item.pathKey!)"
+      >
+        <!-- 展开/折叠箭头（连接线已移除，层级仅靠缩进区分） -->
+        <span class="text-[10px] text-gray-400 dark:text-gray-500 w-3.5 shrink-0 leading-none">{{ item.expanded ? '▼' : '▶' }}</span>
+        <!-- 路径段标签 -->
+        <span class="text-xs text-gray-600 dark:text-gray-400 truncate flex-1 group-hover:text-gray-900 dark:group-hover:text-gray-200 transition-colors">{{ item.segmentLabel }}</span>
+        <!-- 仅在有错误或 pending 时才显示标记（避免每行重复"X条"） -->
+        <span v-if="item.hasErrorDescendant" class="text-[10px] text-red-400 shrink-0 opacity-70 group-hover:opacity-100">⚠</span>
+        <span v-if="item.pendingCount && item.pendingCount > 0" class="text-[10px] text-yellow-500 shrink-0 opacity-70 group-hover:opacity-100">⏳{{ item.pendingCount }}</span>
+        <!-- hover 时显示后代计数 -->
+        <span class="text-[10px] text-gray-400 dark:text-gray-500 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity tabular-nums">{{ item.descendantCount }}</span>
+        <span v-if="item.hasCheckedDescendant" class="w-1 h-5 bg-primary-400 rounded-full shrink-0 opacity-60"></span>
+      </div>
+
+      <!-- 叶子请求行（tree 模式）：连接线 + 末段 + 方法徽章 + 状态 -->
+      <div
+        v-else-if="item.nodeKind === 'leaf'"
+        class="scroller-item row-leaf"
+        :style="{ paddingLeft: (item.depth * 12 + 20) + 'px' }"
+        :class="{
+          selected: selectedRequest?.id === item.request!.id,
+          'bg-blue-50 dark:bg-blue-900': item.request!.checked,
+          'bg-yellow-50 dark:bg-yellow-900/30': item.highlighted,
+        }"
+        @click="$emit('select', item.request!)"
+        @contextmenu.prevent="handleContextMenu($event, item.request!)"
+      >
+        <!-- 勾选框 + 内容（连接线已移除，层级仅靠缩进区分） -->
+        <input
+          type="checkbox"
+          :checked="item.request!.checked"
+          class="flex-shrink-0 cursor-pointer"
+          @click.stop="$emit('toggle-check', item.request!)"
+        />
+        <div class="flex-1 min-w-0 leading-tight">
+          <div class="flex items-center gap-1">
+            <span class="text-xs font-medium shrink-0" :class="methodClass(item.request!.method)">{{ item.request!.method }}</span>
+            <span
+              class="text-xs font-medium truncate"
+              :class="isLeafError(item) ? 'text-red-600 dark:text-red-400' : 'text-gray-700 dark:text-gray-300'"
+              :title="item.request!.path"
+            ><span :class="{ 'font-bold': isSegmentHighlighted(item) }">{{ item.segmentLabel }}</span></span>
+            <span
+              v-if="item.request!.isGraphQL && item.request!.graphQLOperationName"
+              class="text-[10px] px-1.5 py-0.5 rounded-full shrink-0"
+              :class="graphQLOperationClass(item.request!.graphQLOperationType)"
+            >
+              {{ item.request!.graphQLOperationName }}
+            </span>
+            <span
+              v-if="item.request!.isWebSocket"
+              class="text-[10px] px-1.5 py-0.5 rounded-full shrink-0 bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200"
+              title="WebSocket 连接"
+            >
+              🔌 WS
+            </span>
+          </div>
+          <div class="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
+            <span class="text-gray-500 dark:text-gray-400 shrink-0 font-mono tabular-nums">{{ formatTime(item.request!.capturedAt) }}</span>
+            <span :class="item.request!.statusCode ? statusClass(item.request!.statusCode) : 'text-gray-400'">{{ item.request!.statusCode ?? '-' }}</span>
+            <span v-if="item.request!.statusCode !== null">{{ item.request!.duration }}ms</span>
+            <span class="truncate">{{ item.request!.deviceName || item.request!.clientIp }}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 请求行（list / group 模式共用，原样保留） -->
       <div
         v-else
-        class="scroller-item"
+        class="scroller-item row-request"
         :style="{ paddingLeft: `${item.depth * 20 + 8}px` }"
         :class="{
           selected: selectedRequest?.id === item.request!.id,
@@ -165,15 +251,16 @@
 
 <script setup lang="ts">
 import { RecycleScroller } from 'vue-virtual-scroller'
-import { ref, watch, nextTick } from 'vue'
+import { ref, computed, watch, nextTick } from 'vue'
 import { useRequestStore } from '../stores/request-store'
 import { storeToRefs } from 'pinia'
-import type { CaptureRequest, DomainSortMode } from '../services/types'
+import type { CaptureRequest, DomainSortMode, FlatTreeNode } from '../services/types'
 import { formatHostWithProtocol } from '../utils/url-formatter'
 import FilterPanel from './FilterPanel.vue'
 import ActiveFilterTags from './ActiveFilterTags.vue'
 import RequestContextMenu from './RequestContextMenu.vue'
 import ReplayDialog from './ReplayDialog.vue'
+import ViewModeSwitcher from './ViewModeSwitcher.vue'
 import { useToast } from '../composables/useToast'
 import { ipc } from '../services/ipc'
 
@@ -188,6 +275,10 @@ const userScrolled = ref(false)
 const contextMenu = ref({ visible: false, x: 0, y: 0, request: null as CaptureRequest | null })
 const replayDialog = ref({ visible: false, request: null as CaptureRequest | null })
 const toast = useToast()
+
+// 注意：行高曾用 sizeField + sizedRows 可变方案，但 vue-virtual-scroller 在 itemSize=null 时
+// 依赖 sizes 缓存的响应式计算，真实 Electron 渲染首帧可能高度计算失败导致列表空白；
+// 已回退为固定 :item-size（见下方模板 RecycleScroller），由 scoped 样式统一覆盖为 40px。
 
 function onScroll(): void {
   if (scrollerRef.value) {
@@ -242,7 +333,7 @@ function handleEditAndReplay(request: CaptureRequest): void {
 }
 
 watch(
-  () => store.flatTreeRows,
+  () => store.displayRows,
   () => {
     if (store.isRecording && !userScrolled.value && !store.searchQuery) {
       nextTick(() => {
@@ -271,6 +362,19 @@ function methodClass(method: string): string {
     PATCH: 'method-patch',
   }
   return classes[method] || 'badge bg-gray-100 text-gray-700'
+}
+
+/** 叶子是否为错误请求（4xx/5xx） */
+function isLeafError(item: FlatTreeNode): boolean {
+  const code = item.request?.statusCode
+  return code !== null && code !== undefined && code >= 400
+}
+
+/** 搜索命中段高亮判定：查询词命中末段标签 */
+function isSegmentHighlighted(item: FlatTreeNode): boolean {
+  const q = searchQuery.value.trim().toLowerCase()
+  if (!q || !item.segmentLabel) return false
+  return item.segmentLabel.toLowerCase().includes(q)
 }
 
 function graphQLOperationClass(type?: string): string {
@@ -322,3 +426,19 @@ function formatTime(iso: string | null | undefined): string {
   return `${MM}-${DD} ${hh}:${mm}`
 }
 </script>
+
+<style scoped>
+/* 连接线已移除：树状模式改用纯缩进区分子级（各 tree 行 paddingLeft = depth*12+20），避免拐角形似【「】 */
+
+
+/* ── 行高统一压缩为 40px（覆盖全局 .scroller-item 的 48px）──
+   使用固定 :item-size="40"，滚动定位与可见行高均由该常量驱动，二者必须一致。
+   曾尝试按行类型用 sizeField 可变行高（domain 44 / intermediate 32 / leaf 46），
+   但 vue-virtual-scroller 在 itemSize=null 时依赖响应式 sizes 缓存计算总高度，
+   真机（Electron）首帧缓存未就绪 → 总高=0 → 列表白屏/应用打不开，故回退固定值。
+   仅调整高度，不改变任何文本、箭头、徽章、菜单等行为。 */
+.scroller-item {
+  height: 40px;
+  min-height: 40px;
+}
+</style>

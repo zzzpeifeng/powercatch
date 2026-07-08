@@ -1,0 +1,77 @@
+%% PowerCatch Structure 路径递归树 —— 类 / 类型图
+classDiagram
+    class CaptureRequest {
+        +string id
+        +HttpMethod method
+        +string url
+        +string path
+        +string host
+        +number statusCode
+        +number duration
+        +string capturedAt
+        +boolean selected
+        +boolean checked
+    }
+
+    class PathNode {
+        +NodeKind kind
+        +string key
+        +number depth
+        +string segment
+        +string path
+        +string collapsedKey
+        +PathNode[] children
+        +number descendantCount
+        +number errorCount
+        +boolean hasErrorDescendant
+        +number pendingCount
+        +string latestCapturedAt
+        +string firstSeenCapturedAt
+        +boolean hasSelectedDescendant
+        +boolean hasCheckedDescendant
+        +string displayHost
+        +CaptureRequest request
+        +boolean isLastChild
+        +boolean[] ancestorIsLast
+        +buildPathTree(requests, mode) PathNode$
+        +flattenPathTree(nodes, collapsed, query) FlatTreeNode$
+        +filterPathTreeForSearch(nodes, q) Set$
+    }
+
+    class FlatTreeNode {
+        +NodeKind nodeKind
+        +string key
+        +number depth
+        +string segmentLabel
+        +string collapsedKey
+        +boolean isLeaf
+        +number descendantCount
+        +number errorCount
+        +boolean hasError
+        +number pendingCount
+        +boolean expanded
+        +boolean hasSelected
+        +boolean hasChecked
+        +string displayHost
+        +CaptureRequest request
+        +boolean isLastChild
+        +boolean[] ancestorIsLast
+        +boolean isSearchHit
+        +boolean highlightAncestor
+    }
+
+    class NodeKind {
+        <<enumeration>>
+        domain
+        intermediate
+        leaf
+    }
+
+    PathNode "1" *-- "0..*" PathNode : children
+    PathNode ..> CaptureRequest : leaf holds
+    PathNode ..> NodeKind : kind
+    FlatTreeNode ..> CaptureRequest : leaf references
+    FlatTreeNode ..> NodeKind : nodeKind
+
+    note for PathNode "domain根 depth=0\nintermediate depth>0 含children\nleaf 含 request 无 children\n折叠key = host + '/' + segments.join('/')"
+    note for FlatTreeNode "虚拟滚动消费行\n连接线数据: isLastChild + ancestorIsLast[]\n搜索标记: isSearchHit / highlightAncestor"

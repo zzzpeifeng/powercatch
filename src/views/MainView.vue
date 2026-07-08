@@ -89,10 +89,11 @@
 
     <!-- 主内容区：可拖拽上下分割 -->
     <div ref="containerRef" class="flex-1 flex flex-col overflow-hidden">
-      <!-- 上半区：请求列表 + 请求详情 -->
+      <!-- 上半区：请求列表 + 请求详情（最小化对比面板时改为 flex-1 吃掉全部空间） -->
       <div
-        class="flex overflow-hidden shrink-0"
-        :style="{ height: `calc(${splitPct}% - 3px)` }"
+        :class="compareMinimized ? 'flex-1' : 'shrink-0'"
+        class="flex overflow-hidden"
+        :style="compareMinimized ? {} : { height: `calc(${splitPct}% - 3px)` }"
       >
         <!-- 请求列表 -->
         <RequestList
@@ -114,8 +115,9 @@
 
       <!-- 下半区：AI 对比结果（始终渲染，无结果时显示占位） -->
       <div
-        class="flex-1 overflow-hidden min-h-0"
-        :style="{ height: `calc(${100 - splitPct}% - 3px)` }"
+        :class="compareMinimized ? 'shrink-0' : 'flex-1'"
+        class="overflow-hidden min-h-0"
+        :style="compareMinimized ? { height: 'auto' } : { height: `calc(${100 - splitPct}% - 3px)` }"
       >
         <CompareResult
           :compare-result="requestStore.compareResult"
@@ -127,6 +129,7 @@
           @export-result="showExportMenu = true"
           @close="requestStore.compareResult = null"
           @recompare="handleCompare"
+          @minimize-change="(v: boolean) => (compareMinimized = v)"
         />
       </div>
     </div>
@@ -218,6 +221,8 @@ watch(() => requestStore.viewMode, () => {
 
 // 拖拽分割线：上下比例（上半区百分比），默认 60/40
 const splitPct = ref<number>(60)
+/** 下半区 AI 对比结果是否最小化（默认最小化，收起只留标题栏，把空间还给列表） */
+const compareMinimized = ref<boolean>(true)
 
 // 从 localStorage 恢复上次的比例
 onMounted(() => {

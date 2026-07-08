@@ -1,0 +1,38 @@
+%% PowerCatch Structure 路径递归树 —— 程序调用流程时序图
+%% 三个场景：新请求构建 / 展开折叠 / 搜索
+
+sequenceDiagram
+    participant IPC as proxy:new-request
+    participant Store as request-store
+    participant FB as tree-builder
+    participant VL as RequestList / RecycleScroller
+
+    Note over IPC,VL: === 场景一：新请求 → 树构建 → 渲染 ===
+    IPC->>Store: addRequest(req)
+    Store->>Store: pendingRequests.push / flushPending
+    Note over Store: requests ref 更新
+    Store->>Store: filteredRequests（域名过滤 + 高级过滤 + 反转）
+    Store->>FB: buildPathTree(filteredRequests, domainSortMode)
+    FB-->>Store: PathNode[]（pathTree computed）
+    Store->>FB: flattenPathTree(pathTree, collapsedPaths, searchQuery)
+    FB-->>Store: FlatTreeNode[]（flatTreeRows computed）
+    Store-->>VL: displayRows
+    VL->>VL: RecycleScroller 渲染 N 层行
+
+    Note over IPC,VL: === 场景二：展开 / 折叠 ===
+    VL->>Store: togglePathExpand(collapsedKey)
+    Store->>Store: collapsedPaths Set 增/删 key
+    Note over Store: flatTreeRows computed 重算
+    Store->>FB: flattenPathTree(pathTree, collapsedPaths, query)
+    FB-->>Store: 新的 FlatTreeNode[]
+    Store-->>VL: displayRows 更新
+    VL->>VL: RecycleScroller 局部重渲染（DOM 不退化）
+
+    Note over IPC,VL: === 场景三：搜索（祖先链展开 + 高亮）===
+    VL->>Store: setSearchQuery(q)
+    Store->>FB: filterPathTreeForSearch(pathTree, q)
+    FB-->>Store: 命中祖先 key 集合 + 命中叶子
+    Store->>FB: flattenPathTree(pathTree, collapsedPaths, q, matchedKeys)
+    FB-->>Store: FlatTreeNode[]（仅命中链、强制展开、标记 isSearchHit / highlightAncestor）
+    Store-->>VL: displayRows
+    VL->>VL: 高亮命中叶子 + 祖先浅色高亮

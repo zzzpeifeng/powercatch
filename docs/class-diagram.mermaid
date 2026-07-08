@@ -1,83 +1,74 @@
 classDiagram
-    class AIAnalyzeService {
-        -openai: OpenAI
-        -modelName: string
-        -maxToolCalls: number
-        +analyze(request: AnalyzeRequest): Promise~AnalyzeResult~
-        +analyzeWithAgent(request: AgentAnalyzeRequest): Promise~AgentAnalyzeResult~
-        -buildSystemPrompt(): string
-        -buildUserPrompt(method: string, url: string): string
-        -parseAIResponse(content: string): ParsedResponse
+    class CaptureRequest {
+        +string id
+        +HttpMethod method
+        +string url
+        +string path
+        +string host
+        +number statusCode
+        +number duration
+        +string capturedAt
+        +boolean selected
+        +boolean checked
+        +boolean isGraphQL
+        +boolean isWebSocket
     }
 
-    class AIAgentToolExecutor {
-        -clonePath: string
-        +executeTool(toolName: string, args: Record~string, any~): Promise~string~
-        +listDirectory(path: string): string
-        +readFile(path: string): string
-        +searchCode(keyword: string, filePattern?: string): string
-        +getFileTree(): string
+    class DomainNode {
+        +type: 'domain'
+        +string host
+        +CaptureRequest[] children
+        +number count
+        +boolean hasError
+        +number pendingCount
+        +string latestCapturedAt
+        +string firstSeenCapturedAt
+        +boolean hasSelected
+        +boolean hasChecked
     }
 
-    class AIAnalysisCache {
-        -cache: Map~string, CacheEntry~
-        +get(cacheKey: string): AnalyzeResult | null
-        +set(cacheKey: string, result: AnalyzeResult): void
-        +invalidate(cacheKey: string): void
-        +clear(): void
+    class PathNode {
+        +TreePathKind kind
+        +string segment
+        +number depth
+        +string host
+        +string pathKey
+        +PathNode[] children
+        +number descendantCount
+        +boolean hasErrorDescendant
+        +number pendingCount
+        +boolean hasSelectedDescendant
+        +boolean hasCheckedDescendant
+        +string firstSeenCapturedAt
+        +CaptureRequest request
+        +string displayHost
     }
 
-    class ScanWorkerManager {
-        -worker: Worker | null
-        -ready: boolean
-        +abort(): void
-        +destroy(): void
+    class FlatTreeNode {
+        +TreeNodeType type
+        +string key
+        +number depth
+        +TreePathKind nodeKind
+        +string segmentLabel
+        +string pathKey
+        +boolean isLeaf
+        +number descendantCount
+        +boolean hasErrorDescendant
+        +number pendingCount
+        +boolean expanded
+        +boolean[] connectorVertical
+        +boolean isLastChild
+        +boolean hasSelectedDescendant
+        +boolean hasCheckedDescendant
+        +string host
+        +string displayHost
+        +number count
+        +CaptureRequest request
     }
 
-    class AIAnalysisStore {
-        -analyzing: boolean
-        -phase: AnalysisPhase
-        -logs: AnalysisLogEntry[]
-        -deepAnalysisMode: boolean
-        +startAnalysis(request: CodeAnalysisRequest): Promise~void~
-        +cancelAnalysis(): Promise~void~
-        +appendLog(entry: LogEntry): void
-    }
-
-    class AnalyzeRequest {
-        +clonePath: string
-        +method: string
-        +url: string
-        +enableDeepAnalysis: boolean
-    }
-
-    class AgentAnalyzeRequest {
-        +clonePath: string
-        +method: string
-        +url: string
-        +analysisDepth: "quick" | "deep"
-    }
-
-    class AnalyzeResult {
-        +success: boolean
-        +analysis: string
-        +scenarios: AnalysisScenario[]
-        +handlerFile: string
-        +handlerFunction: string
-    }
-
-    class AnalysisScenario {
-        +scenarioName: string
-        +scenarioType: string
-        +callChain: CallChainStep[]
-        +curlCommand: string
-        +pythonAssertion: string
-    }
-
-    AIAnalyzeService --> AIAgentToolExecutor : uses
-    AIAnalyzeService --> AIAnalysisCache : uses (optional)
-    AIAnalyzeService --> OpenAI : uses
-    AIAnalysisStore --> AIAnalyzeService : calls
-    AIAnalyzeService ..> AnalyzeRequest : accepts
-    AIAnalyzeService ..> AnalyzeResult : returns
-    AnalyzeResult --> AnalysisScenario : contains
+    PathNode "1" *-- "0..*" PathNode : children
+    PathNode "leaf 1" o-- "1" CaptureRequest : request
+    DomainNode "1" *-- "0..*" CaptureRequest : children
+    note for PathNode "tree 模式递归结构，由 buildPathTree() 构建\ndomain(0) → intermediate → leaf(request)"
+    note for FlatTreeNode "list/group/tree 三种模式共用的统一展平行\n由 flattenTree() / flattenPathTree() 投影生成"
+    note for DomainNode "group 模式保留不变，与 PathNode 平行共存"
