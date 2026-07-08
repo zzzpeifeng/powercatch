@@ -35,6 +35,7 @@
         <option value="latest">最新活动</option>
         <option value="count">请求量</option>
         <option value="alphabetical">字母序</option>
+        <option value="firstSeen">首次出现</option>
       </select>
     </div>
 

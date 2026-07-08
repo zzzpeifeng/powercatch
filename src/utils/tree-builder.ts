@@ -67,6 +67,8 @@ export function buildDomainTree(requests: CaptureRequest[], sortMode: DomainSort
       hasError,
       pendingCount,
       latestCapturedAt: children[0]?.capturedAt || '',
+      // children 已按 capturedAt 降序，取到最早一条（数组末位）作为首次出现时间
+      firstSeenCapturedAt: children[children.length - 1]?.capturedAt || '',
       hasSelected,
       hasChecked,
     })
@@ -97,6 +99,14 @@ export function sortDomains(domains: DomainNode[], mode: DomainSortMode): Domain
     case 'alphabetical':
       sorted.sort((a, b) => a.host.localeCompare(b.host))
       break
+    case 'firstSeen': {
+      // 首次出现顺序：按域名下最早一条请求的 capturedAt 升序（最早出现排最前）
+      // 已有域名收到新请求不改变其 firstSeenCapturedAt，故相对顺序稳定
+      const ts = new Map<DomainNode, number>()
+      for (const d of sorted) ts.set(d, new Date(d.firstSeenCapturedAt).getTime())
+      sorted.sort((a, b) => ts.get(a)! - ts.get(b)!)
+      break
+    }
   }
   // '(unknown)' 始终排最后
   const unknownIdx = sorted.findIndex(d => d.host === '(unknown)')

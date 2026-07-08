@@ -1294,7 +1294,7 @@ export type SizeRange = 'tiny' | 'small' | 'medium' | 'large' | 'empty'
 // empty: 0 字节, tiny: <1KB, small: 1-10KB, medium: 10-100KB, large: >100KB
 
 /** 域名排序模式 */
-export type DomainSortMode = 'latest' | 'count' | 'alphabetical'
+export type DomainSortMode = 'latest' | 'count' | 'alphabetical' | 'firstSeen'
 
 /** 树节点类型 */
 export type TreeNodeType = 'domain' | 'request'
@@ -1308,6 +1308,8 @@ export interface DomainNode {
   hasError: boolean
   pendingCount: number
   latestCapturedAt: string
+  /** 该域名下最早一条请求的 capturedAt（首次出现顺序排序用，新增请求不改变） */
+  firstSeenCapturedAt: string
   hasSelected: boolean
   hasChecked: boolean
 }

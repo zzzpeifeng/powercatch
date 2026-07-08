@@ -100,8 +100,8 @@ export const useRequestStore = defineStore('request', () => {
   /** 折叠的域名集合（存"已折叠"，默认展开） */
   const collapsedDomains = ref<Set<string>>(loadCollapsedDomains())
 
-  /** 域名排序模式 */
-  const domainSortMode = ref<DomainSortMode>('latest')
+  /** 域名排序模式（默认「首次出现」：新增请求不改变根域名相对顺序） */
+  const domainSortMode = ref<DomainSortMode>('firstSeen')
 
   /** 高级过滤条件（不持久化，刷新后清空） */
   const filterState = ref<FilterState>({
