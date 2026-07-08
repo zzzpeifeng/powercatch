@@ -374,7 +374,7 @@ const props = defineProps<{
   diffResult: DiffResult | null
 }>()
 
-defineEmits<{
+const emit = defineEmits<{
   (e: 'export-result'): void
   (e: 'close'): void
   (e: 'recompare'): void

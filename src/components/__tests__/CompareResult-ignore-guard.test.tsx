@@ -106,7 +106,7 @@ function suggestionsOnce(list: any[]): void {
 
 function mountCmp(props: Record<string, unknown>): VueWrapper<any> {
   return mount(CompareResult, {
-    props: { compareResult, streamingText: '', loadingStates, ...props },
+    props: { compareResult, streamingText: '', loadingStates, requestA: null, requestB: null, diffResult: null, ...props },
   })
 }
 

@@ -58,7 +58,7 @@ describe('IgnoreSuggestionsModal.vue', () => {
 
     // 取消第一个（x-request-id）：用 setChecked 触发 change
     const boxes = wrapper.findAll('input[type="checkbox"]')
-    await boxes[0].setChecked(false)
+    await boxes[0].setValue(false)
     await flushPromises()
     await wrapper.vm.$nextTick()
 
@@ -137,7 +137,7 @@ describe('IgnoreSuggestionsModal.vue', () => {
 
     // 取消一项后计数变 3，按钮仍 enabled
     const boxes = wrapper.findAll('input[type="checkbox"]')
-    await boxes[0].setChecked(false)
+    await boxes[0].setValue(false)
     await flushPromises()
     await wrapper.vm.$nextTick()
     expect(wrapper.text()).toContain('应用选中 (3)')

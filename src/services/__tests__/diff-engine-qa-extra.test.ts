@@ -89,9 +89,9 @@ describe('QA-Extra: 用户规则为空 / 显式忽略时不混入任何内置名
     const a = applyIgnoreRules(reqA, effective)
     const b = applyIgnoreRules(reqB, effective)
     const diff = computeDiff(a, b)
-    const tsDelta = (diff.requestBody.delta ?? []).find((d) => d.path === 'data.timestamp')
+    const tsDelta = (diff.requestBody.delta ?? []).find((d: any) => d.path === 'data.timestamp')
     expect(tsDelta).toBeUndefined()
     // 业务字段 id 相同，仍无差异
-    expect((diff.requestBody.delta ?? []).find((d) => d.path === 'data.id')).toBeUndefined()
+    expect((diff.requestBody.delta ?? []).find((d: any) => d.path === 'data.id')).toBeUndefined()
   })
 })

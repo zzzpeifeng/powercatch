@@ -52,6 +52,7 @@ interface ElectronAPI {
   }
   ai: {
     compare: (requestA: CaptureRequest, requestB: CaptureRequest) => Promise<{ success: boolean; result?: CompareResult; error?: string }>
+    ignoreSuggestions: (requestA: CaptureRequest, requestB: CaptureRequest) => Promise<{ success: boolean; suggestions?: IgnoreSuggestion[]; error?: string }>
     onStreamChunk: (callback: (chunk: string) => void) => () => void
     onStreamEnd: (callback: (result: CompareResult) => void) => () => void
     testConnection: (apiUrl: string, apiKey: string, modelName: string) => Promise<{ success: boolean; message: string }>
