@@ -264,7 +264,7 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import type { CompareResult, LoadingStates } from '../services/types'
+import type { CompareResult, LoadingStates, ViewMode } from '../services/types'
 import DropdownMenu from './DropdownMenu.vue'
 
 defineProps<{
@@ -276,7 +276,7 @@ defineProps<{
   compareResult: CompareResult | null
   loadingStates: LoadingStates
   domainFilters: string[]
-  viewMode: 'list' | 'group'
+  viewMode: ViewMode
   breakpointCount: number
   showBreakpointRules: boolean
   mapLocalCount: number

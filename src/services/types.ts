@@ -1299,6 +1299,12 @@ export type DomainSortMode = 'latest' | 'count' | 'alphabetical' | 'firstSeen'
 /** 树节点类型 */
 export type TreeNodeType = 'domain' | 'request'
 
+/** 视图模式：列表 / 域名分组 / 树状路径 */
+export type ViewMode = 'list' | 'group' | 'tree'
+
+/** 树节点种类（tree 模式展平行用） */
+export type TreePathKind = 'domain' | 'intermediate' | 'leaf'
+
 /** 域名节点（树的非叶子节点） */
 export interface DomainNode {
   type: 'domain'
@@ -1312,6 +1318,44 @@ export interface DomainNode {
   firstSeenCapturedAt: string
   hasSelected: boolean
   hasChecked: boolean
+}
+
+/**
+ * 递归路径树节点（tree 模式结构来源）
+ * 按 host 分组后，以 path 切段递归构建 trie；域名根 → 中间路径段 → 叶子请求。
+ * 由 `buildPathTree()` 构建，`flattenPathTree()` 展平为虚拟滚动行。
+ */
+export interface PathNode {
+  /** 节点种类：域名根 / 中间路径段 / 叶子请求 */
+  kind: TreePathKind
+  /** 层级标签：domain=host；intermediate=段名；leaf=末段名（空路径为 '(root)'） */
+  segment: string
+  /** 从 0 起（domain=0，第一层段=1 …） */
+  depth: number
+  /** 所属域名（便于构造安全 key） */
+  host: string
+  /** 逻辑路径标识：domain=`host`；intermediate=`host::seg1/seg2`；leaf=`host::seg1/.../末段` */
+  pathKey: string
+  /** 子节点（domain/intermediate 含子节点；leaf 为空数组） */
+  children: PathNode[]
+  /** 后代 request 叶子总数（叶子自身=1） */
+  descendantCount: number
+  /** 子树是否含 4xx/5xx */
+  hasErrorDescendant: boolean
+  /** 子树内 statusCode=null 的数量 */
+  pendingCount: number
+  /** 子树是否含已选中（selected）请求 */
+  hasSelectedDescendant: boolean
+  /** 子树是否含已勾选（checked）请求 */
+  hasCheckedDescendant: boolean
+  /** 子树最早请求 capturedAt（稳定排序锚，中间节点取 min） */
+  firstSeenCapturedAt: string
+  /** 子树最新请求 capturedAt（'latest' 排序用） */
+  latestCapturedAt: string
+  /** 叶子绑定的请求（domain/intermediate 为 undefined） */
+  request?: CaptureRequest
+  /** 带协议域名（如 https://api.example.com），仅 domain 根使用 */
+  displayHost?: string
 }
 
 /** 展平后的虚拟滚动行（统一格式） */
@@ -1333,6 +1377,30 @@ export interface FlatTreeNode {
   hasChecked?: boolean
   /** request 字段 */
   request?: CaptureRequest
+
+  // ===== tree 模式新增字段（全部可选，保证 list/group 零回归）=====
+  /** 节点种类（tree 模式：domain / intermediate / leaf） */
+  nodeKind?: TreePathKind
+  /** 行首显示的路径段（domain=host，intermediate=段名，leaf=末段名） */
+  segmentLabel?: string
+  /** 逻辑路径标识（折叠 set / 祖先链计算用，叶子亦带以便高亮） */
+  pathKey?: string
+  /** 是否为叶子请求（对应既有 request 语义） */
+  isLeaf?: boolean
+  /** 中间节点徽标「N 条」 */
+  descendantCount?: number
+  /** 子树是否含错误 */
+  hasErrorDescendant?: boolean
+  /** 子树是否含已选中请求 */
+  hasSelectedDescendant?: boolean
+  /** 子树是否含已勾选请求 */
+  hasCheckedDescendant?: boolean
+  /** 连接线：祖先 i 是否有后续兄弟（true=画 │） */
+  connectorVertical?: boolean[]
+  /** 自身是否父节点最后一个子（true=└─，false=├─） */
+  isLastChild?: boolean
+  /** 搜索命中高亮标记 */
+  highlighted?: boolean
 }
 
 /** 会话元数据（Session = 元数据 + 时间范围引用，不复制请求数据） */
@@ -1350,7 +1418,7 @@ export interface CaptureSession {
   /** 过滤条件 JSON（FilterState 的序列化） */
   filtersJson?: string
   /** 视图模式 */
-  viewMode: 'list' | 'group'
+  viewMode: ViewMode
   /** 域名过滤 JSON（string[] 的序列化） */
   domainFiltersJson?: string
   /** 创建时间 */

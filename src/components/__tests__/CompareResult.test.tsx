@@ -133,6 +133,7 @@ function mountDefault(props: Partial<{
   requestA: CaptureRequest | null
   requestB: CaptureRequest | null
   diffResult: DiffResult | null
+  defaultMinimized?: boolean
 }> = {}): VueWrapper<any> {
   return mount(CompareResult, {
     props: {
@@ -142,6 +143,9 @@ function mountDefault(props: Partial<{
       requestA,
       requestB,
       diffResult,
+      // 默认展开，保证既有断言（依赖 Tab / 概览条 / 内容可见）不受影响；
+      // 最小化行为由下方「最小化」专属用例显式以 defaultMinimized 控制。
+      defaultMinimized: false,
       ...props,
     },
   })
@@ -264,6 +268,50 @@ describe('CompareResult.vue', () => {
     expect(wrapper.text()).toContain('勾选两个请求后点击')
     // 不应出现请求 A 栏
     expect(wrapper.text()).not.toContain('请求 A')
+  })
+})
+
+// ===== 改动 D：最小化按钮（默认最小化，收起 body 仅留标题栏）=====
+describe('CompareResult.vue 最小化（改动 D）', () => {
+  let wrapper: VueWrapper<any>
+
+  afterEach(() => {
+    if (wrapper) wrapper.unmount()
+  })
+
+  it('D-1 默认最小化（defaultMinimized=true）：仅标题栏可见，Tab 栏收起', () => {
+    wrapper = mountDefault({ defaultMinimized: true })
+
+    // 标题栏始终可见
+    expect(wrapper.text()).toContain('AI 对比结果')
+    // body（Tab 栏 / 概览条 / 内容）被收起
+    expect(wrapper.findAll('.tab-item')).toHaveLength(0)
+    expect(wrapper.text()).not.toContain('差异 6 处')
+    // 最小化按钮存在，当前语义为「展开」
+    expect(wrapper.find('button[title="展开"]').exists()).toBe(true)
+  })
+
+  it('D-2 点击最小化按钮 → 展开 body 并 emit minimize-change(false)', async () => {
+    wrapper = mountDefault({ defaultMinimized: true })
+
+    const btn = wrapper.find('button[title="展开"]')
+    await btn.trigger('click')
+    await wrapper.vm.$nextTick()
+
+    // body 已展开（Tab 栏出现、概览条出现）
+    expect(wrapper.findAll('.tab-item')).toHaveLength(3)
+    expect(wrapper.text()).toContain('差异 6 处')
+    // 冒泡最小化状态：展开 = false
+    expect(wrapper.emitted('minimize-change')).toBeTruthy()
+    expect(wrapper.emitted('minimize-change')![0]).toEqual([false])
+    // 按钮语义切换为「最小化」
+    expect(wrapper.find('button[title="最小化"]').exists()).toBe(true)
+  })
+
+  it('D-3 defaultMinimized=false → body 默认展开', () => {
+    wrapper = mountDefault({ defaultMinimized: false })
+    expect(wrapper.findAll('.tab-item')).toHaveLength(3)
+    expect(wrapper.text()).toContain('差异 6 处')
   })
 })
 

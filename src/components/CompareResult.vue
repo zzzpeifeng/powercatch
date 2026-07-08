@@ -42,6 +42,11 @@
       </div>
       <div class="flex items-center gap-2">
         <button
+          class="btn-ghost flex items-center justify-center w-6 h-6 rounded text-xs"
+          :title="minimized ? '展开' : '最小化'"
+          @click="toggleMinimize"
+        ><span class="leading-none">{{ minimized ? '▢' : '—' }}</span></button>
+        <button
           v-if="compareResult"
           class="btn-ghost btn-sm text-xs"
           @click="$emit('export-result')"
@@ -60,6 +65,8 @@
       </div>
     </div>
 
+    <!-- 收起区：最小化时隐藏概览条 / Tab / 内容，仅留标题栏 -->
+    <template v-if="!minimized">
     <!-- 概览条：same/different chips + 变更统计徽章（基于本地重算的 displayDiff） -->
     <div
       v-if="displayDiff"
@@ -338,6 +345,7 @@
         </div>
       </template>
     </div>
+    </template>
 
     <!-- AI 智能忽略建议弹窗（对比完成后自动弹出，列出可忽略字段供勾选） -->
     <IgnoreSuggestionsModal
@@ -372,13 +380,25 @@ const props = defineProps<{
   requestA: CaptureRequest | null
   requestB: CaptureRequest | null
   diffResult: DiffResult | null
+  /** 初始是否最小化（默认最小化，仅留标题栏）；测试可传 false 展开 */
+  defaultMinimized?: boolean
 }>()
 
 const emit = defineEmits<{
   (e: 'export-result'): void
   (e: 'close'): void
   (e: 'recompare'): void
+  (e: 'minimize-change', value: boolean): void
 }>()
+
+/** 面板最小化状态（默认最小化：收起概览条 / Tab / 内容，仅留标题栏） */
+const minimized = ref(props.defaultMinimized ?? true)
+
+/** 切换最小化并通知父组件（MainView 据此调整下半区高度，把空间还给列表） */
+function toggleMinimize(): void {
+  minimized.value = !minimized.value
+  emit('minimize-change', minimized.value)
+}
 
 /** 设置 store：AI 对比模板快速切换（从工具栏移入标题栏） */
 const settingsStore = useSettingsStore()
