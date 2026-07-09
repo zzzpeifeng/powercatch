@@ -1,29 +1,8 @@
 <template>
   <div class="flex items-center gap-2 px-3 py-2 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
-    <!-- 左侧：视图切换 Tab + 录制按钮 -->
+    <!-- 左侧：录制按钮 -->
     <div class="flex items-center gap-2">
-      <!-- 视图切换 Tab -->
-      <div class="flex items-center rounded-lg bg-gray-100 dark:bg-gray-700 p-0.5">
-        <button
-          class="px-3 h-8 text-xs font-medium rounded-md transition-all duration-200"
-          :class="viewMode === 'group'
-            ? 'bg-white dark:bg-gray-700 text-primary-600 dark:text-primary-400 shadow-sm'
-            : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'"
-          @click="$emit('switch-view', 'group')"
-        >
-          Structure
-        </button>
-        <button
-          class="px-3 h-8 text-xs font-medium rounded-md transition-all duration-200"
-          :class="viewMode === 'list'
-            ? 'bg-white dark:bg-gray-700 text-primary-600 dark:text-primary-400 shadow-sm'
-            : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'"
-          @click="$emit('switch-view', 'list')"
-        >
-          Sequence
-        </button>
-      </div>
-
+      <!-- 视图切换 Tab 已合并至 ViewModeSwitcher（列表/分组/树状 三态），原 Sequence/Structure 两态 tab 在此删除，避免与单一入口重复 -->
       <!-- 录制按钮（绿色胶囊形） -->
       <button
         class="flex items-center gap-2 px-4 h-8 rounded-full text-xs font-medium transition-all duration-200"
@@ -264,7 +243,7 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import type { CompareResult, LoadingStates, ViewMode } from '../services/types'
+import type { CompareResult, LoadingStates } from '../services/types'
 import DropdownMenu from './DropdownMenu.vue'
 
 defineProps<{
@@ -276,7 +255,6 @@ defineProps<{
   compareResult: CompareResult | null
   loadingStates: LoadingStates
   domainFilters: string[]
-  viewMode: ViewMode
   breakpointCount: number
   showBreakpointRules: boolean
   mapLocalCount: number
@@ -297,7 +275,6 @@ defineEmits<{
   (e: 'compare'): void
   (e: 'export-result'): void
   (e: 'clear'): void
-  (e: 'switch-view', mode: 'list' | 'group'): void
   (e: 'toggle-breakpoint'): void
   (e: 'toggle-map-local'): void
   (e: 'toggle-map-remote'): void
