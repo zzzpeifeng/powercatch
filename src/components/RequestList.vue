@@ -1,5 +1,5 @@
 <template>
-  <div class="flex-1 flex flex-col border-r border-gray-200 dark:border-gray-700" style="min-width: 380px; max-width: 42%;">
+  <div class="flex flex-col">
     <!-- 搜索筛选 -->
     <div class="p-2 border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 flex items-center gap-1.5">
       <ViewModeSwitcher />
@@ -65,7 +65,8 @@
       ref="scrollerRef"
       class="flex-1 request-list-scroller"
       :items="displayRows"
-      :item-size="40"
+      :item-size="viewMode === 'tree' ? 30 : 40"
+      :style="{ '--row-h': viewMode === 'tree' ? '30px' : '40px' }"
       key-field="key"
       v-slot="{ item }"
       @scroll="onScroll"
@@ -106,11 +107,11 @@
         <span v-if="item.hasCheckedDescendant" class="w-1 h-5 bg-primary-400 rounded-full shrink-0 opacity-60"></span>
       </div>
 
-      <!-- 叶子请求行（tree 模式）：连接线 + 末段 + 方法徽章 + 状态 -->
+      <!-- 叶子请求行（tree 模式）：方法 + 路径 + 时间/状态码/耗时/IP 同行 -->
       <div
         v-else-if="item.nodeKind === 'leaf'"
-        class="scroller-item row-leaf"
-        :style="{ paddingLeft: (item.depth * 12 + 20) + 'px' }"
+        class="scroller-item row-leaf flex items-center gap-1.5 overflow-hidden"
+        :style="{ paddingLeft: (item.depth * 12 + 20) + 'px', height: 'var(--row-h)' }"
         :class="{
           selected: selectedRequest?.id === item.request!.id,
           'bg-blue-50 dark:bg-blue-900': item.request!.checked,
@@ -119,43 +120,36 @@
         @click="$emit('select', item.request!)"
         @contextmenu.prevent="handleContextMenu($event, item.request!)"
       >
-        <!-- 勾选框 + 内容（连接线已移除，层级仅靠缩进区分） -->
         <input
           type="checkbox"
           :checked="item.request!.checked"
           class="flex-shrink-0 cursor-pointer"
           @click.stop="$emit('toggle-check', item.request!)"
         />
-        <div class="flex-1 min-w-0 leading-tight">
-          <div class="flex items-center gap-1">
-            <span class="text-xs font-medium shrink-0" :class="methodClass(item.request!.method)">{{ item.request!.method }}</span>
-            <span
-              class="text-xs font-medium truncate"
-              :class="isLeafError(item) ? 'text-red-600 dark:text-red-400' : 'text-gray-700 dark:text-gray-300'"
-              :title="item.request!.path"
-            ><span :class="{ 'font-bold': isSegmentHighlighted(item) }">{{ item.segmentLabel }}</span></span>
-            <span
-              v-if="item.request!.isGraphQL && item.request!.graphQLOperationName"
-              class="text-[10px] px-1.5 py-0.5 rounded-full shrink-0"
-              :class="graphQLOperationClass(item.request!.graphQLOperationType)"
-            >
-              {{ item.request!.graphQLOperationName }}
-            </span>
-            <span
-              v-if="item.request!.isWebSocket"
-              class="text-[10px] px-1.5 py-0.5 rounded-full shrink-0 bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200"
-              title="WebSocket 连接"
-            >
-              🔌 WS
-            </span>
-          </div>
-          <div class="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
-            <span class="text-gray-500 dark:text-gray-400 shrink-0 font-mono tabular-nums">{{ formatTime(item.request!.capturedAt) }}</span>
-            <span :class="item.request!.statusCode ? statusClass(item.request!.statusCode) : 'text-gray-400'">{{ item.request!.statusCode ?? '-' }}</span>
-            <span v-if="item.request!.statusCode !== null">{{ item.request!.duration }}ms</span>
-            <span class="truncate">{{ item.request!.deviceName || item.request!.clientIp }}</span>
-          </div>
-        </div>
+        <span class="text-[11px] font-semibold shrink-0" :class="methodClass(item.request!.method)">{{ item.request!.method }}</span>
+        <span
+          class="text-[11px] font-medium truncate flex-1 min-w-0"
+          :class="isLeafError(item) ? 'text-red-600 dark:text-red-400' : 'text-gray-700 dark:text-gray-300'"
+          :title="item.request!.path"
+        ><span :class="{ 'font-bold': isSegmentHighlighted(item) }">{{ item.segmentLabel }}</span></span>
+        <span
+          v-if="item.request!.isGraphQL && item.request!.graphQLOperationName"
+          class="text-[10px] px-1.5 py-0.5 rounded-full shrink-0"
+          :class="graphQLOperationClass(item.request!.graphQLOperationType)"
+        >
+          {{ item.request!.graphQLOperationName }}
+        </span>
+        <span
+          v-if="item.request!.isWebSocket"
+          class="text-[10px] px-1.5 py-0.5 rounded-full shrink-0 bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200"
+          title="WebSocket 连接"
+        >
+          🔌 WS
+        </span>
+        <span class="text-[11px] text-gray-500 dark:text-gray-400 shrink-0 font-mono tabular-nums">{{ formatTime(item.request!.capturedAt) }}</span>
+        <span class="text-[11px] shrink-0" :class="item.request!.statusCode ? statusClass(item.request!.statusCode) : 'text-gray-400'">{{ item.request!.statusCode ?? '-' }}</span>
+        <span v-if="item.request!.statusCode !== null" class="text-[11px] text-gray-500 dark:text-gray-400 shrink-0 tabular-nums">{{ item.request!.duration }}ms</span>
+        <span class="text-[11px] text-gray-500 dark:text-gray-400 shrink-0 truncate max-w-[110px]" :title="item.request!.deviceName || item.request!.clientIp">{{ item.request!.deviceName || item.request!.clientIp }}</span>
       </div>
 
       <!-- 请求行（list / group 模式共用，原样保留） -->
@@ -278,7 +272,8 @@ const toast = useToast()
 
 // 注意：行高曾用 sizeField + sizedRows 可变方案，但 vue-virtual-scroller 在 itemSize=null 时
 // 依赖 sizes 缓存的响应式计算，真实 Electron 渲染首帧可能高度计算失败导致列表空白；
-// 已回退为固定 :item-size（见下方模板 RecycleScroller），由 scoped 样式统一覆盖为 40px。
+// 已回退为「非空固定 :item-size」（见下方模板 RecycleScroller）：tree 模式 30、其余 40，
+// 由 scoped 样式用 --row-h 变量统一驱动可见高度，二者取值同步、绝不取 null。
 
 function onScroll(): void {
   if (scrollerRef.value) {
@@ -431,14 +426,13 @@ function formatTime(iso: string | null | undefined): string {
 /* 连接线已移除：树状模式改用纯缩进区分子级（各 tree 行 paddingLeft = depth*12+20），避免拐角形似【「】 */
 
 
-/* ── 行高统一压缩为 40px（覆盖全局 .scroller-item 的 48px）──
-   使用固定 :item-size="40"，滚动定位与可见行高均由该常量驱动，二者必须一致。
-   曾尝试按行类型用 sizeField 可变行高（domain 44 / intermediate 32 / leaf 46），
-   但 vue-virtual-scroller 在 itemSize=null 时依赖响应式 sizes 缓存计算总高度，
-   真机（Electron）首帧缓存未就绪 → 总高=0 → 列表白屏/应用打不开，故回退固定值。
+/* ── 行高（覆盖全局 .scroller-item 的 48px）──
+   滚动定位由 :item-size 驱动、可见行高由 --row-h 变量驱动，二者取值同步。
+   item-size 始终是【非空固定数字】（tree=30 / 其它=40），绝不取 null，
+   因此不走 sizeField 缓存路径（后者在 itemSize=null 时真机首帧可能白屏，历史教训）。
    仅调整高度，不改变任何文本、箭头、徽章、菜单等行为。 */
 .scroller-item {
-  height: 40px;
-  min-height: 40px;
+  height: var(--row-h, 40px);
+  min-height: var(--row-h, 40px);
 }
 </style>
