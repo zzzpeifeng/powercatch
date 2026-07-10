@@ -1,5 +1,5 @@
 <template>
-  <div class="flex-1 flex flex-col overflow-hidden bg-white dark:bg-gray-800">
+  <div class="flex-1 flex flex-col overflow-hidden bg-white dark:bg-gray-800 min-w-[360px]">
     <!-- 无选中状态 -->
     <div v-if="!request" class="flex items-center justify-center h-full text-gray-400 dark:text-gray-500 text-sm">
       <div class="text-center">

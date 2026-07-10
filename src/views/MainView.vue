@@ -89,6 +89,7 @@
     <div ref="containerRef" class="flex-1 flex flex-col overflow-hidden">
       <!-- 上半区：请求列表 + 请求详情（最小化对比面板时改为 flex-1 吃掉全部空间） -->
       <div
+        ref="topAreaRef"
         :class="compareMinimized ? 'flex-1' : 'shrink-0'"
         class="flex overflow-hidden"
         :style="compareMinimized ? {} : { height: `calc(${splitPct}% - 3px)` }"
@@ -97,9 +98,17 @@
         <RequestList
           :selected-request="requestStore.selectedRequest"
           :is-recording="requestStore.isRecording"
+          :style="{ width: `calc(${listWidthPct}% - 2.5px)`, flex: '0 0 auto', minWidth: '300px' }"
           @select="handleSelectRequest"
           @toggle-check="requestStore.toggleCheck"
         />
+
+        <!-- 拖拽分隔条：左右调节 请求列表/请求详情 宽度 -->
+        <div
+          class="w-[5px] shrink-0 bg-gray-100 dark:bg-gray-700 hover:bg-[var(--color-primary)] cursor-col-resize transition-colors"
+          @mousedown="onListSplitterMouseDown"
+          @dblclick="resetListSplit"
+        ></div>
 
         <!-- 请求详情 -->
         <RequestDetail :request="requestStore.selectedRequest" />
@@ -222,6 +231,10 @@ const splitPct = ref<number>(60)
 /** 下半区 AI 对比结果是否最小化（默认最小化，收起只留标题栏，把空间还给列表） */
 const compareMinimized = ref<boolean>(true)
 
+// 请求列表 / 请求详情 的水平宽度比例（列表占左侧百分比），默认 38
+const listWidthPct = ref<number>(38)
+const topAreaRef = ref<HTMLElement | null>(null)
+
 // 从 localStorage 恢复上次的比例
 onMounted(() => {
   const saved = localStorage.getItem('main-view-split-pct')
@@ -230,6 +243,13 @@ onMounted(() => {
     if (!isNaN(val) && val >= 20 && val <= 80) {
       splitPct.value = val
     }
+  }
+
+  // 恢复 请求列表/请求详情 的左右比例（列表占左侧百分比）
+  const savedList = localStorage.getItem('main-view-list-width-pct')
+  if (savedList) {
+    const v = Number(savedList)
+    if (!isNaN(v) && v >= 20 && v <= 70) listWidthPct.value = v
   }
 
   // 启动系统代理状态轮询（开启时 banner 才能正确显示）
@@ -284,6 +304,38 @@ function onDividerMouseDown(e: MouseEvent): void {
 function resetSplit(): void {
   splitPct.value = 60
   localStorage.setItem('main-view-split-pct', '60')
+}
+
+// 拖拽分隔条：左右比例（列表占左侧百分比）
+function onListSplitterMouseDown(e: MouseEvent): void {
+  e.preventDefault()
+  if (!topAreaRef.value) return
+  const startX = e.clientX
+  const startPct = listWidthPct.value
+  function onMouseMove(ev: MouseEvent): void {
+    const rect = topAreaRef.value!.getBoundingClientRect()
+    const delta = ev.clientX - startX
+    const deltaPct = (delta / rect.width) * 100
+    let newPct = startPct + deltaPct
+    newPct = Math.max(20, Math.min(70, newPct))   // 防任一侧被压到不可用
+    listWidthPct.value = Math.round(newPct)
+  }
+  function onMouseUp(): void {
+    document.removeEventListener('mousemove', onMouseMove)
+    document.removeEventListener('mouseup', onMouseUp)
+    document.body.style.cursor = ''
+    document.body.style.userSelect = ''
+    localStorage.setItem('main-view-list-width-pct', String(listWidthPct.value))
+  }
+  document.body.style.cursor = 'col-resize'
+  document.body.style.userSelect = 'none'
+  document.addEventListener('mousemove', onMouseMove)
+  document.addEventListener('mouseup', onMouseUp)
+}
+// 双击分隔条恢复默认比例
+function resetListSplit(): void {
+  listWidthPct.value = 38
+  localStorage.setItem('main-view-list-width-pct', '38')
 }
 
 // 域名过滤防抖保存
