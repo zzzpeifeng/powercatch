@@ -97,6 +97,28 @@
 - **优先顺序**：先 `search_code` 定位定义文件 → 再 `read_file` 读取局部区段，而非盲搜整仓。
 - 结合「探索效率约束」：读取 10-15 个核心文件后应立即停止工具调用并输出 JSON。
 
+## 专用工具优先（Phase 5 新增）
+除了上面的「启发式探索指引」（A/B/C/D），你还拥有两个**专用反向分析工具**。在 Go 仓库上应**优先调用**它们以获得更精准的调用方与字段约束，减少启发式误差：
+
+### E. get_callers：精准反查调用方
+需要某函数 / 方法（如 `Foo` 或 `(*OrderService).Foo`）的全部调用方时，优先调用：
+`get_callers(symbol="Foo")`
+- 工具用 ripgrep 反查 `Foo(` / `.Foo(` 的所有调用点，返回每个调用方所在的 file / line / functionName / receiver（方法接收者类型，如 `*OrderHandler`）/ package（所属包），用于消歧同名符号。
+- 结果已截断到最多 50 个调用方（`maxCallers=50`）。
+- 用于补全 `fullCallChain` 的 `callees` 关系与 `externalCalls` 的调用证据（evidence），比纯 search_code 启发式更可靠。
+
+### F. get_struct_fields：精准提取 struct 字段约束
+需要某 struct（如 `Xxx`）的字段与 tag 约束时，优先调用：
+`get_struct_fields(structName="Xxx")`
+- 工具定位 `type Xxx struct {`，用正则提取每个字段的 name / type / tags（json、binding、validate 等），并展开**一层**嵌套 struct 字段（更深嵌套会在 `note` 中标注不展开）。
+- 仅支持 Go；若未检测到 Go 结构体定义（非 Go 仓库或命名不符），返回 `language: "unsupported"` 与空 fields，**不会报错**。
+- 用于 `params` 的约束分析与 `respStructure` 的字段展开，避免仅凭 Handler 文件臆测字段。
+
+### 工具失败时的兜底
+- 若 `get_callers` / `get_struct_fields` 因环境（ripgrep 不可用、非 Go 仓库）返回空或 `unsupported`，请**回退到上面的 A/B/C/D 启发式**继续分析，不要中断。
+- 非 Go 仓库：遵循 C 段语言范围声明（标注 `projectProfile.languages: ["unsupported"]`，禁止编造字段 / 调用方）。
+- 仍受 D 段性能约束（每轮最多 `MAX_TOOL_CALLS=15` 次工具调用），专用工具也计入预算。
+
 ## 输出格式
 请严格按以下 JSON 格式输出（不要输出其他内容）：
 {

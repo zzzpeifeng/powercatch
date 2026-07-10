@@ -225,3 +225,86 @@ export interface CodeExplorationResult {
   /** 解析警告信息（新增） */
   parseWarnings?: string[]
 }
+
+// ============================================================
+// Phase 5/6：工具增强与工程健壮性内部类型（仅主进程使用，不进 renderer bundle）
+// ============================================================
+
+/** 调用方引用（get_callers 工具返回） */
+export interface CallerRef {
+  /** 文件相对路径 */
+  file: string
+  /** 行号 */
+  line: number
+  /** 调用方所在函数名 */
+  functionName: string
+  /** 方法接收者类型（如 "*OrderHandler"；普通函数调用为空串） */
+  receiver: string
+  /** 所属 package 名 */
+  package: string
+  /** 命中行代码片段 */
+  snippet: string
+}
+
+/** get_callers 工具返回结果（callers 截断到 maxCallers=50） */
+export interface GetCallersResult {
+  symbol: string
+  callers: CallerRef[]
+}
+
+/** struct 字段（get_struct_fields 工具返回） */
+export interface StructField {
+  /** 字段名 */
+  name: string
+  /** 字段类型（含 * / [] / map[...] 等前缀） */
+  type: string
+  /** 从 struct tag 提取的键值对（如 json / binding / validate） */
+  tags: Record<string, string>
+  /** 若该字段是嵌套 struct 展开得到，记录其父字段名 */
+  nestedType?: string
+}
+
+/** get_struct_fields 工具返回结果 */
+export interface GetStructFieldsResult {
+  structName: string
+  /** 语言：仅支持 go；非 Go 或未找到 Go 结构体定义时为 unsupported */
+  language: 'go' | 'unsupported'
+  fields: StructField[]
+  /** 补充说明（如嵌套层级、未展开原因等） */
+  note?: string
+}
+
+/** 共享 JSON 解析重试配置 */
+export interface ParseRetryConfig {
+  /** 最大尝试次数（默认 2） */
+  maxAttempts: number
+  /** 退避基准毫秒数（默认 50），第 n 次重试延迟 baseDelayMs * 2^(n-1) */
+  baseDelayMs: number
+  /** 自定义 schema 校验，返回错误字符串数组（空数组表示通过） */
+  validate?: (raw: unknown) => string[]
+}
+
+/**
+ * 共享 JSON 解析结果
+ * 设计核心：ok=false 时绝不返回 value（绝不信任修复结果）。
+ */
+export type ParseResult<T> =
+  | { ok: true; value: T }
+  | { ok: false; errors: string[]; raw: string }
+
+/** 两阶段 Pipeline 超时配置（毫秒） */
+export interface PipelineTimeoutConfig {
+  /** Phase1（Code Explorer）硬超时 */
+  phase1Ms: number
+  /** Phase2（Test Generator）硬超时 */
+  phase2Ms: number
+  /** 两阶段总硬超时 */
+  totalMs: number
+}
+
+/** 降级模式 */
+export type DegradationMode =
+  | 'none'
+  | 'phase1-fallback-legacy'
+  | 'phase2-fallback-legacy'
+  | 'total-timeout'

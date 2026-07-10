@@ -33,6 +33,27 @@
 
     <!-- 主内容区 -->
     <div class="max-w-5xl mx-auto px-4 py-4">
+      <!-- 降级提示横幅（Phase1/Phase2 细分降级） -->
+      <div
+        v-if="store.degradationWarning"
+        class="mb-4 p-3 rounded-lg border flex items-start gap-2 bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-300"
+      >
+        <svg class="w-5 h-5 mt-0.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
+        </svg>
+        <div class="flex-1 text-xs">
+          <p class="font-semibold">{{ degradationBannerTitle }}</p>
+          <p class="mt-0.5 opacity-80">{{ store.degradationWarning.reason || degradationBannerDefault }}</p>
+        </div>
+        <button
+          class="text-amber-500 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-200 shrink-0"
+          @click="dismissDegradation"
+          aria-label="关闭"
+        >
+          ✕
+        </button>
+      </div>
+
       <!-- 进度指示器 -->
       <div class="card p-4 mb-4">
         <div class="flex items-center gap-3 mb-4">
@@ -145,6 +166,25 @@ const renderedThinking = computed(() => {
   if (!store.agentThinking) return ''
   return renderMarkdown(store.agentThinking)
 })
+
+// 降级横幅文案（区分 Phase1 失败 / Phase2 复用兜底）
+const degradationBannerTitle = computed(() => {
+  if (store.degradationWarning?.mode === 'phase2-fallback-legacy') {
+    return 'Phase2 降级：复用 Phase1 探索结果兜底'
+  }
+  return '已降级为单 Agent 模式（Phase1 失败）'
+})
+
+const degradationBannerDefault = computed(() => {
+  if (store.degradationWarning?.mode === 'phase2-fallback-legacy') {
+    return 'Phase2 生成失败，已复用 Phase1 探索结果继续生成测试用例。'
+  }
+  return 'Phase1 探索失败，已降级为单 Agent 模式重新分析。'
+})
+
+function dismissDegradation(): void {
+  store.degradationWarning = null
+}
 
 const phaseTitle = computed(() => {
   const titles: Record<string, string> = {

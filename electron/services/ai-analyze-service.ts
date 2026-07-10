@@ -21,6 +21,10 @@ import { AIAgentToolExecutor, type ToolCallResult } from './ai-agent-tool-execut
 import { loadPrompt } from './prompts/prompt-loader'
 // @ts-ignore - sse-manager.ts 导出在运行时可用
 import { pushLog, pushProgress, pushDone, pushError, pushSSEEvent } from '../sse-manager'
+// Phase 6 工程健壮性：硬超时 + 信号透传
+import { withTimeout as withHardTimeout, combineSignals, DEFAULT_PIPELINE_TIMEOUT } from './ai-timeout-util'
+// 共享 JSON 解析（不信任修复结果）
+import { parseAgentJson } from './ai-parse-util'
 
 /**
  * 进度推送回调
@@ -91,6 +95,11 @@ export class AIAnalyzeService {
   private modelName: string = 'deepseek-chat'
   private progressCallback: ProgressCallback | null = null
 
+  /** Phase1 探索结果缓存（供细分降级判断 Phase1 是否可靠完成） */
+  private lastExplorationResult: CodeExplorationResult | null = null
+  /** Phase1 探索是否通过可靠性校验（assertExplorationReliable） */
+  private lastExplorationReliable = false
+
   constructor(
     mainWindow: BrowserWindow,
     apiKey?: string,
@@ -135,27 +144,66 @@ export class AIAnalyzeService {
    * @returns 分析结果
    */
   async analyze(request: AnalyzeRequest): Promise<AnalyzeResult> {
-    const { clonePath, method, url } = request
+    const { method, url } = request
 
     if (!this.openai) {
       throw new Error('AI API 未配置，请先在设置页面配置 API Key。')
     }
 
     console.log(`[AIAnalyzeService] 开始分析: ${method} ${url}`)
-    console.log(`[AIAnalyzeService] 仓库路径: ${clonePath}`)
+    console.log(`[AIAnalyzeService] 仓库路径: ${request.clonePath}`)
 
-    // 两阶段 Pipeline：先尝试新版，失败则降级到旧版
+    // 重置上一轮的 Phase1 缓存，避免陈旧数据影响细分降级判断
+    this.lastExplorationResult = null
+    this.lastExplorationReliable = false
+
+    // 三级 AbortController：master（总超时）独立，phase1/phase2 各自独立，
+    // 通过 combineSignals 叠加信号后透传给 openai 调用。
+    const masterController = new AbortController()
+    const phase1Controller = new AbortController()
+    const phase2Controller = new AbortController()
+    const timeout = DEFAULT_PIPELINE_TIMEOUT
+
     try {
-      return await this.analyzeWithTwoPhasePipeline(request)
+      // 总硬超时（600s）包裹整个两阶段 Pipeline
+      return await withHardTimeout(
+        () => this.analyzeWithTwoPhasePipeline(
+          request, masterController.signal, phase1Controller, phase2Controller,
+        ),
+        timeout.totalMs,
+        masterController,
+      )
     } catch (pipelineError: any) {
-      console.error('[AIAnalyzeService] ❌ 两阶段 Pipeline 失败，准备降级到单 Agent 模式')
-      console.error('[AIAnalyzeService] ❌ 错误类型:', pipelineError.constructor.name)
-      console.error('[AIAnalyzeService] ❌ 错误消息:', pipelineError.message)
-      console.error('[AIAnalyzeService] ❌ 错误堆栈:', pipelineError.stack)
-      // 重置 phase 到 'analyzing'，避免 store 的 agentThinking 分隔逻辑误插入分隔线
-      this.pushProgress('ai-agent', '两阶段分析失败，降级到单 Agent 模式')
-      this.pushAgentThinking('\n\n--- 两阶段分析失败，降级到单 Agent 模式 ---\n\n')
-      return this.analyzeWithAgentLegacy(request)
+      // 总超时：直接中断并上报错误（不降级，因为 Phase1/Phase2 均未可靠完成或已超时）
+      if (masterController.signal.aborted) {
+        const reason = pipelineError?.message || '分析总超时'
+        console.error('[AIAnalyzeService] ❌ 总超时，已中断分析:', reason)
+        this.pushProgress('ai-agent', '分析总超时，已中断')
+        this.pushAgentThinking('\n\n--- 分析总超时，已中断 ---\n\n')
+        this.pushError(`分析总超时（${timeout.totalMs}ms），已中断：${reason}`)
+        throw pipelineError
+      }
+
+      // 细分降级：依据 Phase1 是否可靠区分 phase1 / phase2 失败
+      if (!this.lastExplorationResult || !this.lastExplorationReliable) {
+        const reason = pipelineError?.message || 'Phase1 探索失败'
+        console.error('[AIAnalyzeService] ❌ Phase1 失败，降级单 Agent 模式:', reason)
+        this.pushProgress('warning', 'Phase1 探索失败，降级单 Agent 模式（Phase1 失败）', {
+          mode: 'phase1-fallback-legacy',
+          reason,
+        })
+        this.pushAgentThinking('\n\n--- Phase1 探索失败，降级到单 Agent 模式 ---\n\n')
+        return this.analyzeWithAgentLegacy(request)
+      } else {
+        const reason = pipelineError?.message || 'Phase2 生成失败'
+        console.error('[AIAnalyzeService] ❌ Phase2 失败，复用 Phase1 结果兜底:', reason)
+        this.pushProgress('warning', 'Phase2 生成失败，复用 Phase1 探索结果兜底（Phase2 降级）', {
+          mode: 'phase2-fallback-legacy',
+          reason,
+        })
+        this.pushAgentThinking('\n\n--- Phase2 生成失败，复用 Phase1 探索结果兜底 ---\n\n')
+        return this.analyzeWithAgentLegacy(request, this.lastExplorationResult)
+      }
     }
   }
 
@@ -166,19 +214,39 @@ export class AIAnalyzeService {
   /**
    * 两阶段 Pipeline：Code Explorer → Test Case Generator
    */
-  private async analyzeWithTwoPhasePipeline(request: AnalyzeRequest): Promise<AnalyzeResult> {
+  private async analyzeWithTwoPhasePipeline(
+    request: AnalyzeRequest,
+    masterSignal: AbortSignal,
+    phase1Controller: AbortController,
+    phase2Controller: AbortController,
+  ): Promise<AnalyzeResult> {
     const { clonePath, method, url, requestBody, requestHeaders } = request
+    const timeout = DEFAULT_PIPELINE_TIMEOUT
 
-    // Phase 1: Code Explorer
+    // Phase 1: Code Explorer（受 phase1Ms 硬超时约束）
     this.pushProgress('code-explorer', 'Phase 1: 开始探索代码...')
-    const explorationResult = await this.phase1ExploreCode(clonePath, method, url, requestBody, requestHeaders)
+    const phase1Signal = combineSignals([masterSignal, phase1Controller.signal])
+    const explorationResult = await withHardTimeout(
+      () => this.phase1ExploreCode(clonePath, method, url, requestBody, requestHeaders, phase1Signal),
+      timeout.phase1Ms,
+      phase1Controller,
+    )
 
     // 质量检查：确保 Phase 1 结果可靠
     this.assertExplorationReliable(explorationResult, request)
 
-    // Phase 2: Test Case Generator
+    // 标记 Phase1 可靠，供 catch 区分 phase1/phase2 失败
+    this.lastExplorationResult = explorationResult
+    this.lastExplorationReliable = true
+
+    // Phase 2: Test Case Generator（受 phase2Ms 硬超时约束）
     this.pushProgress('test-generator', 'Phase 2: 开始生成测试用例...')
-    const testResult = await this.phase2GenerateTests(method, url, requestBody, requestHeaders, explorationResult)
+    const phase2Signal = combineSignals([masterSignal, phase2Controller.signal])
+    const testResult = await withHardTimeout(
+      () => this.phase2GenerateTests(method, url, requestBody, requestHeaders, explorationResult, phase2Signal),
+      timeout.phase2Ms,
+      phase2Controller,
+    )
 
     // 组装结果
     const analysisSummary = this.buildAnalysisSummary(explorationResult, testResult, request)
@@ -295,11 +363,11 @@ export class AIAnalyzeService {
     url: string,
     requestBody?: string,
     requestHeaders?: Record<string, string | string[]>,
+    signal?: AbortSignal,
   ): Promise<CodeExplorationResult> {
     const toolExecutor = new AIAgentToolExecutor(clonePath)
-    // 不再限制工具调用次数，让 AI 无限探索直至完成
-    // 仅保留超时保护（10 分钟），防止死循环
-    const PHASE1_TIMEOUT_MS = 10 * 60 * 1000
+    // Phase1 工具调用硬上限（每轮最多 15 次），超出则要求 AI 直接输出最终 JSON
+    const MAX_PHASE1_TOOL_CALLS = 15
 
     // 加载 Prompt（带变量替换）
     const systemPrompt = loadPrompt('code-explorer-system')
@@ -324,52 +392,31 @@ export class AIAnalyzeService {
 
     try {
       while (true) {
-        // 超时检查：超过 10 分钟则强制要求 AI 输出 JSON
-        if (Date.now() - startTime > PHASE1_TIMEOUT_MS) {
-          const elapsed = ((Date.now() - startTime) / 1000).toFixed(1)
-          console.warn(`[Phase1] ⏰ 已达到超时上限（${elapsed}s），正在强制生成最终结果...`)
-          this.pushAgentThinking('[代码探索] 已达到超时上限（10分钟），正在强制生成最终结果...', 'explorer')
+        // 工具调用硬上限：达到 15 次则要求 AI 直接输出最终 JSON（不再允许调用工具）
+        if (toolCallCount >= MAX_PHASE1_TOOL_CALLS) {
           messages.push({
             role: 'user',
-            content: '时间已到，请立即输出完整的 JSON 结果（包含 entryPoint、fullCallChain、params、respStructure、businessRules、errorPaths、externalCalls）。不要调用任何工具，只输出 JSON。',
+            content: '已达到工具调用上限（15 次），请立即输出完整 JSON 结果（包含 entryPoint、fullCallChain、params、respStructure、businessRules、errorPaths、externalCalls），不要调用任何工具。',
           })
-          const finalResponse = await this.openai!.chat.completions.create({
-            model: this.modelName,
-            messages,
-          })
-          const content = finalResponse.choices[0].message.content || ''
-          console.log(`[Phase1] ⏰ 超时强制输出，AI 返回内容长度: ${content.length}`)
-          try {
-            explorationResult = this.parseExplorationResult(content)
-            console.log('[Phase1] ⏰ 超时强制输出解析成功')
-          } catch (parseError: any) {
-            console.warn('[Phase1] ⏰ 超时后解析失败，尝试从对话历史提取:', parseError.message)
-            explorationResult = this.extractExplorationFromHistory(messages)
-            if (explorationResult) {
-              console.log('[Phase1] ⏰ 从历史提取成功，entryPoint:', explorationResult.entryPoint)
-            } else {
-              console.error('[Phase1] ⏰ 从历史提取也失败，explorationResult 为 null')
-            }
-          }
-          break
         }
 
         this.pushAgentThinking(`[代码探索] 正在推理（第 ${toolCallCount + 1} 轮）...`, 'explorer')
 
+        const useTools = toolCallCount < MAX_PHASE1_TOOL_CALLS
         let stream
         try {
           stream = await this.openai!.chat.completions.create({
             model: this.modelName,
             messages,
-            tools,
-            tool_choice: 'auto',
+            ...(useTools ? { tools, tool_choice: 'auto' as const } : { tool_choice: 'none' as const }),
             stream: true,
+            ...(signal ? { signal } : {}),
           })
         } catch (apiError: any) {
-          console.error('[Phase1] ❌ API 调用失败（第 ${toolCallCount + 1} 轮）')
-          console.error('[Phase1] ❌ API 错误类型:', apiError.constructor.name)
-          console.error('[Phase1] ❌ API 错误消息:', apiError.message)
-          console.error('[Phase1] ❌ API 错误堆栈:', apiError.stack)
+          console.error(`[Phase1] ❌ API 调用失败（第 ${toolCallCount + 1} 轮）`)
+          console.error('[Phase1] ❌ API 错误类型:', apiError?.constructor?.name)
+          console.error('[Phase1] ❌ API 错误消息:', apiError?.message)
+          console.error('[Phase1] ❌ API 错误堆栈:', apiError?.stack)
           throw apiError
         }
 
@@ -402,7 +449,7 @@ export class AIAnalyzeService {
         // 没有工具调用 → AI 已生成最终 JSON
         if (toolCallsBuffer.length === 0 && fullContent) {
           this.pushAgentThinking('[代码探索] 探索完成，正在解析结果...', 'explorer')
-          explorationResult = this.parseExplorationResult(fullContent)
+          explorationResult = await this.parseExplorationResult(fullContent)
           break
         }
 
@@ -463,47 +510,66 @@ export class AIAnalyzeService {
    * 解析 Phase 1 Code Explorer 的 JSON 输出
    * 含格式修复逻辑（AI 可能在 JSON 前后加说明文字，或输出语法不完整的 JSON）
    */
-  private parseExplorationResult(content: string): CodeExplorationResult {
-    // 1. 智能提取 JSON 字符串（找到第一个 { 然后匹配括号）
-    const jsonStr = this.extractJsonString(content)
-    if (!jsonStr) {
-      console.error('[parseExplorationResult] ❌ 未找到 JSON 字符串')
-      throw new Error('AI 输出中未找到 JSON')
+  private async parseExplorationResult(content: string): Promise<CodeExplorationResult> {
+    // 1. 复用共享 JSON 解析（保守清洗 + 退避重试 + schema 校验，不信任修复结果）
+    const parsed = await parseAgentJson<any>(content, {
+      maxAttempts: 2,
+      baseDelayMs: 50,
+      validate: (raw: unknown) => {
+        const errors: string[] = []
+        if (!raw || typeof raw !== 'object') errors.push('结果不是 JSON 对象')
+        else if (!(raw as any).entryPoint) errors.push('缺少 entryPoint 字段')
+        return errors
+      },
+    })
+
+    if (parsed.ok) {
+      return this.buildExplorationResult(parsed.value)
     }
 
-    // 2. 尝试直接解析
-    try {
-      const parsed = JSON.parse(jsonStr)
-      console.log('[parseExplorationResult] ✅ JSON 解析成功')
-      return this.buildExplorationResult(parsed)
-    } catch (parseError: any) {
-      console.warn('[parseExplorationResult] ⚠️ 首次解析失败，尝试修复:', parseError.message)
+    // 2. last-resort：原 repairJson 修复（仍不信任，需能解析为对象）
+    const repaired = this.lastResortExplorationParse(content)
+    if (repaired) {
+      try {
+        return this.buildExplorationResult(repaired)
+      } catch {
+        // 继续走部分提取
+      }
+    }
 
-      // 3. 尝试修复常见 JSON 语法问题
+    // 3. last-resort：正则部分提取（字段可能不完整，标记 partial）
+    const partial = this.extractPartialExploration(content)
+    if (partial) {
+      partial.parseStatus = 'partial'
+      partial.parseWarnings = [...(parsed.errors || []), '使用部分提取兜底']
+      console.warn('[parseExplorationResult] ⚠️ 使用部分提取数据（字段可能不完整）')
+      return partial
+    }
+
+    // 4. 全部失败，抛原错误（绝不返回残缺 value）
+    const rawPreview = content.substring(0, 2000)
+    console.error('[parseExplorationResult] ❌ JSON 解析失败:', parsed.errors.join('; '))
+    console.error('[parseExplorationResult] ❌ AI 原始输出（前 2000 字符）:\n', rawPreview)
+    throw new Error(`Code Explorer 输出解析失败: ${parsed.errors.join('; ') || '未知'}`)
+  }
+
+  /** last-resort：原 extractJsonString + repairJson 修复解析（仅当能解析为对象时返回） */
+  private lastResortExplorationParse(content: string): any | null {
+    const jsonStr = this.extractJsonString(content)
+    if (!jsonStr) return null
+    try {
+      return JSON.parse(jsonStr)
+    } catch {
       const repaired = this.repairJson(jsonStr)
       if (repaired) {
         try {
-          const parsed = JSON.parse(repaired)
-          console.log('[parseExplorationResult] ✅ 修复后解析成功')
-          return this.buildExplorationResult(parsed)
-        } catch (repairError: any) {
-          console.warn('[parseExplorationResult] ⚠️ 修复后仍然失败:', repairError.message)
+          return JSON.parse(repaired)
+        } catch {
+          return null
         }
       }
-
-      // 4. 尝试从原始内容中用正则提取关键字段（最后降级）
-      const partial = this.extractPartialExploration(content)
-      if (partial) {
-        console.log('[parseExplorationResult] ⚠️ 使用部分提取数据（字段可能不完整）')
-        return partial
-      }
-
-      // 5. 全部失败，抛原错误
-      const rawPreview = content.substring(0, 2000)
-      console.error('[parseExplorationResult] ❌ JSON 解析失败（位置 ' + this.findJsonErrorPosition(jsonStr, parseError.message) + '):', parseError.message)
-      console.error('[parseExplorationResult] ❌ AI 原始输出（前 2000 字符）:\n', rawPreview)
-      throw new Error(`Code Explorer 输出解析失败: ${parseError.message}`)
     }
+    return null
   }
 
   /**
@@ -824,6 +890,7 @@ export class AIAnalyzeService {
     requestBody: string | undefined,
     requestHeaders: Record<string, string | string[]> | undefined,
     explorationResult: CodeExplorationResult,
+    signal?: AbortSignal,
   ): Promise<{ scenarios: AnalysisScenario[]; analysisSummary: string }> {
     // 加载 Prompt
     const systemPrompt = loadPrompt('test-generator-system')
@@ -854,6 +921,7 @@ export class AIAnalyzeService {
           model: this.modelName,
           messages,
           stream: true,
+          ...(signal ? { signal } : {}),
         })
       } catch (apiError: any) {
         console.error('[Phase2] ❌ API 调用失败')
@@ -879,7 +947,7 @@ export class AIAnalyzeService {
 
       if (fullContent) {
         this.pushAgentThinking('[测试生成] 生成完成，正在解析结果...', 'generator')
-        const parsed = this.parseScenariosResult(fullContent)
+        const parsed = await this.parseScenariosResult(fullContent)
         scenarios = parsed.scenarios
         analysisSummary = parsed.analysisSummary
       }
@@ -899,53 +967,65 @@ export class AIAnalyzeService {
   /**
    * 解析 Phase 2 Test Generator 的 JSON 输出（含修复逻辑）
    */
-  private parseScenariosResult(content: string): { scenarios: AnalysisScenario[]; analysisSummary: string } {
-    // 1. 智能提取 JSON 字符串
-    const jsonStr = this.extractJsonString(content)
-    if (!jsonStr) {
-      console.error('[parseScenariosResult] ❌ 未找到 JSON 字符串')
-      throw new Error('AI 输出中未找到 JSON')
+  private async parseScenariosResult(content: string): Promise<{ scenarios: AnalysisScenario[]; analysisSummary: string }> {
+    // 1. 复用共享 JSON 解析（保守清洗 + 退避重试 + schema 校验，不信任修复结果）
+    const parsed = await parseAgentJson<any>(content, {
+      maxAttempts: 2,
+      baseDelayMs: 50,
+      validate: (raw: unknown) => {
+        const errors: string[] = []
+        if (!raw || typeof raw !== 'object') errors.push('结果不是 JSON 对象')
+        else if (!Array.isArray((raw as any).scenarios)) errors.push('缺少 scenarios 数组')
+        return errors
+      },
+    })
+
+    if (parsed.ok) {
+      return this.buildScenariosResult(parsed.value)
     }
 
-    // 2. 尝试直接解析
-    try {
-      const parsed = JSON.parse(jsonStr)
-      console.log('[parseScenariosResult] ✅ JSON 解析成功')
-      return this.buildScenariosResult(parsed)
-    } catch (parseError: any) {
-      console.warn('[parseScenariosResult] ⚠️ 首次解析失败，尝试修复:', parseError.message)
+    // 2. last-resort：原 repairJson / truncateToLastCompleteScenario 修复（仍不信任）
+    const repaired = this.lastResortScenariosParse(content)
+    if (repaired) {
+      try {
+        return this.buildScenariosResult(repaired)
+      } catch {
+        // 继续抛错
+      }
+    }
 
-      // 3. 尝试修复
+    // 3. 全部失败，抛原错误（绝不返回残缺 value）
+    const rawPreview = content.substring(0, 2000)
+    console.error('[parseScenariosResult] ❌ JSON 解析失败:', parsed.errors.join('; '))
+    console.error('[parseScenariosResult] ❌ AI 原始输出（前 2000 字符）:\n', rawPreview)
+    throw new Error(`Test Generator 输出解析失败: ${parsed.errors.join('; ') || '未知'}`)
+  }
+
+  /** last-resort：原 extractJsonString + repairJson + 截断解析（仅当能解析为对象时返回） */
+  private lastResortScenariosParse(content: string): any | null {
+    const jsonStr = this.extractJsonString(content)
+    if (!jsonStr) return null
+    try {
+      return JSON.parse(jsonStr)
+    } catch {
       const repaired = this.repairJson(jsonStr)
       if (repaired) {
         try {
-          const parsed = JSON.parse(repaired)
-          console.log('[parseScenariosResult] ✅ 修复后解析成功')
-          return this.buildScenariosResult(parsed)
-        } catch (repairError: any) {
-          console.warn('[parseScenariosResult] ⚠️ 修复后仍然失败:', repairError.message)
+          return JSON.parse(repaired)
+        } catch {
+          // 继续尝试截断
         }
       }
-
-      // 4. 尝试截断到最后一个完整场景
       const truncated = this.truncateToLastCompleteScenario(jsonStr)
       if (truncated) {
         try {
-          const parsed = JSON.parse(truncated)
-          console.log('[parseScenariosResult] ✅ 截断后解析成功')
-          return this.buildScenariosResult(parsed)
-        } catch (truncateError: any) {
-          console.warn('[parseScenariosResult] ⚠️ 截断后仍然失败:', truncateError.message)
+          return JSON.parse(truncated)
+        } catch {
+          return null
         }
       }
-
-      // 5. 全部失败
-      const rawPreview = content.substring(0, 2000)
-      const posInfo = this.findJsonErrorPosition(jsonStr, parseError.message)
-      console.error(`[parseScenariosResult] ❌ JSON 解析失败（${posInfo}）:`, parseError.message)
-      console.error('[parseScenariosResult] ❌ AI 原始输出（前 2000 字符）:\n', rawPreview)
-      throw new Error(`Test Generator 输出解析失败: ${parseError.message}`)
     }
+    return null
   }
 
   /**
@@ -1278,6 +1358,45 @@ export class AIAnalyzeService {
           },
         },
       },
+      {
+        type: 'function',
+        function: {
+          name: 'get_callers',
+          description: '反向查找某函数 / 方法（如 Foo 或 (*OrderService).Foo）在仓库中的所有调用方。' +
+            '使用 ripgrep 反查 Foo( / .Foo( 的调用点，返回每个调用方所在的 file、line、functionName、' +
+            'receiver（方法接收者类型，如 *OrderHandler）、package（所属包），用于消歧同名符号。' +
+            '结果最多 50 个。仅在 Go 仓库有效；非 Go 或失败请回退 search_code 启发式。',
+          parameters: {
+            type: 'object',
+            properties: {
+              symbol: {
+                type: 'string',
+                description: '要查找调用方的符号名，如 "CreateOrder"、"Validate"',
+              },
+            },
+            required: ['symbol'],
+          },
+        },
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'get_struct_fields',
+          description: '提取某个 Go struct（如 Xxx）的字段名、类型与 tag（json/binding/validate 等），' +
+            '并展开一层嵌套 struct 字段。仅在 Go 仓库有效；若未检测到 Go 结构体定义，' +
+            '返回 language:"unsupported" 与空 fields（不会报错）。用于 params 约束分析与 respStructure 字段展开。',
+          parameters: {
+            type: 'object',
+            properties: {
+              structName: {
+                type: 'string',
+                description: '要提取字段的 struct 名称，如 "CreateOrderReq"、"OrderResp"',
+              },
+            },
+            required: ['structName'],
+          },
+        },
+      },
     ]
   }
 
@@ -1288,7 +1407,15 @@ export class AIAnalyzeService {
   /**
    * 旧版单 Agent 分析（降级回退）
    */
-  private async analyzeWithAgentLegacy(request: AnalyzeRequest): Promise<AnalyzeResult> {
+  private async analyzeWithAgentLegacy(
+    request: AnalyzeRequest,
+    explorationResult?: CodeExplorationResult,
+  ): Promise<AnalyzeResult> {
+    // 传入 Phase1 探索结果（phase2-fallback-legacy）：跳过探索，直接复用生成 scenarios
+    if (explorationResult) {
+      return this.runLegacyWithExploration(request, explorationResult)
+    }
+
     const { clonePath, method, url } = request
     const toolExecutor = new AIAgentToolExecutor(clonePath)
 
@@ -1416,6 +1543,136 @@ export class AIAnalyzeService {
       this.pushError(`分析失败: ${error.message}`)
       throw error
     }
+  }
+
+  /**
+   * 复用 Phase1 探索结果直接生成测试用例（phase2-fallback-legacy 兜底）。
+   * 仍会产出 scenarios，不丢弃 Phase1 成果：优先复用专用 Phase2 生成器，
+   * 若其再次失败则构造最小 scenarios 兜底。
+   */
+  private async runLegacyWithExploration(
+    request: AnalyzeRequest,
+    explorationResult: CodeExplorationResult,
+  ): Promise<AnalyzeResult> {
+    const { method, url, requestBody, requestHeaders } = request
+    this.pushAgentThinking('复用 Phase1 探索结果，直接生成测试用例（Phase2 降级兜底）...')
+    this.pushProgress('ai-agent', '复用 Phase1 结果，直接生成测试用例')
+
+    try {
+      const testResult = await this.phase2GenerateTests(
+        method, url, requestBody, requestHeaders, explorationResult,
+      )
+      const analysisSummary = this.buildAnalysisSummary(explorationResult, testResult, request)
+      const matches: RouteMatch[] = [{
+        filePath: explorationResult.entryPoint.handlerFile,
+        content: '',
+        routePattern: explorationResult.entryPoint.routePattern,
+        handlerName: explorationResult.entryPoint.handlerFunction,
+        lineNumber: 0,
+      } as any]
+      this.pushAgentComplete(analysisSummary, testResult.scenarios)
+      console.log(`[Legacy+Exploration] 复用 Phase1 结果生成完成，${testResult.scenarios.length} 个场景`)
+      return { matches, analysis: analysisSummary, scenarios: testResult.scenarios }
+    } catch (err: any) {
+      // Phase2 生成器再次失败：兜底从探索结果直接构造最小 scenarios，确保「仍出 scenarios」
+      console.error('[Legacy+Exploration] ❌ 复用生成失败，构造最小 scenarios 兜底:', err?.message)
+      const scenarios = this.buildScenariosFromExploration(explorationResult, request)
+      const analysisSummary =
+        `> ⚠️ Phase2 生成失败，已基于 Phase1 探索结果构造最小测试用例兜底（${scenarios.length} 个）。\n\n` +
+        this.buildAnalysisSummary(explorationResult, { scenarios, analysisSummary: '' }, request)
+      const matches: RouteMatch[] = [{
+        filePath: explorationResult.entryPoint.handlerFile,
+        content: '',
+        routePattern: explorationResult.entryPoint.routePattern,
+        handlerName: explorationResult.entryPoint.handlerFunction,
+        lineNumber: 0,
+      } as any]
+      this.pushAgentComplete(analysisSummary, scenarios)
+      return { matches, analysis: analysisSummary, scenarios }
+    }
+  }
+
+  /**
+   * 从 Phase1 探索结果直接构造最小 scenarios（Phase2 生成器失败时的最后兜底）。
+   * 包含 1 个正常流程 + 每个 errorPath 一个场景，全部带 sourceRefs。
+   */
+  private buildScenariosFromExploration(
+    exploration: CodeExplorationResult,
+    request: AnalyzeRequest,
+  ): AnalysisScenario[] {
+    const scenarios: AnalysisScenario[] = []
+    const baseTestData: Record<string, any> = {}
+    for (const p of exploration.params) {
+      baseTestData[p.name] = p.defaultValue ?? (p.required ? this.sampleForType(p.type) : null)
+    }
+    const curlCommand = this.buildFallbackCurl(request)
+
+    // 1 个正常流程
+    scenarios.push({
+      scenarioName: '正常流程（兜底）',
+      scenarioType: 'normal',
+      expectedStatusCode: 200,
+      testData: baseTestData,
+      callChain: [],
+      curlCommand,
+      pythonAssertion: 'import json\n\nbody = json.loads(responseBody)\nassert body.get("code") == "E0", "接口返回 code 不为 E0"',
+      sourceRefs: [{
+        sourceType: 'branch',
+        sourceId: 'entryPoint',
+        filePath: exploration.entryPoint.handlerFile,
+        lineRange: '0-0',
+        condition: '正常流程',
+        coverageIntent: '兜底正常流程',
+      }],
+    })
+
+    // 每个 errorPath 一个场景
+    const errorPaths = exploration.errorPaths || []
+    for (let i = 0; i < errorPaths.length; i++) {
+      const ep = errorPaths[i]
+      scenarios.push({
+        scenarioName: `错误路径 ${ep.errorCode || ep.statusCode}（兜底）`,
+        scenarioType: 'business-rule',
+        expectedStatusCode: ep.statusCode || 400,
+        testData: baseTestData,
+        callChain: [],
+        curlCommand,
+        pythonAssertion: 'import json\n\nbody = json.loads(responseBody)\nassert body.get("code") != "E0", "应返回错误码"',
+        sourceRefs: [{
+          sourceType: 'errorPath',
+          sourceId: `errorPaths[${i}]`,
+          filePath: ep.file,
+          lineRange: `${ep.line}-${ep.line}`,
+          condition: ep.condition,
+          coverageIntent: `覆盖错误路径 ${ep.errorCode}`,
+        }],
+      })
+    }
+
+    return scenarios.slice(0, 15)
+  }
+
+  /** 为兜底场景生成合理的示例值 */
+  private sampleForType(type: string): any {
+    if (/int/i.test(type)) return 1
+    if (/float|double|number/i.test(type)) return 1.0
+    if (/bool/i.test(type)) return true
+    return 'sample'
+  }
+
+  /** 构造兜底场景的 curl 命令（使用原始请求 URL/Headers/Body） */
+  private buildFallbackCurl(request: AnalyzeRequest): string {
+    const headers = request.requestHeaders || {}
+    let curl = `curl -X ${request.method} '${request.url || ''}' \\\n`
+    curl += `  -H 'Content-Type: application/json'`
+    for (const [k, v] of Object.entries(headers)) {
+      const val = Array.isArray(v) ? v.join(',') : v
+      curl += ` \\\n  -H '${k}: ${val}'`
+    }
+    if (request.requestBody) {
+      curl += ` \\\n  -d '${request.requestBody.replace(/'/g, "'\\''")}'`
+    }
+    return curl
   }
 
   /**

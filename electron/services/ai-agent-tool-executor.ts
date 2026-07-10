@@ -12,6 +12,26 @@
 import * as fs from 'fs'
 import * as path from 'path'
 import * as util from 'util'
+import { execFile } from 'child_process'
+import type {
+  CallerRef,
+  GetCallersResult,
+  StructField,
+  GetStructFieldsResult,
+} from './types'
+
+/** get_callers 返回调用方的最大数量（截断保护） */
+const MAX_CALLERS = 50
+
+/** 一层嵌套解析时，最多展开的嵌套 struct 数量 */
+const MAX_NESTED_STRUCTS = 10
+
+/** Go 基础类型集合（用于判断某类型是否为可展开 struct） */
+const GO_PRIMITIVES = new Set<string>([
+  'string', 'int', 'int8', 'int16', 'int32', 'int64',
+  'uint', 'uint8', 'uint16', 'uint32', 'uint64',
+  'byte', 'rune', 'float32', 'float64', 'bool', 'error', 'any', 'interface{}',
+])
 
 const readdirAsync = util.promisify(fs.readdir)
 const readFileAsync = util.promisify(fs.readFile)
@@ -103,6 +123,22 @@ export class AIAgentToolExecutor {
           result = await this.withTimeout(
             this.getFileTree(),
             'get_file_tree()'
+          )
+          break
+
+        case 'get_callers':
+          // Phase 5 新增：ripgrep 反查调用方
+          result = await this.withTimeout(
+            this.get_callers(args),
+            `get_callers(${args.symbol})`
+          )
+          break
+
+        case 'get_struct_fields':
+          // Phase 5 新增：精准提取 Go struct 字段约束
+          result = await this.withTimeout(
+            this.get_struct_fields(args),
+            `get_struct_fields(${args.structName})`
           )
           break
 
@@ -476,5 +512,338 @@ export class AIAgentToolExecutor {
       .replace(/\*/g, '.*')
       .replace(/\?/g, '.')
     return new RegExp(`^${regexStr}$`)
+  }
+
+  // ============================================================
+  // Phase 5 新增：专用反向分析工具（get_callers / get_struct_fields）
+  // ============================================================
+
+  /**
+   * 执行 ripgrep 命令并返回标准输出文本。
+   * 设计目标：工具脆弱性兜底——rg 未安装（ENOENT）或无匹配（退出码 1）均返回空串，不抛错。
+   */
+  private runRg(args: string[]): Promise<string> {
+    return new Promise<string>((resolve, reject) => {
+      execFile('rg', args, { maxBuffer: 20 * 1024 * 1024 }, (error, stdout) => {
+        if (error) {
+          // ripgrep 退出码 1 = 无匹配；ENOENT = rg 未安装。两者都降级为空结果。
+          // 注意：Node 在进程非 0 退出时把退出码（数字 1）写入 error.code，
+          // 而 spawn 失败时为字符串 'ENOENT'；故 code 实际为 string | number。
+          const code = (
+            error as Omit<NodeJS.ErrnoException, 'code'> & { code?: string | number }
+          ).code
+          if (code === 1 || code === 'ENOENT') {
+            resolve('')
+            return
+          }
+          // 其他错误（如非法正则）上抛，由调用方决定兜底
+          reject(error)
+        } else {
+          resolve(stdout || '')
+        }
+      })
+    })
+  }
+
+  /** 转义正则特殊字符（用于 ripgrep -P 模式） */
+  private rgEscape(s: string): string {
+    return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  }
+
+  /** 从 `file:line:packageName` 输出中解析 file→package 映射 */
+  private parsePackageMap(rgOutput: string): Map<string, string> {
+    const map = new Map<string, string>()
+    for (const line of rgOutput.split('\n')) {
+      const m = line.match(/^(.+?):\d+:(.*)$/)
+      if (!m) continue
+      const pkg = m[2].match(/package\s+([A-Za-z_]\w*)/)
+      if (pkg) map.set(m[1], pkg[1])
+    }
+    return map
+  }
+
+  /** 判断一行是否为「调用点」（含标识符调用，且非 func 定义本身） */
+  private isCallerLine(content: string): boolean {
+    if (/\bfunc\b/.test(content)) return false
+    return /\b[A-Za-z_]\w*\s*\(/.test(content)
+  }
+
+  /**
+   * 解析 ripgrep 的调用点输出（含 -B 上下文）为 CallerRef[]。
+   * 通过顺序扫描：遇到 func 定义行更新 currentFunc，遇到调用点行记录调用方。
+   */
+  private parseCallerLines(rgOutput: string, pkgMap: Map<string, string>): CallerRef[] {
+    const callers: CallerRef[] = []
+    let currentFunc = ''
+    const lines = rgOutput.split('\n')
+
+    for (const rawLine of lines) {
+      const line = rawLine.trimEnd()
+      if (line === '--') {
+        currentFunc = ''
+        continue
+      }
+      // 检测最近的 func 定义，作为「调用方所在函数名」
+      const funcMatch = line.match(/\bfunc\b\s+(?:\([^)]*\)\s+)?([A-Za-z_]\w*)\s*\(/)
+      if (funcMatch) {
+        currentFunc = funcMatch[1]
+      }
+      const callMatch = line.match(/^(.+?):(\d+):(.*)$/)
+      if (!callMatch) continue
+      const file = callMatch[1]
+      const lineNo = parseInt(callMatch[2], 10)
+      const content = callMatch[3]
+      if (!this.isCallerLine(content)) continue
+      // 方法调用 .Foo( → 提取接收者标识符用于消歧
+      const receiverMatch = content.match(/([A-Za-z_]\w*)\.[A-Za-z_]\w*\s*\(/)
+      const receiver = receiverMatch ? receiverMatch[1] : ''
+      callers.push({
+        file,
+        line: lineNo,
+        functionName: currentFunc,
+        receiver,
+        package: pkgMap.get(file) || '',
+        snippet: content.trim().slice(0, 300),
+      })
+    }
+    return callers
+  }
+
+  /**
+   * 反查某符号的全部调用方（get_callers 工具实现）。
+   * 使用 ripgrep 反查 `Symbol(` / `.Symbol(` 调用点，返回带 receiver/package 消歧的调用方列表。
+   */
+  private async get_callers(args: any): Promise<ToolCallResult> {
+    const symbol = String(args?.symbol || '').trim()
+    if (!symbol) {
+      return { success: false, error: 'get_callers 需要 symbol 参数' }
+    }
+    try {
+      // 1) 全局反查调用点（带 -B 上下文用于推断调用方函数名）
+      const pattern = `\\b${this.rgEscape(symbol)}\\(\\`
+      const callOutput = await this.runRg(['-n', '-B', '40', '-P', pattern, this.clonePath])
+      // 2) 一次全局扫描建立 file→package 映射
+      const pkgOutput = await this.runRg(['-n', '-P', '-o', '^package\\s+([A-Za-z_]\\w*)', this.clonePath])
+      const pkgMap = this.parsePackageMap(pkgOutput)
+
+      let callers = this.parseCallerLines(callOutput, pkgMap)
+      // 截断到 maxCallers，防止超大仓库返回爆炸
+      if (callers.length > MAX_CALLERS) {
+        callers = callers.slice(0, MAX_CALLERS)
+      }
+      return { success: true, result: { symbol, callers } as GetCallersResult }
+    } catch (e: any) {
+      // 工具脆弱性兜底：失败不抛错，返回空，交由 AI 回退 A/B/C/D 启发式
+      console.warn(`[AIAgentToolExecutor] get_callers 失败:`, e?.message)
+      return { success: true, result: { symbol, callers: [] } as GetCallersResult }
+    }
+  }
+
+  /** 读取源文件文本内容（供 get_struct_fields 解析 struct 用） */
+  private async readSourceFile(relativePath: string): Promise<string> {
+    const res = await this.readFile(relativePath)
+    if (!res.success) {
+      throw new Error(res.error || 'read failed')
+    }
+    return res.result?.content || ''
+  }
+
+  /**
+   * 提取某 Go struct 的字段与约束（get_struct_fields 工具实现）。
+   * 仅支持 Go；非 Go 或未找到 Go 结构体定义时返回 language:'unsupported' + 空 fields，不抛错。
+   */
+  private async get_struct_fields(args: any): Promise<ToolCallResult> {
+    const structName = String(args?.structName || '').trim()
+    if (!structName) {
+      return { success: false, error: 'get_struct_fields 需要 structName 参数' }
+    }
+    try {
+      // 1) 定位 `type Xxx struct`（仅在 .go 文件）
+      const locateOut = await this.runRg([
+        '-n', '--glob', '*.go', `type\\s+${this.rgEscape(structName)}\\s+struct`, this.clonePath,
+      ])
+      const locMatch = locateOut
+        .split('\n')
+        .map((l) => l.match(/^(.+?):(\d+):(.*)$/))
+        .find(Boolean) as RegExpMatchArray | undefined
+
+      if (!locMatch) {
+        // 未找到 Go 结构体定义：判断是否为非 Go 仓库
+        const goFiles = await this.runRg(['--files', '--glob', '*.go', this.clonePath])
+        if (!goFiles.trim()) {
+          return {
+            success: true,
+            result: {
+              structName,
+              language: 'unsupported',
+              fields: [],
+              note: '未检测到 Go 源文件，get_struct_fields 仅支持 Go struct',
+            } as GetStructFieldsResult,
+          }
+        }
+        return {
+          success: true,
+          result: {
+            structName,
+            language: 'go',
+            fields: [],
+            note: `未找到结构体定义 ${structName}（可能命名不符或位于非 .go 文件）`,
+          } as GetStructFieldsResult,
+        }
+      }
+
+      const file = locMatch[1]
+      const defLine = parseInt(locMatch[2], 10)
+      const content = await this.readSourceFile(file)
+      const flatFields = this.parseStructFields(content, defLine)
+      // 2) 展开一层嵌套 struct
+      const { fields, note } = await this.expandOneLevelNesting(flatFields)
+
+      return {
+        success: true,
+        result: { structName, language: 'go', fields, note } as GetStructFieldsResult,
+      }
+    } catch (e: any) {
+      console.warn(`[AIAgentToolExecutor] get_struct_fields 失败:`, e?.message)
+      return {
+        success: true,
+        result: {
+          structName,
+          language: 'unsupported',
+          fields: [],
+          note: `解析失败: ${e?.message || 'unknown'}`,
+        } as GetStructFieldsResult,
+      }
+    }
+  }
+
+  /**
+   * 解析 struct 主体字段（扁平，含一层嵌套边界）。
+   * @param content 文件全文
+   * @param defLine struct 定义所在行（1-based）
+   */
+  private parseStructFields(content: string, defLine: number): StructField[] {
+    const lines = content.split('\n')
+    const startIdx = defLine - 1
+    const fields: StructField[] = []
+    let depth = 0
+    let started = false
+
+    for (let i = startIdx; i < lines.length; i++) {
+      const line = lines[i]
+      // 统计花括号深度（声明行也含 '{'）
+      for (const ch of line) {
+        if (ch === '{') { depth++; started = true }
+        else if (ch === '}') depth--
+      }
+      if (!started) continue
+      // 跳过 `type Xxx struct {` 声明行（不是字段）
+      if (i === startIdx) continue
+
+      const trimmed = line.trim()
+      if (trimmed === '}') {
+        if (depth === 0) break
+        continue
+      }
+      if (trimmed.startsWith('//') || trimmed.startsWith('*')) continue
+      // 内联嵌套 struct（更深嵌套）：跳过字段解析，由 note 标注未展开
+      if (/^[A-Za-z_]\w*\s+struct\s*\{/.test(trimmed)) continue
+
+      const field = this.parseFieldLine(line)
+      if (field) fields.push(field)
+      if (depth === 0) break
+    }
+    return fields
+  }
+
+  /** 解析单行 struct 字段（name type `tags`） */
+  private parseFieldLine(line: string): StructField | null {
+    const trimmed = line.trim()
+    if (!trimmed || trimmed.startsWith('//') || trimmed.startsWith('*') || trimmed === '}') {
+      return null
+    }
+    const m = trimmed.match(/^([A-Za-z_]\w*)\s+([\s\S]*?)(`[^`]*`)?\s*$/)
+    if (!m) return null
+    const name = m[1]
+    const typePart = (m[2] || '').trim()
+    const tagStr = m[3] ? m[3].slice(1, -1) : ''
+    const tags: Record<string, string> = {}
+    if (tagStr) {
+      for (const part of tagStr.split(/\s+/).filter(Boolean)) {
+        const kv = part.match(/^([A-Za-z_]\w*):"(.*)"$/)
+        if (kv) tags[kv[1]] = kv[2]
+      }
+    }
+    return { name, type: typePart, tags }
+  }
+
+  /** 计算字段类型的「基础类型」（去掉 * / [] / map[...] 前缀） */
+  private baseTypeName(type: string): string {
+    let t = type.trim()
+    for (let i = 0; i < 5; i++) {
+      const r = t.replace(/^(\*|\[\])/, '')
+      if (r === t) break
+      t = r
+    }
+    t = t.replace(/^map\[[^\]]+\]/, '').trim()
+    return t
+  }
+
+  /** 判断基础类型是否为可展开的命名 struct（排除基础类型与接口） */
+  private isStructType(baseType: string): boolean {
+    if (!baseType) return false
+    if (GO_PRIMITIVES.has(baseType)) return false
+    return /^[A-Z]\w*$/.test(baseType)
+  }
+
+  /**
+   * 展开一层嵌套 struct 字段：对每个引用其他 struct 的字段，
+   * 递归解析其一层字段并附加 nestedType=父字段名。更深嵌套在 note 标注不展开。
+   */
+  private async expandOneLevelNesting(
+    flatFields: StructField[],
+  ): Promise<{ fields: StructField[]; note?: string }> {
+    const fields: StructField[] = []
+    let deeper = false
+    let resolvedCount = 0
+
+    for (const f of flatFields) {
+      fields.push(f)
+      const baseType = this.baseTypeName(f.type)
+      if (this.isStructType(baseType) && resolvedCount < MAX_NESTED_STRUCTS) {
+        resolvedCount++
+        const sub = await this.resolveStructFields(baseType)
+        if (sub) {
+          for (const sf of sub) {
+            fields.push({ ...sf, nestedType: f.name })
+          }
+          // 子 struct 自身若还有嵌套字段 → 标记更深一层未展开
+          if (sub.some((sf) => this.isStructType(this.baseTypeName(sf.type)))) {
+            deeper = true
+          }
+        }
+      }
+    }
+
+    const note = deeper ? '已展开一层嵌套 struct 字段，更深嵌套字段未展开' : undefined
+    return { fields, note }
+  }
+
+  /** 解析某个命名 struct 的扁平字段（供一层嵌套展开使用） */
+  private async resolveStructFields(structName: string): Promise<StructField[] | null> {
+    const locateOut = await this.runRg([
+      '-n', '--glob', '*.go', `type\\s+${this.rgEscape(structName)}\\s+struct`, this.clonePath,
+    ])
+    const locMatch = locateOut
+      .split('\n')
+      .map((l) => l.match(/^(.+?):(\d+):(.*)$/))
+      .find(Boolean) as RegExpMatchArray | undefined
+    if (!locMatch) return null
+    try {
+      const content = await this.readSourceFile(locMatch[1])
+      return this.parseStructFields(content, parseInt(locMatch[2], 10))
+    } catch {
+      return null
+    }
   }
 }

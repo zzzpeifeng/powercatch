@@ -30,6 +30,12 @@ function detectRepoType(url: string): 'github' | 'gitlab' | 'gitee' | 'bitbucket
   return 'unknown'
 }
 
+/**
+ * 降级模式（字面量与主进程 electron/services/types.ts 的 DegradationMode 保持一致）。
+ * 渲染进程不引入主进程内部类型，故在此本地定义。
+ */
+type DegradationMode = 'none' | 'phase1-fallback-legacy' | 'phase2-fallback-legacy' | 'total-timeout'
+
 export const useAiAnalysisStore = defineStore('aiAnalysis', () => {
   // ===== State =====
 
@@ -139,6 +145,9 @@ export const useAiAnalysisStore = defineStore('aiAnalysis', () => {
     args?: any;
     result?: any;
   }>>([])
+
+  /** 降级警告（后端 Phase1/Phase2 细分降级时通过 pushProgress('warning') 推送） */
+  const degradationWarning = ref<{ mode: DegradationMode; reason?: string } | null>(null)
 
   // ===== Getters =====
 
@@ -387,6 +396,15 @@ export const useAiAnalysisStore = defineStore('aiAnalysis', () => {
 
       sseService.onProgress = (progress) => {
         console.log('[AiAnalysisStore] onProgress 回调触发:', progress)
+        // 降级警告（phase='warning'）：validPhases 不含 warning，需单独处理，不映射为分析阶段
+        if (progress.phase === 'warning') {
+          degradationWarning.value = {
+            mode: (progress.extra?.mode as DegradationMode) ?? 'phase1-fallback-legacy',
+            reason: progress.extra?.reason,
+          }
+          appendLog({ level: 'warn', message: progress.message || '分析已降级' })
+          return
+        }
         // 更新 phase 状态
         if (progress.phase) {
           // Phase 映射：将 AI 分析相关的非标准 phase 统一映射到前端识别的 AnalysisPhase
@@ -533,6 +551,7 @@ export const useAiAnalysisStore = defineStore('aiAnalysis', () => {
     // 重置 AI 输出状态
     agentThinking.value = ''
     agentToolCalls.value = []
+    degradationWarning.value = null
 
     // 生成 sessionId
     sessionId.value = `session-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`
@@ -731,6 +750,7 @@ export const useAiAnalysisStore = defineStore('aiAnalysis', () => {
     // 清理 AI 输出状态
     agentThinking.value = ''
     agentToolCalls.value = []
+    degradationWarning.value = null
 
     // 断开 SSE 连接
     disconnectSSE()
@@ -813,6 +833,7 @@ export const useAiAnalysisStore = defineStore('aiAnalysis', () => {
     sseError,
     agentThinking,
     agentToolCalls,
+    degradationWarning,
 
     // Getters
     phaseDescription,
