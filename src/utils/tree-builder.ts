@@ -196,9 +196,34 @@ export function getPathKey(host: string, segments: string[]): string {
 /**
  * 后序计算子树聚合字段（descendantCount / firstSeenCapturedAt / latestCapturedAt /
  * hasErrorDescendant / pendingCount / hasSelectedDescendant / hasCheckedDescendant），
- * 并对子节点按 firstSeenCapturedAt 升序（同值按 segment 字母序兜底）做稳定排序。
+ * 并对子节点排序：同级「非叶优先」（非叶子节点在前、叶子节点在后），
+ * 同类型内按 firstSeenCapturedAt 升序（同值按 segment 字母序兜底）做稳定排序。
+ * 仅调整同级顺序，不改变树的父子结构与层级深度（详见比较器 comparePathNodes）。
  * @param node 待聚合的 PathNode（会就地修改）
  */
+
+/**
+ * 同级节点排序比较器（纯函数，2026-07-10 起引入「同级非叶优先」）。
+ * 规则：① 非叶子节点（kind !== 'leaf'）优先于叶子节点（kind === 'leaf'）；
+ *       ② 同类型内按 firstSeenCapturedAt 升序；③ 同值按 segment 字母序兜底（稳定排序）。
+ * 仅调整同级顺序，不修改节点本身，不改变树的父子结构与层级深度。
+ * @param a 节点 a
+ * @param b 节点 b
+ * @returns 负数=a 排前，0=相等，正数=b 排前
+ */
+export function comparePathNodes(a: PathNode, b: PathNode): number {
+  // 1) 非叶优先：叶子记为 1、非叶子记为 0，叶子沉到同级末尾
+  const aIsLeaf = a.kind === 'leaf' ? 1 : 0
+  const bIsLeaf = b.kind === 'leaf' ? 1 : 0
+  if (aIsLeaf !== bIsLeaf) return aIsLeaf - bIsLeaf
+  // 2) 同类型内：firstSeenCapturedAt 升序
+  const ta = new Date(a.firstSeenCapturedAt).getTime()
+  const tb = new Date(b.firstSeenCapturedAt).getTime()
+  if (ta !== tb) return ta - tb
+  // 3) 兜底：segment 字母序
+  return a.segment.localeCompare(b.segment)
+}
+
 function computeAggregates(node: PathNode): void {
   if (node.kind === 'leaf') {
     const req = node.request!
@@ -241,13 +266,9 @@ function computeAggregates(node: PathNode): void {
   node.hasSelectedDescendant = hasSelected
   node.hasCheckedDescendant = hasChecked
 
-  // 稳定排序：firstSeenCapturedAt 升序（决策#4），同值按 segment 字母序兜底
-  node.children.sort((a, b) => {
-    const ta = new Date(a.firstSeenCapturedAt).getTime()
-    const tb = new Date(b.firstSeenCapturedAt).getTime()
-    if (ta !== tb) return ta - tb
-    return a.segment.localeCompare(b.segment)
-  })
+  // 同级排序：非叶子优先于叶子（comparePathNodes 内已含 firstSeenCapturedAt 升序 + segment 兜底）。
+  // 递归覆盖所有层级：computeAggregates 对每个节点都递归调用，仅调整同级顺序、父子 children 引用不变。
+  node.children.sort(comparePathNodes)
 }
 
 /**
