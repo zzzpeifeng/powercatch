@@ -22,5 +22,6 @@
 - 用 search_code 搜索路由模式（如 "POST.*checkout"、路径片段）
 - 用 read_file 读取 Handler → Service → Repository 的完整代码
 - 确保每个 callee 都被展开读取
+- **主动使用 search_code 定位调用方与结构体定义**：探索中请先用 `search_code` 检索函数调用方（如 `Foo(`）与结构体定义（如 `type Xxx struct`），而非仅凭 Handler 文件推断，以确保调用链与字段完整。
 
 请自主决策，不需要询问用户许可。
